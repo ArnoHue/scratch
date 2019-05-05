@@ -1,2 +1,2 @@
-# scratch
+# Scratch
 MIT Scratch Projects
