@@ -15,3 +15,9 @@ https://scratch.mit.edu/projects/97137611/
 
 ## Dragons
 https://scratch.mit.edu/projects/81928816/
+
+## DrawCircle (hi-speed)
+https://scratch.mit.edu/projects/155210425/
+
+## Breakout
+https://scratch.mit.edu/projects/72990950/
