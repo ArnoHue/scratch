@@ -7,7 +7,7 @@ https://scratch.mit.edu/projects/148769358/
 ## Online Chess
 https://scratch.mit.edu/projects/209130998/
 
-## Game of Life
+## Conway's Game of Life
 https://scratch.mit.edu/projects/96326891/
 
 ## Pac Man
