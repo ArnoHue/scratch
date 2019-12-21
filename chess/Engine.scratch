@@ -2902,12 +2902,12 @@ set [ThinkTimeLimitMinMax v] to [ThinkTimeLimit]
 set [ThinkTimeLimitMinMax v] to [60]
 end
 if <<(IdxDeepening) > (2)> and <(IsEndgame2) = (0)>> then 
-if <(IdxDeepening) = (3)> then 
-set [PruningAlphaWindow v] to [75]
-set [PruningBetaWindow v] to [75]
- else 
+if <(IsScratch3) = (1)> then 
 set [PruningAlphaWindow v] to [50]
 set [PruningBetaWindow v] to [50]
+ else 
+set [PruningAlphaWindow v] to [25]
+set [PruningBetaWindow v] to [25]
 end
 set [IsDone v] to [0]
 repeat until <<(IsDone) = (1)> or <(IsMinMaxTimeout) = (1)>> 
@@ -2955,55 +2955,42 @@ end
 end
  else 
 delete (all) of [BestMoves v]
-set [ThinkTimeStart v] to (timer)
 if <(Level) = (1)> then 
-if <(1) = (0)> then 
-CalculateMoves %n
-set [IsBlackChecked v] to [1]
-repeat until <(IsBlackChecked) = (0)> 
-replace item (1) of [MovesIdx v] with (pick random (1) to (length of [Moves1 v]))
-ApplyMove %n
-CalcBoardAttackedByMove %n
-RevertMove %n
-end
-set [BestMove v] to (item (item (1) of [MovesIdx v]) of [Moves1 v])
-end
-set [ThinkTimeLimitMinMax v] to [2]
-AlphaBetaMinMax %n %n %n %n %b %b %n %b
-set [BestMove v] to (item (1) of [BestMoves v])
-delete (all) of [Moves1 v]
-add [BestMove] to [Moves1 v]
-replace item (1) of [MovesIdx v] with [1]
-replace item (1) of [MovesCount v] with [1]
-ApplyMove %n
-CalcBoardAttackedByMove %n
-RevertMove %n
-if <(IsBlackChecked) = (1)> then 
-CalculateMoves %n
-repeat until <(IsBlackChecked) = (0)> 
-replace item (1) of [MovesIdx v] with (pick random (1) to (length of [Moves1 v]))
-ApplyMove %n
-CalcBoardAttackedByMove %n
-RevertMove %n
-end
-set [BestMove v] to (item (item (1) of [MovesIdx v]) of [Moves1 v])
-end
+set [JuniorDistQuota v] to [10]
+set [JuniorSearchQuota v] to [0]
  else 
 if <(Level) = (2)> then 
+set [JuniorDistQuota v] to [5]
+set [JuniorSearchQuota v] to [50]
+ else 
+set [JuniorDistQuota v] to [1]
+set [JuniorSearchQuota v] to [100]
+end
+end
+set [ThinkTimeStart v] to (timer)
 set [ThinkTimeLimitMinMax v] to [2]
 AlphaBetaMinMax %n %n %n %n %b %b %n %b
 set [BestMove v] to (item (1) of [BestMoves v])
- else 
-set [ThinkTimeLimitMinMax v] to [5]
-AlphaBetaMinMax %n %n %n %n %b %b %n %b
-set [BestMove v] to (item (1) of [BestMoves v])
+if <<(BestMove) = ()> or <(pick random (1) to (100)) > (JuniorSearchQuota)>> then 
+CalculateMoves %n
+CutoffReorder %n %b
+replace item (1) of [MovesIdx v] with (pick random (1) to ([ceiling v] of ((length of [Moves1 v]) * ((JuniorDistQuota) / (100))) ::operators))
+ApplyMove %n
+CalcBoardAttackedByMove %n
+RevertMove %n
+repeat until <(IsBlackChecked) = (0)> 
+replace item (1) of [MovesIdx v] with (pick random (1) to (length of [Moves1 v]))
+ApplyMove %n
+CalcBoardAttackedByMove %n
+RevertMove %n
+end
+set [BestMove v] to (item (item (1) of [MovesIdx v]) of [Moves1 v])
 end
 end
 end
 broadcast (1 v) and wait
 OnProgressChanged %n
 wait (0) seconds
-end
 IsValidMove %n
 if <(ValidMoveRes) = (0)> then 
 say (join [Internal Error: No valid move found. Sorry, this should not happen. Maybe you cleared lookup lists in the editor? If you are running a normal game, please export board data and report bug via project comment] (join [ Move: ] [BestMove])) for (10) seconds
@@ -4107,7 +4094,7 @@ end
 end
 end
 if <<(IsInNullMove) = (0)> and <<<<not <argument_reporter_boolean>> and <(argument_reporter_string_number) > (2)>> and <((argument_reporter_string_number) - (argument_reporter_string_number)) > (2)>> and <<((item (argument_reporter_string_number) of [Betas v]) - (item (argument_reporter_string_number) of [Alphas v])) = (1)> and <<(item ((argument_reporter_string_number) - (1)) of [PlyExtension v]) = (0)> and <(item ((argument_reporter_string_number) - (2)) of [PlyExtension v]) = (0)>>>>> then 
-if <<<((argument_reporter_string_number) mod (2)) = (0)> and <<(WhiteQueenCount) > (0)> or <(WhiteMinorCount) > (0)>>> or <<((argument_reporter_string_number) mod (2)) = (1)> and <<(BlackMinorCount) > (0)> or <(BlackQueenCount) > (0)>>>> then 
+if <<<((argument_reporter_string_number) mod (2)) = (0)> and <<(WhiteMinorCount) > (0)> or <(WhiteQueenCount) > (0)>>> or <<((argument_reporter_string_number) mod (2)) = (1)> and <<(BlackMinorCount) > (0)> or <(BlackQueenCount) > (0)>>>> then 
 change [NullMoveCount v] by (0)
 OnScoreCalc %n %n %n %b %b %b
 if <<((argument_reporter_string_number) mod (2)) = (0)> and <not <(ScoreCalcRes) < (item (argument_reporter_string_number) of [Betas v])>>> then 
@@ -4183,9 +4170,13 @@ end
 end
 replace item (argument_reporter_string_number) of [PlyExtension v] with [0]
 if <not <argument_reporter_boolean>> then 
-if <<<(argument_reporter_string_number) < (4)> and <not <<(IsScratch3) = (1)> or <(Level) = (1)>>>> or <<(argument_reporter_string_number) < (3)> and <<(Level) = (1)> or <(IsScratch3) = (1)>>>> then 
-if <set [IsWhiteChecked v] to [0]> then 
-((argument_reporter_string_number) mod (2)) = (1)
+if <<<(argument_reporter_string_number) < (3)> and <<(IsScratch3) = (1)> or <(Level) = (1)>>> or <<(argument_reporter_string_number) < (4)> and <not <<(IsScratch3) = (1)> or <(Level) = (1)>>>>> then 
+if <((argument_reporter_string_number) mod (2)) = (1)> then 
+set [IsWhiteChecked v] to [0]
+CalcBoardAttackedByMove %n
+if <(IsWhiteChecked) = (1)> then 
+replace item (argument_reporter_string_number) of [PlyExtension v] with [1]
+end
  else 
 set [IsBlackChecked v] to [0]
 CalcBoardAttackedByMove %n
@@ -4226,11 +4217,11 @@ end
 end
 end
 set [IsFutile v] to [0]
-if <<argument_reporter_boolean> or <<<<<<not <argument_reporter_boolean>> and <(argument_reporter_string_number) > (0)>> and <((argument_reporter_string_number) - (argument_reporter_string_number)) < (5)>> and <<(item (argument_reporter_string_number) of [MovesIdx v]) > (1)> and <((item (argument_reporter_string_number) of [Betas v]) - (item (argument_reporter_string_number) of [Alphas v])) = (1)>>> and <<(item (argument_reporter_string_number) of [TargetPieces v]) = (Empty)> and <(item (argument_reporter_string_number) of [PromotionPieces v]) = (Empty)>>> and <<(item (argument_reporter_string_number) of [CheckedState v]) = (0)> and <(item (argument_reporter_string_number) of [PlyExtension v]) = (0)>>>> then 
+if <<<argument_reporter_boolean> and <(1) = (1)>> or <<<<<<not <argument_reporter_boolean>> and <(argument_reporter_string_number) > (0)>> and <((argument_reporter_string_number) - (argument_reporter_string_number)) < (5)>> and <<(item (argument_reporter_string_number) of [MovesIdx v]) > (1)> and <((item (argument_reporter_string_number) of [Betas v]) - (item (argument_reporter_string_number) of [Alphas v])) = (1)>>> and <<(item (argument_reporter_string_number) of [TargetPieces v]) = (Empty)> and <(item (argument_reporter_string_number) of [PromotionPieces v]) = (Empty)>>> and <<(item (argument_reporter_string_number) of [CheckedState v]) = (0)> and <(item (argument_reporter_string_number) of [PlyExtension v]) = (0)>>>> then 
 if <argument_reporter_boolean> then 
-set [FutilityMargin v] to (((argument_reporter_string_number) - (argument_reporter_string_number)) * (75))
+set [FutilityMargin v] to [75]
  else 
-set [FutilityMargin v] to [125]
+set [FutilityMargin v] to (((argument_reporter_string_number) - (argument_reporter_string_number)) * (75))
 end
 OnScoreCalc %n %n %n %b %b %b
 if <((argument_reporter_string_number) mod (2)) = (1)> then 
