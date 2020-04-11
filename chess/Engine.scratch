@@ -41,6 +41,19 @@ set [BestHashMoveBoardScoreResult v] to (item (HashBucket) of [HashMoves2BoardSc
 set [BestHashMovePutsInCheckResult v] to (item (HashBucket) of [HashMoves2PutsInCheck v])
 
 define InitBoard
+set [Empty v] to [0]
+set [WhiteKing v] to [-20000]
+set [WhiteQueen v] to [-900]
+set [WhiteRook v] to [-500]
+set [WhiteBishop v] to [-320]
+set [WhiteKnight v] to [-300]
+set [WhitePawn v] to [-100]
+set [BlackKing v] to [20000]
+set [BlackQueen v] to [900]
+set [BlackRook v] to [500]
+set [BlackBishop v] to [320]
+set [BlackKnight v] to [300]
+set [BlackPawn v] to [100]
 DetectFlash30Bug
 InitKingSafety
 InitMobilityBonusLookup
@@ -67,19 +80,6 @@ set [IsDebugMode v] to [0]
 set [IsEndgame v] to [0]
 set [IsEndgame2 v] to [0]
 set [IsImportedBoard v] to [0]
-set [Empty v] to [0]
-set [WhiteKing v] to [-20000]
-set [WhiteQueen v] to [-900]
-set [WhiteRook v] to [-500]
-set [WhiteBishop v] to [-330]
-set [WhiteKnight v] to [-310]
-set [WhitePawn v] to [-100]
-set [BlackKing v] to [20000]
-set [BlackQueen v] to [900]
-set [BlackRook v] to [500]
-set [BlackBishop v] to [330]
-set [BlackKnight v] to [310]
-set [BlackPawn v] to [100]
 set [BlackKingsideCastling v] to [0090]
 set [WhiteKingsideCastling v] to [0092]
 set [BlackQueensideCastling v] to [0091]
@@ -217,6 +217,8 @@ repeat (8)
 add [0] to [BlackPawnCount v]
 add [0] to [WhitePawnCount v]
 end
+InvalidateMovePosLookup
+InitAlphaBeta %n %n %b
 delete (all) of [BoardHistory v]
 AddBoardToHistory
 
@@ -731,7 +733,7 @@ change [Column v] by (1)
 end
 change [EvalExtendedResult v] by ([floor v] of (((0) - (KingProtection)) * (1)) ::operators)
 end
-if <<<(item (2) of [PawnPromotionCol v]) = ()> and <(item (1) of [PawnPromotionCol v]) = ()>> and <(IsEndgame) = (1)>> then 
+if <<(IsEndgame) = (1)> and <<(item (1) of [PawnPromotionCol v]) = ()> and <(item (2) of [PawnPromotionCol v]) = ()>>> then 
 if <<(BlackKingEndgameTargetIdx) = (0)> or <(argument_reporter_string_number) > (200)>> then 
 set [BlackKingEndgameTargetIdx v] to [WhiteKingEndgameTargetIdx]
 end
@@ -790,7 +792,7 @@ if <(item (argument_reporter_string_number) of [PickPhase v]) = (1)> then
 ClearMoveList %n
 replace item (argument_reporter_string_number) of [PickHash v] with []
 replace item (argument_reporter_string_number) of [PawnPromotionCol v] with []
-if <argument_reporter_boolean> then 
+if <<(1) = (1)> or <argument_reporter_boolean>> then 
 GetBestHashMove %s %s
 if <<(BestHashMoveResult) = (1)> and <<not <(BestHashMoveMoveResult) = ()>> and <((argument_reporter_string_number) mod (2)) = ((BestHashMoveDepthResult) mod (2))>>> then 
 set [SourceIdx v] to ([floor v] of ((BestHashMoveMoveResult) / (100)) ::operators)
@@ -1841,6 +1843,10 @@ end
 end
 
 define RUN_BEFORE_SAVING
+delete (all) of [MovePosLookupBlack v]
+delete (all) of [MovePosLookupWhite v]
+delete (all) of [MoveHashLookupBlack v]
+delete (all) of [MoveHashLookupWhite v]
 delete (all) of [HashMoves2PutsInCheck v]
 delete (all) of [HashMoves2BoardScore v]
 delete (all) of [HashMoves2Hash v]
@@ -2375,6 +2381,7 @@ end
 
 define GetPosScore %n %n
 set [PosScoreRes v] to [0]
+if <<(argument_reporter_string_number) > (0)> and <not <(argument_reporter_string_number) = (0)>>> then 
 if <(argument_reporter_string_number) = (BlackPawn)> then 
 if <(IsEndgame) = (0)> then 
 if <(IsBlackCastlingPossible) = (1)> then 
@@ -2427,6 +2434,8 @@ set [PosScoreRes v] to (item ((65) - (argument_reporter_string_number)) of [King
  else 
 if <(argument_reporter_string_number) = (WhiteKing)> then 
 set [PosScoreRes v] to ((0) - (item (argument_reporter_string_number) of [KingPieceSquare v]))
+ else 
+set [PosScoreRes v] to [0]
 end
 end
 end
@@ -2452,6 +2461,9 @@ set [PosScoreRes v] to ((0) - (item (argument_reporter_string_number) of [KingPi
 end
 if <(IsEndgame2) = (1)> then 
 set [PosScoreRes v] to ((PosScoreRes) * (4))
+end
+ else 
+set [PosScoreRes v] to [0]
 end
 end
 end
@@ -2635,9 +2647,7 @@ set [IsWhiteCastlingPossible v] to [1]
  else 
 set [IsWhiteCastlingPossible v] to [0]
 end
-if <(1) = (0)> then 
-ClearLog
-end
+InitMovePosLookup
 Log %s %s %s %s %s %s %s %s
 end
 
@@ -2886,6 +2896,7 @@ IsValidMove %n
 if <(ValidMoveRes) = (0)> then 
 think [Thinking...]
 wait (0) seconds
+InitAlphaBeta %n %n %b
 if <(IsModeJunior) = (0)> then 
 if <(Level) = (1)> then 
 set [ThinkTimeLimit v] to [5]
@@ -2963,10 +2974,6 @@ if <<(BestMove) = ()> or <[MinMaxPly1EvalMoves v] contains [BestMove] ? ::lists>
 set [BestMove v] to (item (1) of [BestMoves v])
 set [BestMinMaxRes v] to (item (1) of [BestMinMaxResults v])
 end
-end
-if <not <(BestMove) = ()>> then 
-GetCurrentMoveHash
-HashOnMoveScore %s %s %s %s %s %s %s
 end
 end
 if <<(IsMinMaxTimeout) = (1)> or <<<(BestMinMaxRes) > ((BlackKing) / (2))> or <(BestMinMaxRes) < ((WhiteKing) / (2))>> or <(IdxDeepening) = (20)>>> then 
@@ -3099,6 +3106,11 @@ end
 end
 ExecuteMovePostProcess
 ExitExecution
+
+if <not <(BestMove) = ()>> then 
+GetCurrentMoveHash
+HashOnMoveScore %s %s %s %s %s %s %s
+end
 
 define ExecuteMovePostProcess
 set [MoveFromIdx v] to [-1]
@@ -3823,14 +3835,18 @@ end
 end
 end
 set [MoveScoreRes v] to [0]
-GetPosScore %n %n
-change [MoveScoreRes v] by ((0) - (PosScoreRes))
-GetPosScore %n %n
-change [MoveScoreRes v] by (PosScoreRes)
+if <(argument_reporter_string_number) > (0)> then 
+change [MoveScoreRes v] by (item ((([ceiling v] of (((argument_reporter_string_number) mod (1000)) / (100)) ::operators) * (10000)) + (((argument_reporter_string_number) * (100)) + (argument_reporter_string_number))) of [MovePosLookupBlack v])
+ else 
+change [MoveScoreRes v] by (item ((([ceiling v] of ((([abs v] of (argument_reporter_string_number) ::operators) mod (1000)) / (100)) ::operators) * (10000)) + (((argument_reporter_string_number) * (100)) + (argument_reporter_string_number))) of [MovePosLookupWhite v])
+end
 if <not <(argument_reporter_string_number) = (Empty)>> then 
 change [MoveScoreRes v] by ((0) - (argument_reporter_string_number))
-GetPosScore %n %n
-change [MoveScoreRes v] by ((0) - (PosScoreRes))
+if <(argument_reporter_string_number) > (0)> then 
+change [MoveScoreRes v] by (item ((([ceiling v] of (((argument_reporter_string_number) mod (1000)) / (100)) ::operators) * (10000)) + ((argument_reporter_string_number) * (100))) of [MovePosLookupBlack v])
+ else 
+change [MoveScoreRes v] by (item ((([ceiling v] of ((([abs v] of (argument_reporter_string_number) ::operators) mod (1000)) / (100)) ::operators) * (10000)) + ((argument_reporter_string_number) * (100))) of [MovePosLookupWhite v])
+end
 end
 if <(IsAttacked) = (1)> then 
 change [MoveScoreRes v] by ((0) - (argument_reporter_string_number))
@@ -4142,14 +4158,11 @@ end
 end
 end
 end
-if <<<<(IsInNullMove) = (0)> or <(1) = (0)>> and <(IsEndgame) = (0)>> and <<<<not <argument_reporter_boolean>> and <(argument_reporter_string_number) > (1)>> and <((argument_reporter_string_number) - (argument_reporter_string_number)) > (1)>> and <<((item (argument_reporter_string_number) of [Betas v]) - (item (argument_reporter_string_number) of [Alphas v])) = (1)> and <(item ((argument_reporter_string_number) - (1)) of [PutsInCheck v]) = (0)>>>> then 
+if <<<(IsInNullMove) = (0)> and <(IsEndgame) = (0)>> and <<<<not <argument_reporter_boolean>> and <(argument_reporter_string_number) > (1)>> and <((argument_reporter_string_number) - (argument_reporter_string_number)) > (1)>> and <<((item (argument_reporter_string_number) of [Betas v]) - (item (argument_reporter_string_number) of [Alphas v])) = (1)> and <(item ((argument_reporter_string_number) - (1)) of [PutsInCheck v]) = (0)>>>> then 
 change [IsInNullMove v] by (1)
 if <<<((argument_reporter_string_number) mod (2)) = (0)> and <<(WhiteMinorCount) > (0)> or <(WhiteQueenCount) > (0)>>> or <<((argument_reporter_string_number) mod (2)) = (1)> and <<(BlackMinorCount) > (0)> or <(BlackQueenCount) > (0)>>>> then 
-Profile_IncCounter %n
-if <(1) = (1)> then 
 OnScoreCalc %n %n %n %b %b %b
 if <<((argument_reporter_string_number) mod (2)) = (1)> and <not <(ScoreCalcRes) < (item (argument_reporter_string_number) of [Betas v])>>> then 
-Profile_IncCounter %n
 ClearMoveList %n
 AddToMoveList %n %n
 replace item ((argument_reporter_string_number) + (0)) of [MovesIdx v] with [1]
@@ -4157,11 +4170,14 @@ ApplyMove %n
 OnScoreCalc %n %n %n %b %b %b
 replace item ((argument_reporter_string_number) + (1)) of [Alphas v] with ((item (argument_reporter_string_number) of [Betas v]) - (1))
 replace item ((argument_reporter_string_number) + (1)) of [Betas v] with (item (argument_reporter_string_number) of [Betas v])
+if <((argument_reporter_string_number) - (argument_reporter_string_number)) > (2)> then 
 AlphaBetaMinMaxImpl %n %n %n %b %b %n %b %b %b
+ else 
+AlphaBetaMinMaxImpl %n %n %n %b %b %n %b %b %b
+end
 set [Score v] to (item ((argument_reporter_string_number) + (1)) of [MinMaxResults v])
 RevertMove %n
 if <<not <(Score) < (item (argument_reporter_string_number) of [Betas v])>> and <not <([abs v] of (Score) ::operators) > ((BlackKing) / (2))>>> then 
-Profile_IncCounter %n
 replace item (argument_reporter_string_number) of [MinMaxResults v] with (item (argument_reporter_string_number) of [Betas v])
 replace item (argument_reporter_string_number) of [BestHashMoveType v] with [B]
 replace item (argument_reporter_string_number) of [PrevBestHashMove v] with []
@@ -4170,7 +4186,6 @@ stop [this script v]
 end
 end
 if <<((argument_reporter_string_number) mod (2)) = (0)> and <not <(ScoreCalcRes) > (item (argument_reporter_string_number) of [Alphas v])>>> then 
-Profile_IncCounter %n
 ClearMoveList %n
 AddToMoveList %n %n
 replace item ((argument_reporter_string_number) + (0)) of [MovesIdx v] with [1]
@@ -4178,17 +4193,19 @@ OnScoreCalc %n %n %n %b %b %b
 ApplyMove %n
 replace item ((argument_reporter_string_number) + (1)) of [Alphas v] with (item (argument_reporter_string_number) of [Alphas v])
 replace item ((argument_reporter_string_number) + (1)) of [Betas v] with ((item (argument_reporter_string_number) of [Alphas v]) + (1))
+if <((argument_reporter_string_number) - (argument_reporter_string_number)) > (2)> then 
 AlphaBetaMinMaxImpl %n %n %n %b %b %n %b %b %b
+ else 
+AlphaBetaMinMaxImpl %n %n %n %b %b %n %b %b %b
+end
 set [Score v] to (item ((argument_reporter_string_number) + (1)) of [MinMaxResults v])
 RevertMove %n
 if <<not <(Score) > (item (argument_reporter_string_number) of [Alphas v])>> and <not <([abs v] of (Score) ::operators) > ((BlackKing) / (2))>>> then 
-Profile_IncCounter %n
 replace item (argument_reporter_string_number) of [MinMaxResults v] with (item (argument_reporter_string_number) of [Alphas v])
 replace item (argument_reporter_string_number) of [BestHashMoveType v] with [A]
 replace item (argument_reporter_string_number) of [PrevBestHashMove v] with []
 change [IsInNullMove v] by (-1)
 stop [this script v]
-end
 end
 end
 end
@@ -4199,7 +4216,7 @@ replace item (argument_reporter_string_number) of [PickMoveRes v] with [1]
 replace item (argument_reporter_string_number) of [CheckedState v] with [0]
 repeat until <(item (argument_reporter_string_number) of [PickMoveRes v]) = (0)> 
 if <(IsMinMaxTimeout) = (0)> then 
-if <(argument_reporter_string_number) < (3)> then 
+if <(argument_reporter_string_number) < (4)> then 
 if <((timer) - (ThinkTimeStart)) > (ThinkTimeLimitMinMax)> then 
 set [IsMinMaxTimeout v] to [1]
 end
@@ -4349,6 +4366,7 @@ AlphaBetaMinMaxImpl %n %n %n %b %b %n %b %b %b
 AlphaBetaMinMaxImpl %n %n %n %b %b %n %b %b %b
 end
 set [Score v] to (item ((argument_reporter_string_number) + (1)) of [MinMaxResults v])
+set [IsReductionAndDone v] to [0]
 end
 if <(IsMinMaxTimeout) = (1)> then 
 RevertMove %n
@@ -4622,40 +4640,73 @@ GetCurrentMove %n
 set [SourceIdx v] to ([floor v] of ((CurrentMove) / (100)) ::operators)
 set [TargetIdx v] to ([floor v] of ((CurrentMove) mod (100)) ::operators)
 if <<(SourceIdx) > (0)> and <(TargetIdx) > (0)>> then 
-GetPosPieceHash %n %n
-set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
-GetPosPieceHash %n %n
-set [CurrentMoveHash v] to ((CurrentMoveHash) + (PosPieceHash))
-if <not <(item (TargetIdx) of [Board v]) = (Empty)>> then 
-GetPosPieceHash %n %n
-set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
+set [SourcePiece v] to (item (SourceIdx) of [Board v])
+set [TargetPiece v] to (item (TargetIdx) of [Board v])
+if <(SourcePiece) > (0)> then 
+set [IdxSub v] to ((([ceiling v] of (((SourcePiece) mod (1000)) / (100)) ::operators) * (10000)) + (((SourceIdx) * (100)) + (TargetIdx)))
+replace item (argument_reporter_string_number) of [PosScoreDelta v] with (item (IdxSub) of [MovePosLookupBlack v])
+change [CurrentMoveHash v] by (item (IdxSub) of [MoveHashLookupBlack v])
+ else 
+set [IdxSub v] to ((([ceiling v] of ((([abs v] of (SourcePiece) ::operators) mod (1000)) / (100)) ::operators) * (10000)) + (((SourceIdx) * (100)) + (TargetIdx)))
+replace item (argument_reporter_string_number) of [PosScoreDelta v] with (item (IdxSub) of [MovePosLookupWhite v])
+change [CurrentMoveHash v] by (item (IdxSub) of [MoveHashLookupWhite v])
 end
-GetPosScore %n %n
-replace item (argument_reporter_string_number) of [PosScoreDelta v] with [PosScoreRes]
-GetPosScore %n %n
-replace item (argument_reporter_string_number) of [PosScoreDelta v] with ((item (argument_reporter_string_number) of [PosScoreDelta v]) - (PosScoreRes))
-GetPosScore %n %n
-replace item (argument_reporter_string_number) of [PosScoreDelta v] with ((item (argument_reporter_string_number) of [PosScoreDelta v]) - (PosScoreRes))
-replace item (argument_reporter_string_number) of [SourcePieces v] with (item (SourceIdx) of [Board v])
+if <(TargetPiece) > (0)> then 
+set [IdxSub v] to ((([ceiling v] of (((TargetPiece) mod (1000)) / (100)) ::operators) * (10000)) + ((TargetIdx) * (100)))
+replace item (argument_reporter_string_number) of [PosScoreDelta v] with ((item (argument_reporter_string_number) of [PosScoreDelta v]) + (item (IdxSub) of [MovePosLookupBlack v]))
+change [CurrentMoveHash v] by (item (IdxSub) of [MoveHashLookupBlack v])
+ else 
+if <set [IdxSub v] to ((([ceiling v] of ((([abs v] of (TargetPiece) ::operators) mod (1000)) / (100)) ::operators) * (10000)) + ((TargetIdx) * (100)))> then 
+(TargetPiece) < (0)
+end
+end
+replace item (argument_reporter_string_number) of [SourcePieces v] with [SourcePiece]
 replace item (argument_reporter_string_number) of [TargetPiecesIdx v] with [TargetIdx]
-replace item (argument_reporter_string_number) of [TargetPieces v] with (item (TargetIdx) of [Board v])
-replace item (TargetIdx) of [Board v] with (item (SourceIdx) of [Board v])
+replace item (argument_reporter_string_number) of [TargetPieces v] with [TargetPiece]
+replace item (TargetIdx) of [Board v] with [SourcePiece]
 replace item (SourceIdx) of [Board v] with [Empty]
-if <<(item (TargetIdx) of [Board v]) = (BlackPawn)> and <<(item (argument_reporter_string_number) of [TargetPieces v]) = (Empty)> and <not <(item (SourceIdx) of [IdxToCol v]) = (item (TargetIdx) of [IdxToCol v])>>>> then 
-replace item (argument_reporter_string_number) of [TargetPiecesIdx v] with ((TargetIdx) - (8))
-replace item (argument_reporter_string_number) of [TargetPieces v] with (item ((TargetIdx) - (8)) of [Board v])
-replace item ((TargetIdx) - (8)) of [Board v] with [Empty]
-GetPosPieceHash %n %n
-set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
-end
-if <<(item (TargetIdx) of [Board v]) = (WhitePawn)> and <<(item (argument_reporter_string_number) of [TargetPieces v]) = (Empty)> and <not <(item (SourceIdx) of [IdxToCol v]) = (item (TargetIdx) of [IdxToCol v])>>>> then 
+if <(SourcePiece) = (BlackPawn)> then 
+if <(SourcePiece) = (WhitePawn)> then 
+if <<(item (argument_reporter_string_number) of [TargetPieces v]) = (Empty)> and <not <(item (SourceIdx) of [IdxToCol v]) = (item (TargetIdx) of [IdxToCol v])>>> then 
 replace item (argument_reporter_string_number) of [TargetPiecesIdx v] with ((TargetIdx) + (8))
 replace item (argument_reporter_string_number) of [TargetPieces v] with (item ((TargetIdx) + (8)) of [Board v])
 replace item ((TargetIdx) + (8)) of [Board v] with [Empty]
 GetPosPieceHash %n %n
 set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
 end
-if <<(item (TargetIdx) of [Board v]) = (BlackPawn)> and <(TargetIdx) > (56)>> then 
+if <(TargetIdx) < (9)> then 
+replace item (argument_reporter_string_number) of [PromotionPieces v] with [Empty]
+set [PromotionVal v] to (letter (6) of [CurrentMove])
+if <(PromotionVal) = (1)> then 
+replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteQueen]
+end
+if <(PromotionVal) = (2)> then 
+replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteRook]
+end
+if <(PromotionVal) = (3)> then 
+replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteBishop]
+end
+if <(PromotionVal) = (4)> then 
+replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteKnight]
+end
+if <not <(item (argument_reporter_string_number) of [PromotionPieces v]) = (Empty)>> then 
+replace item (TargetIdx) of [Board v] with (item (argument_reporter_string_number) of [PromotionPieces v])
+end
+GetPosPieceHash %n %n
+set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
+GetPosPieceHash %n %n
+set [CurrentMoveHash v] to ((CurrentMoveHash) + (PosPieceHash))
+end
+end
+ else 
+if <<(item (argument_reporter_string_number) of [TargetPieces v]) = (Empty)> and <not <(item (SourceIdx) of [IdxToCol v]) = (item (TargetIdx) of [IdxToCol v])>>> then 
+replace item (argument_reporter_string_number) of [TargetPiecesIdx v] with ((TargetIdx) - (8))
+replace item (argument_reporter_string_number) of [TargetPieces v] with (item ((TargetIdx) - (8)) of [Board v])
+replace item ((TargetIdx) - (8)) of [Board v] with [Empty]
+GetPosPieceHash %n %n
+set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
+end
+if <(TargetIdx) > (56)> then 
 replace item (argument_reporter_string_number) of [PromotionPieces v] with [Empty]
 set [PromotionVal v] to (letter (6) of [CurrentMove])
 if <(PromotionVal) = (1)> then 
@@ -4678,28 +4729,6 @@ set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
 GetPosPieceHash %n %n
 set [CurrentMoveHash v] to ((CurrentMoveHash) + (PosPieceHash))
 end
-if <<(item (TargetIdx) of [Board v]) = (WhitePawn)> and <(TargetIdx) < (9)>> then 
-replace item (argument_reporter_string_number) of [PromotionPieces v] with [Empty]
-set [PromotionVal v] to (letter (6) of [CurrentMove])
-if <(PromotionVal) = (1)> then 
-replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteQueen]
-end
-if <(PromotionVal) = (2)> then 
-replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteRook]
-end
-if <(PromotionVal) = (3)> then 
-replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteBishop]
-end
-if <(PromotionVal) = (4)> then 
-replace item (argument_reporter_string_number) of [PromotionPieces v] with [WhiteKnight]
-end
-if <not <(item (argument_reporter_string_number) of [PromotionPieces v]) = (Empty)>> then 
-replace item (TargetIdx) of [Board v] with (item (argument_reporter_string_number) of [PromotionPieces v])
-end
-GetPosPieceHash %n %n
-set [CurrentMoveHash v] to ((CurrentMoveHash) - (PosPieceHash))
-GetPosPieceHash %n %n
-set [CurrentMoveHash v] to ((CurrentMoveHash) + (PosPieceHash))
 end
  else 
 if <(CurrentMove) = (WhiteKingsideCastling)> then 
