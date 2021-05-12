@@ -63,6 +63,15 @@ WhenBroadcastReceived(startGoL)
 
 //----- Custom blocks -------------------------------------------------------------------------------------------------
 
+Define AddToActiveClusters(string ClusterIdx) (warp=true)
+{
+    If (ActiveClusterIdxLookup[ClusterIdx] == "")
+    {
+        List.Add(ActiveClusterIdx, ClusterIdx);
+        List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, List.Length(ActiveClusterIdx));
+    }
+}
+
 Define CalcFPS (warp=false)
 {
     FpsTime += (Sensing.DaysSince2000() * 86400);
@@ -237,6 +246,10 @@ Define CalcNextGeneration (warp=true)
         {
             List.Add(InvalidatedClusterVal2, ClusterValue);
             List.Add(InvalidatedIdx2, ClusterIdx);
+            If ((ClusterValue > 0) And (GridColor[ClusterIdx] == 0))
+            {
+                Call MergeColor(ClusterIdx);
+            }
         }
         List.ReplaceItem(IsInvalidated1, ClusterIdx, 0);
         Idx += 1;
@@ -247,32 +260,36 @@ Define CalcNextGeneration (warp=true)
     {
         ClusterIdx = InvalidatedIdx2[Idx];
         ClusterValue = InvalidatedClusterVal2[Idx];
-        If (ClusterValue > 0)
+        If (ClusterValue == 0)
         {
+            If (List.Length(ActiveClusterIdx) > 1)
+            {
+                List.ReplaceItem(ActiveClusterIdx, ActiveClusterIdxLookup[ClusterIdx], ActiveClusterIdx[List.Length(ActiveClusterIdx)]);
+                List.ReplaceItem(ActiveClusterIdxLookup, ActiveClusterIdx[List.Length(ActiveClusterIdx)], ActiveClusterIdxLookup[ClusterIdx]);
+                List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, "");
+                List.DeleteItem(ActiveClusterIdx, List.Length(ActiveClusterIdx));
+            }
+            Else
+            {
+                List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, "");
+                List.DeleteItem(ActiveClusterIdx, 1);
+            }
+            List.ReplaceItem(GridColor, ClusterIdx, 0);
+        }
+        Else
+        {
+            If (Grid[ClusterIdx] == 0)
+            {
+                List.Add(ActiveClusterIdx, ClusterIdx);
+                List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, List.Length(ActiveClusterIdx));
+            }
             If (GridColor[ClusterIdx] == 0)
             {
                 Call MergeColor(ClusterIdx);
             }
-            If (Grid[ClusterIdx] == 0)
-            {
-                List.Add(ActiveClusterIdx, ClusterIdx);
-            }
         }
         Call SetClusterValue2(ClusterIdx)(ClusterValue);
         Idx += 1;
-    }
-    Idx = 1;
-    Repeat Until (Idx > List.Length(ActiveClusterIdx))
-    {
-        If (Grid[ActiveClusterIdx[Idx]] == 0)
-        {
-            List.ReplaceItem(ActiveClusterIdx, Idx, ActiveClusterIdx[List.Length(ActiveClusterIdx)]);
-            List.DeleteItem(ActiveClusterIdx, List.Length(ActiveClusterIdx));
-        }
-        Else
-        {
-            Idx += 1;
-        }
     }
 }
 
@@ -467,6 +484,7 @@ Define Init (warp=false)
 Define InitGridData (warp=true)
 {
     List.DeleteAll(ActiveClusterIdx);
+    List.DeleteAll(ActiveClusterIdxLookup);
     List.DeleteAll(InvalidatedIdx1);
     List.DeleteAll(InvalidatedIdx2);
     List.DeleteAll(Grid);
@@ -494,6 +512,7 @@ Define InitGridData (warp=true)
         Repeat ((GridWidth / 2))
         {
             List.Add(Grid, 0);
+            List.Add(ActiveClusterIdxLookup, "");
             List.Add(GridColor, 0);
             List.Add(IsInvalidated1, 0);
             List.Add(ClusterIdxToX, (((Counter - 1) * 2) % GridWidth));
@@ -637,14 +656,11 @@ Define OnCellChanged(string CellIdx)(string Value) (warp=true)
     ClusterIdx2 = (((floor(((CellIdx - 1) / (GridWidth * 2))) * (GridWidth / 2)) + floor((((CellIdx - 1) % GridWidth) / 2))) + 1);
     If (Value > 0)
     {
-        If (Not (List.ContainsItem(ActiveClusterIdx, ClusterIdx2)))
-        {
-            List.Add(ActiveClusterIdx, ClusterIdx2);
-        }
+        Call AddToActiveClusters(ClusterIdx2);
     }
     Else
     {
-        List.DeleteItem(ActiveClusterIdx, List.IndexOf(ActiveClusterIdx, ClusterIdx2));
+        Call RemoveFromActiveClusters(ClusterIdx2);
     }
 }
 
@@ -703,6 +719,25 @@ Define Paint (warp=true)
             }
         }
         Idx += 1;
+    }
+}
+
+Define RemoveFromActiveClusters(string ClusterIdx) (warp=false)
+{
+    If (Not ((ActiveClusterIdxLookup[ClusterIdx] == "")))
+    {
+        If (List.Length(ActiveClusterIdx) > 1)
+        {
+            List.ReplaceItem(ActiveClusterIdx, ActiveClusterIdxLookup[ClusterIdx], ActiveClusterIdx[List.Length(ActiveClusterIdx)]);
+            List.ReplaceItem(ActiveClusterIdxLookup, ActiveClusterIdx[List.Length(ActiveClusterIdx)], ActiveClusterIdxLookup[ClusterIdx]);
+            List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, "");
+            List.DeleteItem(ActiveClusterIdx, List.Length(ActiveClusterIdx));
+        }
+        Else
+        {
+            List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, "");
+            List.DeleteItem(ActiveClusterIdx, 1);
+        }
     }
 }
 
@@ -923,6 +958,7 @@ Define SetClusterValue2(string ClusterIdx)(string Value) (warp=true)
 Define _ClearAll (warp=true)
 {
     List.DeleteAll(ActiveClusterIdx);
+    List.DeleteAll(ActiveClusterIdxLookup);
     List.DeleteAll(InvalidatedIdx1);
     List.DeleteAll(InvalidatedIdx2);
     List.DeleteAll(Grid);
