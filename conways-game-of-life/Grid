@@ -182,16 +182,16 @@ Define CalcLookupBitOps (warp=true)
 Define CalcNext (warp=true)
 {
     FpsCount = 0;
-    CalcTime = (Sensing.DaysSince2000() * 86400000);
+    CalcTime = (Sensing.DaysSince2000() * 86400);
     Call CalcNextGeneration;
     FpsCount += 1;
     If (List.Length(InvalidatedIdx2) > 0)
     {
         Generations += 1;
     }
-    If (FrameSkipping > 0)
+    If (FrameSkipping == 1)
     {
-        Repeat Until ((Sensing.DaysSince2000() * 86400000) > (CalcTime + (33 * FrameSkipping)))
+        Repeat Until ((Sensing.DaysSince2000() * 86400) > (CalcTime + (1 / 30)))
         {
             Call CalcNextGeneration;
             FpsCount += 1;
@@ -246,9 +246,16 @@ Define CalcNextGeneration (warp=true)
         {
             List.Add(InvalidatedClusterVal2, ClusterValue);
             List.Add(InvalidatedIdx2, ClusterIdx);
-            If ((ClusterValue > 0) And (GridColor[ClusterIdx] == 0))
+            If (Grid[ClusterIdx] == 0)
             {
-                Call MergeColor(ClusterIdx);
+                If (ColorCount == 1)
+                {
+                    List.ReplaceItem(GridColor, ClusterIdx, MainColor);
+                }
+                Else
+                {
+                    Call MergeColor(ClusterIdx);
+                }
             }
         }
         List.ReplaceItem(IsInvalidated1, ClusterIdx, 0);
@@ -262,18 +269,10 @@ Define CalcNextGeneration (warp=true)
         ClusterValue = InvalidatedClusterVal2[Idx];
         If (ClusterValue == 0)
         {
-            If (List.Length(ActiveClusterIdx) > 1)
-            {
-                List.ReplaceItem(ActiveClusterIdx, ActiveClusterIdxLookup[ClusterIdx], ActiveClusterIdx[List.Length(ActiveClusterIdx)]);
-                List.ReplaceItem(ActiveClusterIdxLookup, ActiveClusterIdx[List.Length(ActiveClusterIdx)], ActiveClusterIdxLookup[ClusterIdx]);
-                List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, "");
-                List.DeleteItem(ActiveClusterIdx, List.Length(ActiveClusterIdx));
-            }
-            Else
-            {
-                List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, "");
-                List.DeleteItem(ActiveClusterIdx, 1);
-            }
+            List.ReplaceItem(ActiveClusterIdx, ActiveClusterIdxLookup[ClusterIdx], ActiveClusterIdx[List.Length(ActiveClusterIdx)]);
+            List.ReplaceItem(ActiveClusterIdxLookup, ActiveClusterIdx[List.Length(ActiveClusterIdx)], ActiveClusterIdxLookup[ClusterIdx]);
+            List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, "");
+            List.DeleteItem(ActiveClusterIdx, List.Length(ActiveClusterIdx));
             List.ReplaceItem(GridColor, ClusterIdx, 0);
         }
         Else
@@ -282,10 +281,6 @@ Define CalcNextGeneration (warp=true)
             {
                 List.Add(ActiveClusterIdx, ClusterIdx);
                 List.ReplaceItem(ActiveClusterIdxLookup, ClusterIdx, List.Length(ActiveClusterIdx));
-            }
-            If (GridColor[ClusterIdx] == 0)
-            {
-                Call MergeColor(ClusterIdx);
             }
         }
         Call SetClusterValue2(ClusterIdx)(ClusterValue);
@@ -298,6 +293,7 @@ Define HandleInput (warp=true)
     If (Command == "Random")
     {
         Call InitGridData;
+        ColorCount = 0;
         CurrentPattern = "";
         Repeat ((GridWidth * GridHeight))
         {
@@ -323,6 +319,7 @@ Define HandleInput (warp=true)
         Call InitGridData;
         Command = "";
         Generations = 0;
+        ColorCount = 0;
     }
     If (Command == "SuspendResume")
     {
@@ -468,6 +465,8 @@ Define Init (warp=false)
     List.Add(Colors, 54);
     List.Add(Colors, 84);
     List.DeleteAll(_ProfilerData);
+    ColorCount = 0;
+    MainColor = 0;
     IsSuspended = 0;
     CalcTime = 0;
     Clicked = 0;
@@ -575,6 +574,11 @@ Define InsertPattern(string Pattern)(string Position)(string InsertWidth)(string
     InsertIdx = 1;
     InsertCellIdx = Position;
     InsertCellVal = Colors[Operator.Random(1 / List.Length(Colors))];
+    ColorCount += 1;
+    If (ColorCount == 1)
+    {
+        MainColor = InsertCellVal;
+    }
     Repeat (InsertHeight)
     {
         Repeat (InsertWidth)
@@ -583,13 +587,6 @@ Define InsertPattern(string Pattern)(string Position)(string InsertWidth)(string
             {
                 Call SetCellValue(InsertCellIdx)(1);
                 List.ReplaceItem(GridColor, (((floor(((InsertCellIdx - 1) / (GridWidth * 2))) * (GridWidth / 2)) + floor((((InsertCellIdx - 1) % GridWidth) / 2))) + 1), InsertCellVal);
-            }
-            Else
-            {
-                If (1 == 0)
-                {
-                    Call SetCellValue(InsertCellIdx)(0);
-                }
             }
             InsertIdx += 1;
             InsertCellIdx += 1;
@@ -617,28 +614,24 @@ Define InvalidateCluster(string ClusterIdx) (warp=false)
 
 Define MergeColor(string ClusterIdx) (warp=true)
 {
-    Color = GridColor[(ClusterIdx - ClustersPerRow)];
-    If (Color > 0)
+    If (Grid[(ClusterIdx + 1)] > 0)
     {
-        List.ReplaceItem(GridColor, ClusterIdx, Color);
+        List.ReplaceItem(GridColor, ClusterIdx, GridColor[(ClusterIdx + 1)]);
         Stop(this script);
     }
-    Color = GridColor[(ClusterIdx + ClustersPerRow)];
-    If (Color > 0)
+    If (Grid[(ClusterIdx - 1)] > 0)
     {
-        List.ReplaceItem(GridColor, ClusterIdx, Color);
+        List.ReplaceItem(GridColor, ClusterIdx, GridColor[(ClusterIdx - 1)]);
         Stop(this script);
     }
-    Color = GridColor[(ClusterIdx + 1)];
-    If (Color > 0)
+    If (Grid[(ClusterIdx - ClustersPerRow)] > 0)
     {
-        List.ReplaceItem(GridColor, ClusterIdx, Color);
+        List.ReplaceItem(GridColor, ClusterIdx, GridColor[(ClusterIdx - ClustersPerRow)]);
         Stop(this script);
     }
-    Color = GridColor[(ClusterIdx - 1)];
-    If (Color > 0)
+    If (Grid[(ClusterIdx + ClustersPerRow)] > 0)
     {
-        List.ReplaceItem(GridColor, ClusterIdx, Color);
+        List.ReplaceItem(GridColor, ClusterIdx, GridColor[(ClusterIdx + ClustersPerRow)]);
         Stop(this script);
     }
 }
@@ -667,55 +660,62 @@ Define OnCellChanged(string CellIdx)(string Value) (warp=true)
 Define Paint (warp=true)
 {
     Pen.Clear();
-    Pen.SetPenColorToColor(#fff600);
-    Pen.SetPenSizeTo(2);
+    Pen.SetPenColorToColor(#272727);
+    Pen.SetPenSizeTo(1);
+    Pen.Clear();
     Motion.GoToXY(((-240 + (0 - OffsetX)) * ZoomLevel), ((180 - (0 - OffsetY)) * ZoomLevel));
     Pen.Down();
-    Pen.Clear();
-    Motion.GoToXY(((-240 + (0 - OffsetX)) * ZoomLevel), ((180 - (GridHeight - OffsetY)) * ZoomLevel));
-    Pen.Down();
-    Pen.Clear();
-    Motion.GoToXY(((-240 + (GridWidth - OffsetX)) * ZoomLevel), ((180 - (0 - OffsetY)) * ZoomLevel));
-    Pen.Down();
-    Pen.Clear();
-    Motion.GoToXY(((-240 + (GridWidth - OffsetX)) * ZoomLevel), ((180 - (GridHeight - OffsetY)) * ZoomLevel));
-    Pen.Down();
+    Motion.SetX(((-240 + (GridWidth - OffsetX)) * ZoomLevel));
+    Motion.SetY(((180 - (GridHeight - OffsetY)) * ZoomLevel));
+    Motion.SetX(((-240 + (0 - OffsetX)) * ZoomLevel));
+    Motion.SetY(((180 - (0 - OffsetY)) * ZoomLevel));
     Pen.Clear();
     Pen.SetPenSizeTo(ZoomLevel);
     Pen.SetPenTo(brightness, 100);
+    Pen.SetPenTo(saturation, 100);
+    Pen.SetPenTo(color, MainColor);
     Idx = 1;
     Repeat (List.Length(ActiveClusterIdx))
     {
         ClusterIdx = ActiveClusterIdx[Idx];
-        ClusterX = ((-240 + (ClusterIdxToX[ClusterIdx] - OffsetX)) * ZoomLevel);
         ClusterY = ((180 - (ClusterIdxToY[ClusterIdx] - OffsetY)) * ZoomLevel);
-        If ((abs(ClusterX) < 240) And (abs(ClusterY) < 180))
+        If (abs(ClusterY) < 180)
         {
-            ClusterValue = Grid[ClusterIdx];
-            Pen.SetPenTo(color, GridColor[ClusterIdx]);
-            If (ClusterValue > 7)
+            ClusterX = ((-240 + (ClusterIdxToX[ClusterIdx] - OffsetX)) * ZoomLevel);
+            If (abs(ClusterX) < 240)
             {
+                ClusterValue = Grid[ClusterIdx];
+                If (ColorCount > 1)
+                {
+                    Pen.SetPenTo(color, GridColor[ClusterIdx]);
+                }
+                Pen.Clear();
                 Motion.GoToXY(ClusterX, ClusterY);
-                Pen.Down();
-                Pen.Clear();
-            }
-            If ((ClusterValue % 8) > 3)
-            {
-                Motion.GoToXY((ClusterX + ZoomLevel), ClusterY);
-                Pen.Down();
-                Pen.Clear();
-            }
-            If ((ClusterValue % 4) > 1)
-            {
-                Motion.GoToXY(ClusterX, (ClusterY - ZoomLevel));
-                Pen.Down();
-                Pen.Clear();
-            }
-            If ((ClusterValue % 2) == 1)
-            {
-                Motion.GoToXY((ClusterX + ZoomLevel), (ClusterY - ZoomLevel));
-                Pen.Down();
-                Pen.Clear();
+                If (ClusterValue > 7)
+                {
+                    Pen.Down();
+                    Pen.Clear();
+                }
+                If ((ClusterValue % 8) > 3)
+                {
+                    Motion.ChangeXBy(ZoomLevel);
+                    Pen.Down();
+                    Pen.Clear();
+                    Motion.ChangeXBy((0 - ZoomLevel));
+                }
+                If ((ClusterValue % 4) > 1)
+                {
+                    Motion.ChangeYBy((0 - ZoomLevel));
+                    Pen.Down();
+                    Pen.Clear();
+                    Motion.ChangeYBy(ZoomLevel);
+                }
+                If ((ClusterValue % 2) == 1)
+                {
+                    Motion.ChangeXBy(ZoomLevel);
+                    Motion.ChangeYBy((0 - ZoomLevel));
+                    Pen.Down();
+                }
             }
         }
         Idx += 1;
