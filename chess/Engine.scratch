@@ -96,7 +96,7 @@ WhenKeyPressed(j)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 3.14 (19.06.2021) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 3.22 (22.09.2021) by ArnoHu")(5);
 }
 
 
@@ -912,8 +912,8 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(BoardAttackedByBlackPieceSnapshot, Depth, BoardAttackedByBlackPieceSnapshot[(Depth - 1)]);
         List.ReplaceItem(BoardAttackedByWhiteSnapshot, Depth, BoardAttackedByWhiteSnapshot[(Depth - 1)]);
         List.ReplaceItem(BoardAttackedByWhitePieceSnapshot, Depth, BoardAttackedByWhitePieceSnapshot[(Depth - 1)]);
-        List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
         List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
+        List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
         List.ReplaceItem(BlackMobBonus, Depth, BlackMobBonus[(Depth - 1)]);
         List.ReplaceItem(WhiteMobBonus, Depth, WhiteMobBonus[(Depth - 1)]);
     }
@@ -930,7 +930,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         }
         If ((Not (PrevQuiescence)) And ((Depth == 2) Or (CheckedState[(Depth - 1)] == 1)))
         {
-            Call CalcBoardAttackedByMove(Depth);
+            Call CalcBoardAttackedByMoveChecked(Depth);
             If ((Depth % 2) == 1)
             {
                 If (IsWhiteChecked == 1)
@@ -1195,38 +1195,42 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         If ((Depth % 2) == 1)
                         {
                             IsWhiteChecked = 0;
-                            Call CalcBoardAttackedByMove((Depth + 2));
+                            Call CalcBoardAttackedByMoveChecked((Depth + 2));
                             List.ReplaceItem(PutsInCheck, Depth, IsWhiteChecked);
                         }
                         Else
                         {
                             IsBlackChecked = 0;
-                            Call CalcBoardAttackedByMove((Depth + 2));
+                            Call CalcBoardAttackedByMoveChecked((Depth + 2));
                             List.ReplaceItem(PutsInCheck, Depth, IsBlackChecked);
                         }
                     }
-                }
-                If (PutsInCheck[Depth] == 0)
-                {
-                    Call ClearMoveList((Depth + 2));
-                    Call CalculateMovesForSource((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
-                    Count = 0;
-                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                    Repeat (MovesCount[(Depth + 2)])
+                    If (PutsInCheck[Depth] == 1)
                     {
-                        Call GetCurrentMove((Depth + 2));
-                        If (Board[floor((CurrentMove % 100))] > 0)
-                        {
-                            If (abs(Board[floor((CurrentMove / 100))]) < abs(Board[floor((CurrentMove % 100))]))
-                            {
-                                Count += 1;
-                            }
-                        }
-                        List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                        Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")("")("")("")("")("")("");
                     }
-                    If (Count > 1)
+                    If (PutsInCheck[Depth] == 0)
                     {
-                        List.ReplaceItem(PutsInFork, Depth, 1);
+                        Call ClearMoveList((Depth + 2));
+                        Call CalculateMovesForSource((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
+                        Count = 0;
+                        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                        Repeat (MovesCount[(Depth + 2)])
+                        {
+                            Call GetCurrentMove((Depth + 2));
+                            If (Board[floor((CurrentMove % 100))] > 0)
+                            {
+                                If (abs(Board[floor((CurrentMove / 100))]) < abs(Board[floor((CurrentMove % 100))]))
+                                {
+                                    Count += 1;
+                                }
+                            }
+                            List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                        }
+                        If (Count > 1)
+                        {
+                            List.ReplaceItem(PutsInFork, Depth, 1);
+                        }
                     }
                 }
                 If ((MaxDepth - Depth) == 1)
@@ -1543,12 +1547,12 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If ((Not (Quiescence)) And (MovesCount[Depth] == 0))
     {
         List.ReplaceItem(ScoreTypes, Depth, "E");
-        Call CalcBoardAttackedByMove((Depth + 1));
-        If ((Depth % 2) == 1)
+        Call CalcBoardAttackedByMoveChecked((Depth + 1));
+        If (((Depth + 1) % 2) == 1)
         {
-            If (IsBlackChecked == 1)
+            If (IsWhiteChecked == 1)
             {
-                List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
+                List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
             }
             Else
             {
@@ -1557,9 +1561,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         }
         Else
         {
-            If (IsWhiteChecked == 1)
+            If (IsBlackChecked == 1)
             {
-                List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
+                List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
             }
             Else
             {
@@ -1579,19 +1583,21 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             BoardAttackedString = BoardAttackedByBlackSnapshot[Depth];
             BoardAttackedString2 = BoardAttackedByBlackPieceSnapshot[Depth];
         }
+        CurrentValue = CheckedState[Depth];
     }
     Else
     {
         BoardAttackedString = "";
         BoardAttackedString2 = "";
+        CurrentValue = "";
     }
     If Quiescence
     {
-        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(CheckedState[Depth])(-1)("")("")(BoardAttackedString)(BoardAttackedString2);
+        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(CurrentValue)(-1)("")("")(BoardAttackedString)(BoardAttackedString2);
     }
     Else
     {
-        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(CheckedState[Depth])((MaxDepth - Depth))(BlackMobBonus[Depth])(WhiteMobBonus[Depth])(BoardAttackedString)(BoardAttackedString2);
+        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(CurrentValue)((MaxDepth - Depth))(BlackMobBonus[Depth])(WhiteMobBonus[Depth])(BoardAttackedString)(BoardAttackedString2);
     }
 }
 
@@ -1823,6 +1829,35 @@ Define CalcBoardAttackedByMove(string Depth) (warp=true)
     Call CalculateMovesImpl(Depth)((1 == 1))((1 == 0));
 }
 
+Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
+{
+    Call TTProbeNode(CurrentBoardHash)((Depth + 1));
+    If ((TTProbeRes == 1) And (Not ((TTProbeCheckedRes == ""))))
+    {
+        If ((Depth % 2) == 1)
+        {
+            IsWhiteChecked = TTProbeCheckedRes;
+        }
+        Else
+        {
+            IsBlackChecked = TTProbeCheckedRes;
+        }
+    }
+    Else
+    {
+        Call CalcBoardAttackedByMove(Depth);
+        Call StoreAttackInfo(Depth)((Depth + 1));
+        If ((Depth % 2) == 1)
+        {
+            Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(IsWhiteChecked)(-1)("")("")(BoardAttackedByBlackSnapshot[(Depth + 1)])(BoardAttackedByBlackPieceSnapshot[(Depth + 1)]);
+        }
+        Else
+        {
+            Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(IsBlackChecked)(-1)("")("")(BoardAttackedByWhiteSnapshot[(Depth + 1)])(BoardAttackedByWhitePieceSnapshot[(Depth + 1)]);
+        }
+    }
+}
+
 Define CalcBoardStats (warp=true)
 {
     BlackKingIdx = "";
@@ -1985,14 +2020,14 @@ Define CalculateMovesForSource(num Depth)(num SourceIdx)(bool CalcAttackState)(b
             {
                 If (Board[(SourceIdx - 1)] == WhitePawn)
                 {
-                    If (IdxToFile[(SourceIdx - 1)] > 1)
+                    If (IdxToFile[SourceIdx] > 1)
                     {
                         Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
                     }
                 }
                 If (Board[(SourceIdx + 1)] == WhitePawn)
                 {
-                    If (IdxToFile[(SourceIdx + 1)] < 8)
+                    If (IdxToFile[SourceIdx] < 8)
                     {
                         Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
                     }
@@ -2038,14 +2073,14 @@ Define CalculateMovesForSource(num Depth)(num SourceIdx)(bool CalcAttackState)(b
                 {
                     If (Board[(SourceIdx - 1)] == BlackPawn)
                     {
-                        If (IdxToFile[(SourceIdx - 1)] > 1)
+                        If (IdxToFile[SourceIdx] > 1)
                         {
                             Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
                         }
                     }
                     If (Board[(SourceIdx + 1)] == BlackPawn)
                     {
-                        If (IdxToFile[(SourceIdx + 1)] < 8)
+                        If (IdxToFile[SourceIdx] < 8)
                         {
                             Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
                         }
@@ -3282,15 +3317,17 @@ Define ExecuteEngineMove (warp=false)
     Call EnterExecution;
     If (IsGameSuspended == 0)
     {
+        Event.Broadcast("OpeningBookHide");
         List.DeleteItem(MinMaxMovesRes, all);
+        BestMove = "";
         If (IsModeJunior == 0)
         {
             Call CalculateOpeningMoves;
+            If (List.Length(MinMaxMovesRes) > 0)
+            {
+                Event.Broadcast("OpeningBookShow");
+            }
             BestMove = MinMaxMovesRes[Operator.Random(1 / List.Length(MinMaxMovesRes))];
-        }
-        Else
-        {
-            BestMove = "";
         }
         Call IsValidMove(BestMove);
         If (ValidMoveRes == 0)
@@ -5887,7 +5924,7 @@ Define IsDrawByMaterial (warp=true)
 
 Define IsDrawByStalemate(string Depth) (warp=true)
 {
-    Call CalcBoardAttackedByMove((Depth + 1));
+    Call CalcBoardAttackedByMoveChecked((Depth + 1));
     If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
     {
         IsDrawRes = 0;
@@ -5901,7 +5938,7 @@ Define IsDrawByStalemate(string Depth) (warp=true)
         If (IsDrawRes == 1)
         {
             Call ApplyMove(Depth);
-            Call CalcBoardAttackedByMove((Depth + 1));
+            Call CalcBoardAttackedByMoveChecked((Depth + 1));
             If ((((Depth % 2) == 1) And (IsBlackChecked == 0)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 0)))
             {
                 IsDrawRes = 0;
@@ -6224,47 +6261,24 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
                 {
                     Call Profile_IncCounter((210 + Depth));
                 }
-                If ((Not ((TTProbeBoardAttackedByOpp == ""))) And (Not ((TTProbeBoardAttackedByOppPiece == ""))))
+                If (((Not ((TTProbeBoardAttackedByOpp == ""))) And (Not ((TTProbeBoardAttackedByOppPiece == "")))) And (Not ((TTProbeCheckedRes == ""))))
                 {
+                    List.ReplaceItem(CheckedState, Depth, TTProbeCheckedRes);
                     If ((Depth % 2) == 1)
                     {
                         List.ReplaceItem(BoardAttackedByWhiteSnapshot, Depth, TTProbeBoardAttackedByOpp);
                         List.ReplaceItem(BoardAttackedByWhitePieceSnapshot, Depth, TTProbeBoardAttackedByOppPiece);
-                        If (1 == 0)
-                        {
-                            Idx = 1;
-                            Repeat (64)
-                            {
-                                List.ReplaceItem(BoardAttackedByWhite, Idx, Operator.LetterOf(TTProbeBoardAttackedByOpp, Idx));
-                                List.ReplaceItem(BoardAttackedByWhitePiece, Idx, Operator.LetterOf(TTProbeBoardAttackedByOppPiece, Idx));
-                                Idx += 1;
-                            }
-                        }
                     }
                     Else
                     {
                         List.ReplaceItem(BoardAttackedByBlackSnapshot, Depth, TTProbeBoardAttackedByOpp);
                         List.ReplaceItem(BoardAttackedByBlackPieceSnapshot, Depth, TTProbeBoardAttackedByOppPiece);
-                        If (1 == 0)
-                        {
-                            Idx = 1;
-                            Repeat (64)
-                            {
-                                List.ReplaceItem(BoardAttackedByBlack, Idx, Operator.LetterOf(TTProbeBoardAttackedByOpp, Idx));
-                                List.ReplaceItem(BoardAttackedByBlackPiece, Idx, Operator.LetterOf(TTProbeBoardAttackedByOppPiece, Idx));
-                                Idx += 1;
-                            }
-                        }
                     }
                     List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
                 }
                 If (Variable.Length(TTProbeBestMoveRes) == 6)
                 {
                     List.ReplaceItem(PawnPromotionFile, Depth, IdxToFile[(floor(TTProbeBestMoveRes) % 100)]);
-                }
-                If (Not ((TTProbeCheckedRes == "")))
-                {
-                    List.ReplaceItem(CheckedState, Depth, TTProbeCheckedRes);
                 }
                 If (Not ((TTProbeBlackMobRes == "")))
                 {
@@ -6299,7 +6313,7 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
             Call CalcBoardAttackedByMove((Depth + 2));
             Call StoreAttackInfo((Depth + 2))(Depth);
         }
-        If ((Not (Quiescence)) Or (((Not (PrevQuiescence)) And (IsScratch3 == 0)) And (1 == 0)))
+        If (Not (Quiescence))
         {
             If (BoardAttackedCalculated[Depth] == 0)
             {
@@ -6377,6 +6391,7 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
         Call GetCurrentMove(Depth);
         BoardAttackedString = "";
         BoardAttackedString2 = "";
+        CurrentValue = "";
         If (BoardAttackedCalculated[Depth] == 1)
         {
             If ((Depth % 2) == 1)
@@ -6389,14 +6404,15 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
                 BoardAttackedString = BoardAttackedByBlackSnapshot[Depth];
                 BoardAttackedString2 = BoardAttackedByBlackPieceSnapshot[Depth];
             }
+            CurrentValue = CheckedState[Depth];
         }
         If Quiescence
         {
-            Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")("")(-1)("")("")(BoardAttackedString)(BoardAttackedString2);
+            Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")(CurrentValue)(-1)("")("")(BoardAttackedString)(BoardAttackedString2);
         }
         Else
         {
-            Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")("")(0)("")("")(BoardAttackedString)(BoardAttackedString2);
+            Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")(CurrentValue)(0)(BlackMobBonus[Depth])(WhiteMobBonus[Depth])(BoardAttackedString)(BoardAttackedString2);
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 3);
@@ -7485,6 +7501,10 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
                 List.ReplaceItem(TTNodeBoardAttackedByOpp, HashBucket, BoardAttackedByOpp);
                 List.ReplaceItem(TTNodeBoardAttackedByOppPiece, HashBucket, BoardAttackedByOppPiece);
             }
+            If ((Not ((Checked == ""))) And (TTNodeChecked[HashBucket] == ""))
+            {
+                List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
+            }
             Stop(this script);
         }
         If (Not ((BestMove == "")))
@@ -7496,21 +7516,37 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
             List.ReplaceItem(TTNodeBoardAttackedByOpp, HashBucket, BoardAttackedByOpp);
             List.ReplaceItem(TTNodeBoardAttackedByOppPiece, HashBucket, BoardAttackedByOppPiece);
         }
+        If (Not ((Checked == "")))
+        {
+            List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
+        }
+        List.ReplaceItem(TTNodeDepth, HashBucket, Depth);
+        If (Not ((Score == "")))
+        {
+            List.ReplaceItem(TTNodeType, HashBucket, Type);
+            List.ReplaceItem(TTNodeScore, HashBucket, Score);
+            List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
+        }
+        If ((Not ((BlackMob == ""))) And (Not ((WhiteMob == ""))))
+        {
+            List.ReplaceItem(TTNodeBlackMobility, HashBucket, BlackMob);
+            List.ReplaceItem(TTNodeWhiteMobility, HashBucket, WhiteMob);
+        }
     }
     Else
     {
         List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
         List.ReplaceItem(TTNodeBoardAttackedByOpp, HashBucket, BoardAttackedByOpp);
         List.ReplaceItem(TTNodeBoardAttackedByOppPiece, HashBucket, BoardAttackedByOppPiece);
+        List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
+        List.ReplaceItem(TTNodeHash, HashBucket, BoardHash);
+        List.ReplaceItem(TTNodeDepth, HashBucket, Depth);
+        List.ReplaceItem(TTNodeType, HashBucket, Type);
+        List.ReplaceItem(TTNodeBlackMobility, HashBucket, BlackMob);
+        List.ReplaceItem(TTNodeWhiteMobility, HashBucket, WhiteMob);
+        List.ReplaceItem(TTNodeScore, HashBucket, Score);
+        List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
     }
-    List.ReplaceItem(TTNodeHash, HashBucket, BoardHash);
-    List.ReplaceItem(TTNodeDepth, HashBucket, Depth);
-    List.ReplaceItem(TTNodeType, HashBucket, Type);
-    List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
-    List.ReplaceItem(TTNodeBlackMobility, HashBucket, BlackMob);
-    List.ReplaceItem(TTNodeWhiteMobility, HashBucket, WhiteMob);
-    List.ReplaceItem(TTNodeScore, HashBucket, Score);
-    List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
 }
 
 Define UndoMove (warp=false)
