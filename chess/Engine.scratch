@@ -96,7 +96,7 @@ WhenKeyPressed(j)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 3.37 (14.11.2021) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 3.42 (25.11.2021) by ArnoHu")(5);
 }
 
 
@@ -309,6 +309,10 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
     IdxOuter = MoveLookupLineIndexOffset[SourceIdx];
     Count = 1;
     InvIdxOuter = 8;
+    If CalcAttackState
+    {
+        List.DeleteAll(TempList);
+    }
     Repeat Until (Count > 32)
     {
         If LineMoveTypeStraight
@@ -323,14 +327,29 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
         {
             Count += InvIdxOuter;
             InvIdxOuter = 8;
+            If CalcAttackState
+            {
+                List.DeleteAll(TempList);
+            }
         }
         Else
         {
             If (Board[TargetIdxOuter] == 0)
             {
-                If (Not (CapturesOnly))
+                If CapturesOnly
+                {
+                    If List.ContainsItem(KingAttackedLines, TargetIdxOuter)
+                    {
+                        Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly);
+                    }
+                }
+                Else
                 {
                     Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly);
+                    If CalcAttackState
+                    {
+                        List.Add(TempList, TargetIdxOuter);
+                    }
                 }
                 Count += 1;
                 InvIdxOuter += -1;
@@ -357,6 +376,15 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
                                 IsXRay = 1;
                             }
                         }
+                        If (Board[TargetIdxOuter] == WhiteKing)
+                        {
+                            Idx = 1;
+                            Repeat (List.Length(TempList))
+                            {
+                                List.Add(KingAttackedLines, TempList[Idx]);
+                                Idx += 1;
+                            }
+                        }
                     }
                     Else
                     {
@@ -374,6 +402,15 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
                                 IsXRay = 1;
                             }
                         }
+                        If (Board[TargetIdxOuter] == BlackKing)
+                        {
+                            Idx = 1;
+                            Repeat (List.Length(TempList))
+                            {
+                                List.Add(KingAttackedLines, TempList[Idx]);
+                                Idx += 1;
+                            }
+                        }
                     }
                     If (IsXRay == 1)
                     {
@@ -385,6 +422,7 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
                         Count += InvIdxOuter;
                         InvIdxOuter = 8;
                     }
+                    List.DeleteAll(TempList);
                 }
                 Else
                 {
@@ -440,6 +478,23 @@ Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool 
                 If (Not (CapturesOnly))
                 {
                     Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
+                }
+                Else
+                {
+                    If LookupMoveTypeKing
+                    {
+                        If (CheckedState[Depth] == 1)
+                        {
+                            Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
+                        }
+                    }
+                    Else
+                    {
+                        If List.ContainsItem(KingAttackedLines, TargetIdxOuter)
+                        {
+                            Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
+                        }
+                    }
                 }
             }
             Else
@@ -884,6 +939,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     List.ReplaceItem(MinMaxResults, Depth, "");
     List.ReplaceItem(BestMoves, Depth, "");
     List.ReplaceItem(PawnPromotionFile, Depth, "");
+    If Quiescence
+    {
+        List.ReplaceItem(Quiescence, Depth, 1);
+    }
+    Else
+    {
+        List.ReplaceItem(Quiescence, Depth, 0);
+    }
     If (IsMinMaxTimeout == 1)
     {
         Stop(this script);
@@ -907,7 +970,21 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If Quiescence
     {
         Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
-        List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
+        If (PutsInCheck[(Depth - 1)] == 0)
+        {
+            List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
+        }
+        Else
+        {
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
+            }
+            Else
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
+            }
+        }
     }
     Else
     {
@@ -918,7 +995,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
         Stop(this script);
     }
-    If Quiescence
+    If (Quiescence And (PutsInCheck[(Depth - 1)] == 0))
     {
         If ((Depth % 2) == 1)
         {
@@ -949,6 +1026,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
     List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
+    List.ReplaceItem(PutsInCheck, Depth, 0);
     If (Depth == 1)
     {
         Call InitAlphaBeta(Depth)(MaxDepth)(InitialDeepening);
@@ -1108,7 +1186,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If ((Depth > 1) And (Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))))
     {
         Call TTProbeNode(CurrentBoardHash)(Depth);
-        If (((TTProbeRes == 1) And (((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeNodeScoreRes == 0)))) And (Not ((TTProbeNodeScoreRes == 0))))) And ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And ((Not ((TTProbeHorizonRes < (MaxDepth - Depth)))) Or (abs(TTProbeNodeScoreRes) > (BlackKing / 2)))) Or (Quiescence And (TTProbeHorizonRes == -1))))
+        If (((TTProbeRes == 1) And (((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeNodeScoreRes == 0)))) And (Not ((abs(TTProbeNodeScoreRes) > (BlackKing / 2)))))) And ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1))))
         {
             If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
             {
@@ -1230,7 +1308,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             List.ReplaceItem(PutsInCheck, Depth, 0);
             List.ReplaceItem(PutsInFork, Depth, 0);
             List.ReplaceItem(PlyExtension, Depth, 0);
-            If ((Not (Quiescence)) And (MaxDepth < 6))
+            If (1 == 1)
             {
                 If ((Depth % 2) == 1)
                 {
@@ -1265,61 +1343,58 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     {
                         Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(0)("")("")("")("");
                     }
-                    If (PutsInCheck[Depth] == 0)
-                    {
-                        Call ClearMoveList((Depth + 2));
-                        Call CalculateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
-                        Count = 0;
-                        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                        Repeat (MovesCount[(Depth + 2)])
-                        {
-                            Call GetCurrentMove((Depth + 2));
-                            If (Board[floor((CurrentMove % 100))] > 0)
-                            {
-                                If (abs(Board[floor((CurrentMove / 100))]) < abs(Board[floor((CurrentMove % 100))]))
-                                {
-                                    Count += 1;
-                                }
-                            }
-                            List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
-                        }
-                        If (Count > 1)
-                        {
-                            List.ReplaceItem(PutsInFork, Depth, 1);
-                        }
-                    }
                 }
-                If ((MaxDepth - Depth) == 1)
+                If ((Not (Quiescence)) And (Depth < 5))
                 {
-                    If ((Depth == 1) Or (PlyExtension[(Depth - 1)] == 0))
+                    Call ClearMoveList((Depth + 2));
+                    Call CalculateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
+                    Count = 0;
+                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                    Repeat (MovesCount[(Depth + 2)])
                     {
-                        If ((PutsInCheck[Depth] == 1) Or (PutsInFork[Depth] == 1))
+                        Call GetCurrentMove((Depth + 2));
+                        If (Board[floor((CurrentMove % 100))] > 0)
+                        {
+                            If (abs(Board[floor((CurrentMove / 100))]) < abs(Board[floor((CurrentMove % 100))]))
+                            {
+                                Count += 1;
+                            }
+                        }
+                        List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                    }
+                    If (Count > 1)
+                    {
+                        List.ReplaceItem(PutsInFork, Depth, 1);
+                        If ((MaxDepth - Depth) == 1)
                         {
                             List.ReplaceItem(PlyExtension, Depth, 1);
                         }
-                        Else
+                    }
+                    Else
+                    {
+                        Count = 0;
+                        Idx = (Depth - 1);
+                        Repeat Until (Idx < 1)
                         {
-                            Count = 0;
-                            Idx = (Depth - 1);
+                            If (Not ((TargetPieces[Idx] == 0)))
+                            {
+                                Count += 1;
+                            }
+                            Idx += -2;
+                        }
+                        If (Count > 0)
+                        {
+                            Idx = (Depth - 2);
                             Repeat Until (Idx < 1)
                             {
-                                If (Not ((TargetPieces[Idx] == 0)))
+                                If (PutsInFork[Idx] == 1)
                                 {
-                                    Count += 1;
-                                }
-                                Idx += -2;
-                            }
-                            If (Count > 0)
-                            {
-                                Idx = (Depth - 2);
-                                Repeat Until (Idx < 1)
-                                {
-                                    If (PutsInFork[Idx] == 1)
+                                    If ((MaxDepth - Depth) == 1)
                                     {
                                         List.ReplaceItem(PlyExtension, Depth, 1);
                                     }
-                                    Idx += -2;
                                 }
+                                Idx += -2;
                             }
                         }
                     }
@@ -2090,12 +2165,15 @@ Define CalculateMovesForSource(num Depth)(num SourceIdx)(bool CalcAttackState)(b
         }
         If (Not (CalcAttackState))
         {
-            If ((Not (CapturesOnly)) Or (IdxToRank[SourceIdx] == 7))
+            If (Board[(SourceIdx + 8)] == 0)
             {
-                If (Board[(SourceIdx + 8)] == 0)
+                If ((Not (CapturesOnly)) Or ((IdxToRank[SourceIdx] == 7) Or List.ContainsItem(KingAttackedLines, (SourceIdx + 8))))
                 {
                     Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
-                    If ((IdxToRank[SourceIdx] == 2) And (Board[(SourceIdx + 16)] == 0))
+                }
+                If ((IdxToRank[SourceIdx] == 2) And (Board[(SourceIdx + 16)] == 0))
+                {
+                    If ((Not (CapturesOnly)) Or List.ContainsItem(KingAttackedLines, (SourceIdx + 16)))
                     {
                         Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
                     }
@@ -2143,12 +2221,15 @@ Define CalculateMovesForSource(num Depth)(num SourceIdx)(bool CalcAttackState)(b
             }
             If (Not (CalcAttackState))
             {
-                If ((Not (CapturesOnly)) Or (IdxToRank[SourceIdx] == 2))
+                If (Board[(SourceIdx - 8)] == 0)
                 {
-                    If (Board[(SourceIdx - 8)] == 0)
+                    If ((Not (CapturesOnly)) Or ((IdxToRank[SourceIdx] == 2) Or List.ContainsItem(KingAttackedLines, (SourceIdx - 8))))
                     {
                         Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
-                        If ((IdxToRank[SourceIdx] == 7) And (Board[(SourceIdx - 16)] == 0))
+                    }
+                    If ((IdxToRank[SourceIdx] == 7) And (Board[(SourceIdx - 16)] == 0))
+                    {
+                        If ((Not (CapturesOnly)) Or List.ContainsItem(KingAttackedLines, (SourceIdx - 16)))
                         {
                             Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
                         }
@@ -2614,6 +2695,7 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
         }
         IsBlackChecked = 0;
     }
+    List.DeleteAll(KingAttackedLines);
 }
 
 Define ClearLog (warp=true)
@@ -3455,10 +3537,10 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
                                 EvalExtendedResult3 += -10;
                                 If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], Idx) > 1)
                                 {
-                                    EvalExtendedResult3 += -50;
+                                    EvalExtendedResult3 += -40;
                                     If (Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], Idx) < PieceIdxLookup[BlackQueen])
                                     {
-                                        EvalExtendedResult3 += 30;
+                                        EvalExtendedResult3 += 25;
                                     }
                                 }
                             }
@@ -3491,10 +3573,10 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
                                 EvalExtendedResult3 += 10;
                                 If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], Idx) > 1)
                                 {
-                                    EvalExtendedResult3 += 50;
+                                    EvalExtendedResult3 += 40;
                                     If (Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], Idx) < PieceIdxLookup[BlackQueen])
                                     {
-                                        EvalExtendedResult3 += -30;
+                                        EvalExtendedResult3 += -25;
                                     }
                                 }
                             }
@@ -5368,6 +5450,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardAttackedByBlackSnapshot, all);
     List.DeleteItem(BoardAttackedByWhitePieceSnapshot, all);
     List.DeleteItem(BoardAttackedByWhiteSnapshot, all);
+    List.DeleteItem(Quiescence, all);
     Repeat (30)
     {
         List.Add(Alphas, "");
@@ -5406,6 +5489,7 @@ Define InitBoard (warp=true)
         List.Add(BoardAttackedByBlackSnapshot, "");
         List.Add(BoardAttackedByWhitePieceSnapshot, "");
         List.Add(BoardAttackedByWhiteSnapshot, "");
+        List.Add(Quiescence, "");
     }
     List.DeleteItem(BlackPawnCount, all);
     List.DeleteItem(WhitePawnCount, all);
@@ -6459,9 +6543,9 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
             Call CalcBoardAttackedByMove((Depth + 2));
             Call StoreAttackInfo((Depth + 2))(Depth);
         }
-        If ((Not (Quiescence)) Or (Not (PrevQuiescence)))
+        If ((Not (Quiescence)) Or (Quiescence And ((PutsInCheck[(Depth - 1)] == 1) Or (CheckedState[Depth] == 1))))
         {
-            If (BoardAttackedCalculated[Depth] == 0)
+            If ((BoardAttackedCalculated[Depth] == 0) Or Quiescence)
             {
                 Call CalcBoardAttackedByMove((Depth + 1));
                 Call StoreAttackInfo((Depth + 1))(Depth);
