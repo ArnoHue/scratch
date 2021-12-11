@@ -96,7 +96,7 @@ WhenKeyPressed(j)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 3.42 (25.11.2021) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 3.45 (11.12.2021) by ArnoHu")(5);
 }
 
 
@@ -939,14 +939,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     List.ReplaceItem(MinMaxResults, Depth, "");
     List.ReplaceItem(BestMoves, Depth, "");
     List.ReplaceItem(PawnPromotionFile, Depth, "");
-    If Quiescence
-    {
-        List.ReplaceItem(Quiescence, Depth, 1);
-    }
-    Else
-    {
-        List.ReplaceItem(Quiescence, Depth, 0);
-    }
     If (IsMinMaxTimeout == 1)
     {
         Stop(this script);
@@ -964,6 +956,29 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
                 Stop(this script);
+            }
+        }
+    }
+    If ((MinDepth == 1) And (Depth > 1))
+    {
+        If ((Depth == 2) Or (CheckedState[(Depth - 1)] == 1))
+        {
+            Call CalcBoardAttackedByMoveChecked(Depth);
+            If ((Depth % 2) == 1)
+            {
+                If (IsWhiteChecked == 1)
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
+                    Stop(this script);
+                }
+            }
+            Else
+            {
+                If (IsBlackChecked == 1)
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
+                    Stop(this script);
+                }
             }
         }
     }
@@ -1060,26 +1075,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 List.ReplaceItem(MinMaxResults, Depth, 0);
                 Stop(this script);
-            }
-        }
-        If ((Not (PrevQuiescence)) And ((Depth == 2) Or (CheckedState[(Depth - 1)] == 1)))
-        {
-            Call CalcBoardAttackedByMoveChecked(Depth);
-            If ((Depth % 2) == 1)
-            {
-                If (IsWhiteChecked == 1)
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
-                    Stop(this script);
-                }
-            }
-            Else
-            {
-                If (IsBlackChecked == 1)
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
-                    Stop(this script);
-                }
             }
         }
         If (((Not (PrevQuiescence)) And ((Depth == 2) Or (Depth == 3))) And (IsEndgame2 == 1))
@@ -1186,21 +1181,19 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If ((Depth > 1) And (Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))))
     {
         Call TTProbeNode(CurrentBoardHash)(Depth);
-        If (((TTProbeRes == 1) And (((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeNodeScoreRes == 0)))) And (Not ((abs(TTProbeNodeScoreRes) > (BlackKing / 2)))))) And ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1))))
+        If (TTProbeRes == 1)
         {
-            If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
+            If ((((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeNodeScoreRes == 0)))) And (Not ((abs(TTProbeNodeScoreRes) > (BlackKing / 2))))) And ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1))))
             {
-                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                If (Depth == 1)
+                If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
                 {
-                    List.DeleteAll(MinMaxMovesRes);
-                    List.Add(MinMaxMovesRes, TTProbeBestMoveRes);
+                    List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                    If (IsProfilerEnabled > 0)
+                    {
+                        Call Profile_IncCounter((180 + Depth));
+                    }
+                    Stop(this script);
                 }
-                If (IsProfilerEnabled > 0)
-                {
-                    Call Profile_IncCounter((180 + Depth));
-                }
-                Stop(this script);
             }
         }
     }
@@ -1274,7 +1267,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     {
         If (IsMinMaxTimeout == 0)
         {
-            If (Depth < 4)
+            If (Depth < 5)
             {
                 If (((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > ThinkTimeLimitMinMax)
                 {
@@ -1308,7 +1301,12 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             List.ReplaceItem(PutsInCheck, Depth, 0);
             List.ReplaceItem(PutsInFork, Depth, 0);
             List.ReplaceItem(PlyExtension, Depth, 0);
-            If (1 == 1)
+            Call TTProbeNode(CurrentBoardHash)((Depth + 1));
+            If ((TTProbeRes == 1) And (Not ((TTProbeCheckedRes == ""))))
+            {
+                List.ReplaceItem(PutsInCheck, Depth, TTProbeCheckedRes);
+            }
+            Else
             {
                 If ((Depth % 2) == 1)
                 {
@@ -1341,61 +1339,61 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     }
                     If (PutsInCheck[Depth] == 1)
                     {
-                        Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(0)("")("")("")("");
+                        Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("");
                     }
                 }
-                If ((Not (Quiescence)) And (Depth < 5))
+            }
+            If ((Not (Quiescence)) And (Depth < 5))
+            {
+                Call ClearMoveList((Depth + 2));
+                Call CalculateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
+                Count = 0;
+                List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                Repeat (MovesCount[(Depth + 2)])
                 {
-                    Call ClearMoveList((Depth + 2));
-                    Call CalculateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
+                    Call GetCurrentMove((Depth + 2));
+                    If (Board[floor((CurrentMove % 100))] > 0)
+                    {
+                        If (abs(Board[floor((CurrentMove / 100))]) < abs(Board[floor((CurrentMove % 100))]))
+                        {
+                            Count += 1;
+                        }
+                    }
+                    List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                }
+                If (Count > 1)
+                {
+                    List.ReplaceItem(PutsInFork, Depth, 1);
+                    If ((MaxDepth - Depth) == 1)
+                    {
+                        List.ReplaceItem(PlyExtension, Depth, 1);
+                    }
+                }
+                Else
+                {
                     Count = 0;
-                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                    Repeat (MovesCount[(Depth + 2)])
+                    Idx = (Depth - 1);
+                    Repeat Until (Idx < 1)
                     {
-                        Call GetCurrentMove((Depth + 2));
-                        If (Board[floor((CurrentMove % 100))] > 0)
+                        If (Not ((TargetPieces[Idx] == 0)))
                         {
-                            If (abs(Board[floor((CurrentMove / 100))]) < abs(Board[floor((CurrentMove % 100))]))
-                            {
-                                Count += 1;
-                            }
+                            Count += 1;
                         }
-                        List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                        Idx += -2;
                     }
-                    If (Count > 1)
+                    If (Count > 0)
                     {
-                        List.ReplaceItem(PutsInFork, Depth, 1);
-                        If ((MaxDepth - Depth) == 1)
-                        {
-                            List.ReplaceItem(PlyExtension, Depth, 1);
-                        }
-                    }
-                    Else
-                    {
-                        Count = 0;
-                        Idx = (Depth - 1);
+                        Idx = (Depth - 2);
                         Repeat Until (Idx < 1)
                         {
-                            If (Not ((TargetPieces[Idx] == 0)))
+                            If (PutsInFork[Idx] == 1)
                             {
-                                Count += 1;
+                                If ((MaxDepth - Depth) == 1)
+                                {
+                                    List.ReplaceItem(PlyExtension, Depth, 1);
+                                }
                             }
                             Idx += -2;
-                        }
-                        If (Count > 0)
-                        {
-                            Idx = (Depth - 2);
-                            Repeat Until (Idx < 1)
-                            {
-                                If (PutsInFork[Idx] == 1)
-                                {
-                                    If ((MaxDepth - Depth) == 1)
-                                    {
-                                        List.ReplaceItem(PlyExtension, Depth, 1);
-                                    }
-                                }
-                                Idx += -2;
-                            }
                         }
                     }
                 }
@@ -6491,20 +6489,23 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
                 {
                     Call Profile_IncCounter((210 + Depth));
                 }
-                If (((Not ((TTProbeBoardAttackedByOpp == ""))) And (Not ((TTProbeBoardAttackedByOppPiece == "")))) And (Not ((TTProbeCheckedRes == ""))))
+                If (Not ((TTProbeCheckedRes == "")))
                 {
                     List.ReplaceItem(CheckedState, Depth, TTProbeCheckedRes);
-                    If ((Depth % 2) == 1)
+                    If (((Not ((TTProbeBoardAttackedByOpp == ""))) And (Not ((TTProbeBoardAttackedByOppPiece == "")))) And (Not ((TTProbeCheckedRes == ""))))
                     {
-                        List.ReplaceItem(BoardAttackedByWhiteSnapshot, Depth, TTProbeBoardAttackedByOpp);
-                        List.ReplaceItem(BoardAttackedByWhitePieceSnapshot, Depth, TTProbeBoardAttackedByOppPiece);
+                        If ((Depth % 2) == 1)
+                        {
+                            List.ReplaceItem(BoardAttackedByWhiteSnapshot, Depth, TTProbeBoardAttackedByOpp);
+                            List.ReplaceItem(BoardAttackedByWhitePieceSnapshot, Depth, TTProbeBoardAttackedByOppPiece);
+                        }
+                        Else
+                        {
+                            List.ReplaceItem(BoardAttackedByBlackSnapshot, Depth, TTProbeBoardAttackedByOpp);
+                            List.ReplaceItem(BoardAttackedByBlackPieceSnapshot, Depth, TTProbeBoardAttackedByOppPiece);
+                        }
+                        List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
                     }
-                    Else
-                    {
-                        List.ReplaceItem(BoardAttackedByBlackSnapshot, Depth, TTProbeBoardAttackedByOpp);
-                        List.ReplaceItem(BoardAttackedByBlackPieceSnapshot, Depth, TTProbeBoardAttackedByOppPiece);
-                    }
-                    List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
                 }
                 If (Variable.Length(TTProbeBestMoveRes) == 6)
                 {
