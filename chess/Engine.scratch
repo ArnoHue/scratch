@@ -96,7 +96,7 @@ WhenKeyPressed(j)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 3.49 (03.01.2022) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 3.52 (04.01.2022) by ArnoHu")(5);
 }
 
 
@@ -342,6 +342,20 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
                     {
                         Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly);
                     }
+                    Else
+                    {
+                        Call IsPotentialPutsInCheck(SourcePieceOuter)(TargetIdxOuter);
+                        If (IsPotentialPutsInCheckRes == 1)
+                        {
+                            If ((IsEndgame == 1) Or (((IsWhiteCastlingPossible == 0) And (SourcePieceOuter > 0)) Or ((IsBlackCastlingPossible == 0) And (SourcePieceOuter < 0))))
+                            {
+                                If ((Quiescence[(Depth - 1)] == 0) Or ((IsScratch3 == 0) And (Quiescence[(Depth - 2)] == 0)))
+                                {
+                                    Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly);
+                                }
+                            }
+                        }
+                    }
                 }
                 Else
                 {
@@ -506,6 +520,23 @@ Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool 
                         If (Operator.LetterOf(CheckedStateAttackLines[Depth], TargetIdxOuter) == 1)
                         {
                             Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
+                        }
+                        Else
+                        {
+                            If (IsEndgame == 1)
+                            {
+                                Call IsPotentialPutsInCheck(SourcePieceOuter)(TargetIdxOuter);
+                                If (IsPotentialPutsInCheckRes == 1)
+                                {
+                                    If ((IsEndgame == 1) Or (((IsWhiteCastlingPossible == 0) And (SourcePieceOuter > 0)) Or ((IsBlackCastlingPossible == 0) And (SourcePieceOuter < 0))))
+                                    {
+                                        If ((Quiescence[(Depth - 1)] == 0) Or ((IsScratch3 == 0) And (Quiescence[(Depth - 2)] == 0)))
+                                        {
+                                            Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -949,6 +980,14 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
 
 Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress) (warp=true)
 {
+    If Quiescence
+    {
+        List.ReplaceItem(Quiescence, Depth, 1);
+    }
+    Else
+    {
+        List.ReplaceItem(Quiescence, Depth, 0);
+    }
     List.ReplaceItem(MinMaxResults, Depth, "");
     List.ReplaceItem(BestMoves, Depth, "");
     List.ReplaceItem(PawnPromotionFile, Depth, "");
@@ -1099,17 +1138,17 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 Stop(this script);
             }
         }
-        If ((Not (PrevQuiescence)) And (IsInNullMove == 0))
+        If ((Depth > 1) And (IsInNullMove == 0))
         {
             Count = 1;
-            Idx = (List.Length(PreviousBoardHash) - 1);
-            Repeat Until ((Idx < 1) Or (Count > 1))
+            Idx = (Depth - 1);
+            Repeat Until (Idx < 1)
             {
                 If (CurrentBoardHash == PreviousBoardHash[Idx])
                 {
                     Count += 1;
                 }
-                Idx += -2;
+                Idx += -1;
             }
             Idx = List.Length(BoardHistoryHash);
             Repeat Until (Idx < 1)
@@ -1322,44 +1361,47 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
             Else
             {
-                SourceIdx = floor((AppliedMove[Depth] % 100));
-                If ((Depth % 2) == 1)
+                If (Depth < 24)
                 {
-                    If (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[SourceIdx]] * 10000) + ((SourceIdx * 100) + WhiteKingIdx))] == "")))
+                    SourceIdx = floor((AppliedMove[Depth] % 100));
+                    If ((Depth % 2) == 1)
                     {
-                        IsWhiteChecked = 0;
-                        Call CalculateMovesForSourceEx((Depth + 2))(SourceIdx)((1 == 1))((1 == 0));
-                        List.ReplaceItem(PutsInCheck, Depth, IsWhiteChecked);
-                    }
-                }
-                Else
-                {
-                    If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Board[SourceIdx])] * 10000) + ((SourceIdx * 100) + BlackKingIdx))] == "")))
-                    {
-                        IsBlackChecked = 0;
-                        Call CalculateMovesForSourceEx((Depth + 2))(SourceIdx)((1 == 1))((1 == 0));
-                        List.ReplaceItem(PutsInCheck, Depth, IsBlackChecked);
-                    }
-                }
-                If (PutsInCheck[Depth] == 1)
-                {
-                    Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("")("");
-                }
-                Else
-                {
-                    If (((Depth < 3) And (IsScratch3 == 1)) Or ((Depth < 4) And (IsScratch3 == 0)))
-                    {
-                        If ((Depth % 2) == 1)
+                        If (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[SourceIdx]] * 10000) + ((SourceIdx * 100) + WhiteKingIdx))] == "")))
                         {
                             IsWhiteChecked = 0;
-                            Call CalcBoardAttackedByMoveChecked((Depth + 2));
+                            Call CalculateMovesForSourceEx((Depth + 2))(SourceIdx)((1 == 1))((1 == 0));
                             List.ReplaceItem(PutsInCheck, Depth, IsWhiteChecked);
                         }
-                        Else
+                    }
+                    Else
+                    {
+                        If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Board[SourceIdx])] * 10000) + ((SourceIdx * 100) + BlackKingIdx))] == "")))
                         {
                             IsBlackChecked = 0;
-                            Call CalcBoardAttackedByMoveChecked((Depth + 2));
+                            Call CalculateMovesForSourceEx((Depth + 2))(SourceIdx)((1 == 1))((1 == 0));
                             List.ReplaceItem(PutsInCheck, Depth, IsBlackChecked);
+                        }
+                    }
+                    If (PutsInCheck[Depth] == 1)
+                    {
+                        Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("")("");
+                    }
+                    Else
+                    {
+                        If (((Depth < 3) And (IsScratch3 == 1)) Or ((Depth < 4) And (IsScratch3 == 0)))
+                        {
+                            If ((Depth % 2) == 1)
+                            {
+                                IsWhiteChecked = 0;
+                                Call CalcBoardAttackedByMoveChecked((Depth + 2));
+                                List.ReplaceItem(PutsInCheck, Depth, IsWhiteChecked);
+                            }
+                            Else
+                            {
+                                IsBlackChecked = 0;
+                                Call CalcBoardAttackedByMoveChecked((Depth + 2));
+                                List.ReplaceItem(PutsInCheck, Depth, IsBlackChecked);
+                            }
                         }
                     }
                 }
@@ -1420,7 +1462,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
             }
             IsFutile = 0;
-            If (Quiescence Or (((((Depth > 2) And ((MaxDepth - Depth) < 3)) And ((MovesIdx[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1))) And ((TargetPieces[Depth] == Empty) And (PromotionPieces[Depth] == Empty))) And ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0))))
+            If ((Quiescence Or ((((Depth > 2) And ((MaxDepth - Depth) < 3)) And ((MovesIdx[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1))) And ((TargetPieces[Depth] == Empty) And (PromotionPieces[Depth] == Empty)))) And ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)))
             {
                 If Quiescence
                 {
@@ -1723,6 +1765,18 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 List.ReplaceItem(ScoreTypes, Depth, "B");
             }
+        }
+    }
+    If (Quiescence And ((MovesCount[Depth] == 0) And (CheckedState[Depth] == 1)))
+    {
+        List.ReplaceItem(ScoreTypes, Depth, "E");
+        If ((Depth % 2) == 1)
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
+        }
+        Else
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
         }
     }
     If ((Not (Quiescence)) And (MovesCount[Depth] == 0))
@@ -6219,6 +6273,25 @@ Define IsLowerCase(string Char) (warp=true)
     Else
     {
         IsLowerCaseRes = 1;
+    }
+}
+
+Define IsPotentialPutsInCheck(string Piece)(string SourceIdx) (warp=true)
+{
+    IsPotentialPutsInCheckRes = 0;
+    If (Piece > 0)
+    {
+        If (Not ((MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((SourceIdx * 100) + WhiteKingIdx))] == "")))
+        {
+            IsPotentialPutsInCheckRes = 1;
+        }
+    }
+    Else
+    {
+        If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((SourceIdx * 100) + BlackKingIdx))] == "")))
+        {
+            IsPotentialPutsInCheckRes = 1;
+        }
     }
 }
 
