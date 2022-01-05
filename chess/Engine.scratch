@@ -96,7 +96,7 @@ WhenKeyPressed(j)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 3.52 (04.01.2022) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 3.53 (05.01.2022) by ArnoHu")(5);
 }
 
 
@@ -109,25 +109,28 @@ WhenBroadcastReceived(evaluationvaluechangedinternal)
 
 WhenBroadcastReceived(export)
 {
-    Call ExportBoardFEN;
-    List.DeleteItem(ExportData, all);
-    List.Add(ExportData, "DATA EXPORT");
-    List.Add(ExportData, "Select data row by triple-clicking. You can then copy to");
-    List.Add(ExportData, "clipboard by right-click / Copy or by pressing Ctrl-C.");
-    List.Add(ExportData, "");
-    List.Add(ExportData, "PGN (Game Protocol):");
-    Call ExportMovesPGN;
-    List.Add(ExportData, ExportMovesPGN);
-    List.Add(ExportData, "");
-    List.Add(ExportData, "FEN (Current Board):");
-    List.Add(ExportData, ExportDataFEN);
-    List.Add(ExportData, "");
-    List.Add(ExportData, "Board Analysis Link (lichess.org)");
-    List.Add(ExportData, ExportDataFENLichess);
-    List.Show(ExportData);
-    If (1 == 0)
+    If (IsExecutionRunning == 0)
     {
-        Call SayAsync("You can copy FEN data, lichess.org URL or PGN data to your clipboard via Ctrl-C. Select data by triple-click.")(5);
+        Call ExportBoardFEN;
+        List.DeleteItem(ExportData, all);
+        List.Add(ExportData, "DATA EXPORT");
+        List.Add(ExportData, "Select data row by triple-clicking. You can then copy to");
+        List.Add(ExportData, "clipboard by right-click / Copy or by pressing Ctrl-C.");
+        List.Add(ExportData, "");
+        List.Add(ExportData, "PGN (Game Protocol):");
+        Call ExportMovesPGN;
+        List.Add(ExportData, ExportMovesPGN);
+        List.Add(ExportData, "");
+        List.Add(ExportData, "FEN (Current Board):");
+        List.Add(ExportData, ExportDataFEN);
+        List.Add(ExportData, "");
+        List.Add(ExportData, "Board Analysis Link (lichess.org)");
+        List.Add(ExportData, ExportDataFENLichess);
+        List.Show(ExportData);
+        If (1 == 0)
+        {
+            Call SayAsync("You can copy FEN data, lichess.org URL or PGN data to your clipboard via Ctrl-C. Select data by triple-click.")(5);
+        }
     }
 }
 
@@ -178,10 +181,13 @@ WhenBroadcastReceived(fromsquareselected)
 
 WhenBroadcastReceived(import)
 {
-    Sensing.Ask("Board data import. Please paste FEN data from your clipboard into the text field by pressing Ctrl-V.");
-    If (Variable.Length(Sensing.Answer()) > 0)
+    If (IsExecutionRunning == 0)
     {
-        Call ImportBoard(Sensing.Answer());
+        Sensing.Ask("Board data import. Please paste FEN data from your clipboard into the text field by pressing Ctrl-V.");
+        If (Variable.Length(Sensing.Answer()) > 0)
+        {
+            Call ImportBoard(Sensing.Answer());
+        }
     }
 }
 
@@ -269,7 +275,10 @@ WhenBroadcastReceived(startgame)
 
 WhenBroadcastReceived(switchmode)
 {
-    Call SwitchMode;
+    If (IsExecutionRunning == 0)
+    {
+        Call SwitchMode;
+    }
 }
 
 WhenBroadcastReceived(triggerrestart)
@@ -344,16 +353,10 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
                     }
                     Else
                     {
-                        Call IsPotentialPutsInCheck(SourcePieceOuter)(TargetIdxOuter);
-                        If (IsPotentialPutsInCheckRes == 1)
+                        Call IsQuiescentCheck(SourcePieceOuter)(TargetIdxOuter)(Depth);
+                        If (IsQuiescentCheckRes == 1)
                         {
-                            If ((IsEndgame == 1) Or (((IsWhiteCastlingPossible == 0) And (SourcePieceOuter > 0)) Or ((IsBlackCastlingPossible == 0) And (SourcePieceOuter < 0))))
-                            {
-                                If ((Quiescence[(Depth - 1)] == 0) Or ((IsScratch3 == 0) And (Quiescence[(Depth - 2)] == 0)))
-                                {
-                                    Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly);
-                                }
-                            }
+                            Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly);
                         }
                     }
                 }
@@ -523,19 +526,10 @@ Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool 
                         }
                         Else
                         {
-                            If (IsEndgame == 1)
+                            Call IsQuiescentCheck(SourcePieceOuter)(TargetIdxOuter)(Depth);
+                            If (IsQuiescentCheckRes == 1)
                             {
-                                Call IsPotentialPutsInCheck(SourcePieceOuter)(TargetIdxOuter);
-                                If (IsPotentialPutsInCheckRes == 1)
-                                {
-                                    If ((IsEndgame == 1) Or (((IsWhiteCastlingPossible == 0) And (SourcePieceOuter > 0)) Or ((IsBlackCastlingPossible == 0) And (SourcePieceOuter < 0))))
-                                    {
-                                        If ((Quiescence[(Depth - 1)] == 0) Or ((IsScratch3 == 0) And (Quiescence[(Depth - 2)] == 0)))
-                                        {
-                                            Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
-                                        }
-                                    }
-                                }
+                                Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
                             }
                         }
                     }
@@ -2242,13 +2236,49 @@ Define CalculateMovesForSource(num Depth)(num SourceIdx)(bool CalcAttackState)(b
         {
             If (Board[(SourceIdx + 8)] == 0)
             {
-                If ((Not (CapturesOnly)) Or ((IdxToRank[SourceIdx] == 7) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 8)) == 1)))
+                If CapturesOnly
+                {
+                    If ((IdxToRank[SourceIdx] == 7) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 8)) == 1))
+                    {
+                        Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
+                    }
+                    Else
+                    {
+                        If (IsEndgame == 1)
+                        {
+                            Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx + 8))(Depth);
+                            If (IsQuiescentCheckRes == 1)
+                            {
+                                Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
+                            }
+                        }
+                    }
+                }
+                Else
                 {
                     Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
                 }
                 If ((IdxToRank[SourceIdx] == 2) And (Board[(SourceIdx + 16)] == 0))
                 {
-                    If ((Not (CapturesOnly)) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 16)) == 1))
+                    If CapturesOnly
+                    {
+                        If (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 16)) == 1)
+                        {
+                            Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
+                        }
+                        Else
+                        {
+                            If (IsEndgame == 1)
+                            {
+                                Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx + 16))(Depth);
+                                If (IsQuiescentCheckRes == 1)
+                                {
+                                    Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
+                                }
+                            }
+                        }
+                    }
+                    Else
                     {
                         Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
                     }
@@ -2298,13 +2328,49 @@ Define CalculateMovesForSource(num Depth)(num SourceIdx)(bool CalcAttackState)(b
             {
                 If (Board[(SourceIdx - 8)] == 0)
                 {
-                    If ((Not (CapturesOnly)) Or ((IdxToRank[SourceIdx] == 2) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 8)) == 1)))
+                    If CapturesOnly
+                    {
+                        If ((IdxToRank[SourceIdx] == 2) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 8)) == 1))
+                        {
+                            Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
+                        }
+                        Else
+                        {
+                            If (IsEndgame == 1)
+                            {
+                                Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx - 8))(Depth);
+                                If (IsQuiescentCheckRes == 1)
+                                {
+                                    Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
+                                }
+                            }
+                        }
+                    }
+                    Else
                     {
                         Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
                     }
                     If ((IdxToRank[SourceIdx] == 7) And (Board[(SourceIdx - 16)] == 0))
                     {
-                        If ((Not (CapturesOnly)) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 16)) == 1))
+                        If CapturesOnly
+                        {
+                            If (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 16)) == 1)
+                            {
+                                Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
+                            }
+                            Else
+                            {
+                                If (IsEndgame == 1)
+                                {
+                                    Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx - 16))(Depth);
+                                    If (IsQuiescentCheckRes == 1)
+                                    {
+                                        Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
+                                    }
+                                }
+                            }
+                        }
+                        Else
                         {
                             Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
                         }
@@ -6276,21 +6342,65 @@ Define IsLowerCase(string Char) (warp=true)
     }
 }
 
-Define IsPotentialPutsInCheck(string Piece)(string SourceIdx) (warp=true)
+Define IsQuiescentCheck(string Piece)(string SourceIdx)(string Depth) (warp=true)
 {
-    IsPotentialPutsInCheckRes = 0;
-    If (Piece > 0)
+    IsQuiescentCheckRes = 0;
+    If ((IsEndgame == 1) Or (((IsWhiteCastlingPossible == 0) And (Piece > 0)) Or ((IsBlackCastlingPossible == 0) And (Piece < 0))))
     {
-        If (Not ((MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((SourceIdx * 100) + WhiteKingIdx))] == "")))
+        If (Piece > 0)
         {
-            IsPotentialPutsInCheckRes = 1;
+            If (Not ((MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((SourceIdx * 100) + WhiteKingIdx))] == "")))
+            {
+                IsQuiescentCheckRes = 1;
+            }
         }
-    }
-    Else
-    {
-        If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((SourceIdx * 100) + BlackKingIdx))] == "")))
+        Else
         {
-            IsPotentialPutsInCheckRes = 1;
+            If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((SourceIdx * 100) + BlackKingIdx))] == "")))
+            {
+                IsQuiescentCheckRes = 1;
+            }
+        }
+        If (IsQuiescentCheckRes == 1)
+        {
+            IsQuiescentCheckRes = 0;
+            If (Quiescence[(Depth - 1)] == 0)
+            {
+                IsQuiescentCheckRes = 1;
+            }
+            Else
+            {
+                If (Quiescence[(Depth - 2)] == 0)
+                {
+                    If ((IsScratch3 == 1) Or (IsEndgame == 1))
+                    {
+                        IsQuiescentCheckRes = 1;
+                    }
+                }
+                Else
+                {
+                    If (1 == 0)
+                    {
+                        If (Quiescence[(Depth - 3)] == 0)
+                        {
+                            If (1 == 0)
+                            {
+                                IsQuiescentCheckRes = 1;
+                            }
+                        }
+                        Else
+                        {
+                            If (Quiescence[(Depth - 4)] == 0)
+                            {
+                                If (1 == 0)
+                                {
+                                    IsQuiescentCheckRes = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
