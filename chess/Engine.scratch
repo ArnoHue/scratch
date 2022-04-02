@@ -96,7 +96,7 @@ WhenKeyPressed(j)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 3.75 (25.03.2022) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 3.76 (02.04.2022) by ArnoHu")(5);
 }
 
 
@@ -1395,6 +1395,61 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     }
                 }
             }
+            If ((Not (Quiescence)) And (Depth < 5))
+            {
+                Call ClearMoveList((Depth + 2));
+                Call CalculateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
+                Count = 0;
+                List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                Repeat (MovesCount[(Depth + 2)])
+                {
+                    Call GetCurrentMove((Depth + 2));
+                    If (Board[floor((CurrentMove % 100))] > 0)
+                    {
+                        If (abs(Board[floor((CurrentMove / 100))]) < abs(Board[floor((CurrentMove % 100))]))
+                        {
+                            Count += 1;
+                        }
+                    }
+                    List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                }
+                If (Count > 1)
+                {
+                    List.ReplaceItem(PutsInFork, Depth, 1);
+                    If ((MaxDepth - Depth) == 1)
+                    {
+                        List.ReplaceItem(PlyExtension, Depth, 1);
+                    }
+                }
+                Else
+                {
+                    Count = 0;
+                    Idx = (Depth - 1);
+                    Repeat Until (Idx < 1)
+                    {
+                        If (Not ((TargetPieces[Idx] == 0)))
+                        {
+                            Count += 1;
+                        }
+                        Idx += -2;
+                    }
+                    If (Count > 0)
+                    {
+                        Idx = (Depth - 2);
+                        Repeat Until (Idx < 1)
+                        {
+                            If (PutsInFork[Idx] == 1)
+                            {
+                                If ((MaxDepth - Depth) == 1)
+                                {
+                                    List.ReplaceItem(PlyExtension, Depth, 1);
+                                }
+                            }
+                            Idx += -2;
+                        }
+                    }
+                }
+            }
             IsFutile = 0;
             If ((Quiescence Or ((((Depth > 2) And ((MaxDepth - Depth) < 3)) And ((MovesIdx[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1))) And ((TargetPieces[Depth] == Empty) And (PromotionPieces[Depth] == Empty)))) And ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)))
             {
@@ -2071,9 +2126,11 @@ Define CalcBoardStats (warp=true)
     BlackMinorCount = 0;
     BlackQueenCount = 0;
     BlackPawnCount = 0;
+    BlackRookCount = 0;
     WhiteQueenCount = 0;
     WhiteMinorCount = 0;
     WhitePawnCount = 0;
+    WhiteRookCount = 0;
     Idx = 1;
     Repeat (64)
     {
@@ -2088,10 +2145,18 @@ Define CalcBoardStats (warp=true)
         If ((Board[Idx] == WhiteKnight) Or ((Board[Idx] == WhiteBishop) Or (Board[Idx] == WhiteRook)))
         {
             WhiteMinorCount += 1;
+            If (Board[Idx] == WhiteRook)
+            {
+                WhiteRookCount += 1;
+            }
         }
         If ((Board[Idx] == BlackKnight) Or ((Board[Idx] == BlackBishop) Or (Board[Idx] == BlackRook)))
         {
             BlackMinorCount += 1;
+            If (Board[Idx] == BlackRook)
+            {
+                BlackRookCount += 1;
+            }
         }
         If (Board[Idx] == WhitePawn)
         {
@@ -3188,20 +3253,12 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
     {
         List.Add(PawnAdvancePerFile, 0);
     }
-    List.DeleteItem(BlackRookForwardRank, all);
-    List.DeleteItem(WhiteRookForwardRank, all);
-    Repeat (8)
-    {
-        List.Add(BlackRookForwardRank, 0);
-        List.Add(WhiteRookForwardRank, 0);
-    }
     Idx = 1;
     Repeat (64)
     {
-        If (Not ((Board[Idx] == 0)))
+        If (abs(Board[Idx]) == BlackPawn)
         {
-            CurrentPiece = Board[Idx];
-            If (CurrentPiece == BlackPawn)
+            If (Board[Idx] > 0)
             {
                 File = IdxToFile[Idx];
                 Rank = IdxToRank[Idx];
@@ -3211,11 +3268,11 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
                     {
                         If (Board[(Idx + 8)] == WhitePawn)
                         {
-                            EvalExtendedResult1 += (2 * ((Rank - 2) * (IsEndgame + 1)));
+                            EvalExtendedResult1 += (2 * ((Rank - 2) * ((IsEndgame + IsEndgame2) + 1)));
                         }
                         Else
                         {
-                            EvalExtendedResult1 += (5 * ((Rank - 2) * (IsEndgame + 1)));
+                            EvalExtendedResult1 += (5 * ((Rank - 2) * ((IsEndgame + IsEndgame2) + 1)));
                         }
                     }
                 }
@@ -3230,52 +3287,29 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
             }
             Else
             {
-                If (CurrentPiece == WhitePawn)
+                File = IdxToFile[Idx];
+                Rank = IdxToRank[Idx];
+                If (Idx < 49)
                 {
-                    File = IdxToFile[Idx];
-                    Rank = IdxToRank[Idx];
-                    If (Idx < 49)
+                    If (((File > 1) And (Board[(Idx + 7)] == WhitePawn)) Or ((File < 8) And (Board[(Idx + 9)] == WhitePawn)))
                     {
-                        If (((File > 1) And (Board[(Idx + 7)] == WhitePawn)) Or ((File < 8) And (Board[(Idx + 9)] == WhitePawn)))
+                        If (Board[(Idx - 8)] == BlackPawn)
                         {
-                            If (Board[(Idx - 8)] == BlackPawn)
-                            {
-                                EvalExtendedResult1 += (-2 * ((7 - Rank) * (IsEndgame + 1)));
-                            }
-                            Else
-                            {
-                                EvalExtendedResult1 += (-5 * ((7 - Rank) * (IsEndgame + 1)));
-                            }
+                            EvalExtendedResult1 += (-2 * ((7 - Rank) * ((IsEndgame + IsEndgame2) + 1)));
                         }
-                    }
-                    If (Rank > PawnAdvancePerFile[File])
-                    {
-                        List.ReplaceItem(PawnAdvancePerFile, File, Rank);
-                    }
-                    If ((PawnAdvancePerFile[(File + 8)] == 0) Or (Rank < PawnAdvancePerFile[(File + 8)]))
-                    {
-                        List.ReplaceItem(PawnAdvancePerFile, (File + 8), Rank);
+                        Else
+                        {
+                            EvalExtendedResult1 += (-5 * ((7 - Rank) * ((IsEndgame + IsEndgame2) + 1)));
+                        }
                     }
                 }
-                Else
+                If (Rank > PawnAdvancePerFile[File])
                 {
-                    If (CurrentPiece == BlackRook)
-                    {
-                        If ((BlackRookForwardRank[IdxToFile[Idx]] == 0) Or (BlackRookForwardRank[IdxToFile[Idx]] < IdxToRank[Idx]))
-                        {
-                            List.ReplaceItem(BlackRookForwardRank, IdxToFile[Idx], IdxToRank[Idx]);
-                        }
-                    }
-                    Else
-                    {
-                        If (CurrentPiece == WhiteRook)
-                        {
-                            If ((WhiteRookForwardRank[IdxToFile[Idx]] == 0) Or (WhiteRookForwardRank[IdxToFile[Idx]] > IdxToRank[Idx]))
-                            {
-                                List.ReplaceItem(WhiteRookForwardRank, IdxToFile[Idx], IdxToRank[Idx]);
-                            }
-                        }
-                    }
+                    List.ReplaceItem(PawnAdvancePerFile, File, Rank);
+                }
+                If ((PawnAdvancePerFile[(File + 8)] == 0) Or (Rank < PawnAdvancePerFile[(File + 8)]))
+                {
+                    List.ReplaceItem(PawnAdvancePerFile, (File + 8), Rank);
                 }
             }
         }
@@ -3292,18 +3326,18 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
             WhitePawnForwardRank = PawnAdvancePerFile[(Idx + 8)];
             BlackPawnBackwardRank = PawnAdvancePerFile[(Idx + 16)];
             BlackPawnForwardRank = PawnAdvancePerFile[(Idx + 24)];
-            If ((WhitePawnForwardRank < 5) And (WhitePawnForwardRank > 0))
+            If ((WhitePawnForwardRank < 6) And (WhitePawnForwardRank > 0))
             {
                 If ((WhitePawnForwardRank < BlackPawnBackwardRank) Or (BlackPawnBackwardRank == 0))
                 {
-                    EvalExtendedResult1 += (-10 * (5 - WhitePawnForwardRank));
+                    EvalExtendedResult1 += (-10 * (6 - WhitePawnForwardRank));
                     LeftOppPawnRank = PawnAdvancePerFile[((Idx + 16) - 1)];
                     RightOppPawnRank = PawnAdvancePerFile[((Idx + 16) + 1)];
                     If ((((Idx == 1) Or (LeftOppPawnRank == 0)) Or (WhitePawnForwardRank < LeftOppPawnRank)) And (((Idx == 8) Or (RightOppPawnRank == 0)) Or (WhitePawnForwardRank < RightOppPawnRank)))
                     {
                         If (Not ((PawnPromotionFile[2] == Idx)))
                         {
-                            EvalExtendedResult1 += (-10 * (5 - WhitePawnForwardRank));
+                            EvalExtendedResult1 += (-15 * (6 - WhitePawnForwardRank));
                         }
                         If ((BlackKingEndgameTargetIdx == 0) Or (WhitePawnForwardRank < WhiteRank))
                         {
@@ -3313,18 +3347,18 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
                     }
                 }
             }
-            If (BlackPawnForwardRank > 4)
+            If (BlackPawnForwardRank > 3)
             {
                 If (BlackPawnForwardRank > WhitePawnBackwardRank)
                 {
-                    EvalExtendedResult1 += (10 * (BlackPawnForwardRank - 4));
+                    EvalExtendedResult1 += (10 * (BlackPawnForwardRank - 3));
                     LeftOppPawnRank = PawnAdvancePerFile[(Idx - 1)];
                     RightOppPawnRank = PawnAdvancePerFile[(Idx + 1)];
                     If ((((Idx == 1) Or (LeftOppPawnRank == 0)) Or (BlackPawnForwardRank > LeftOppPawnRank)) And (((Idx == 8) Or (RightOppPawnRank == 0)) Or (BlackPawnForwardRank > RightOppPawnRank)))
                     {
                         If (Not ((PawnPromotionFile[1] == Idx)))
                         {
-                            EvalExtendedResult1 += (10 * (BlackPawnForwardRank - 4));
+                            EvalExtendedResult1 += (15 * (BlackPawnForwardRank - 3));
                         }
                         If ((WhiteKingEndgameTargetIdx == 0) Or (BlackPawnForwardRank > BlackRank))
                         {
@@ -3398,7 +3432,7 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
         }
         Else
         {
-            EvalExtendedResult1 += KingProtection;
+            EvalExtendedResult1 += Operator.Round((KingProtection * (1 + (WhiteQueenCount * 0.5))));
         }
     }
     If (IsEndgame == 0)
@@ -3454,7 +3488,7 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
         }
         Else
         {
-            EvalExtendedResult1 += (0 - KingProtection);
+            EvalExtendedResult1 += (0 - Operator.Round((KingProtection * (1 + (BlackQueenCount * 0.5)))));
         }
     }
     If ((IsEndgame == 1) And ((PawnPromotionFile[1] == "") And (PawnPromotionFile[2] == "")))
@@ -3677,13 +3711,13 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
                         {
                             If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], Idx) > 0)
                             {
-                                EvalExtendedResult3 += -10;
+                                EvalExtendedResult3 += -20;
                                 If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], Idx) > 1)
                                 {
-                                    EvalExtendedResult3 += -40;
+                                    EvalExtendedResult3 += -30;
                                     If (Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], Idx) < PieceIdxLookup[BlackQueen])
                                     {
-                                        EvalExtendedResult3 += 25;
+                                        EvalExtendedResult3 += 20;
                                     }
                                 }
                             }
@@ -3713,13 +3747,13 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
                         {
                             If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], Idx) > 0)
                             {
-                                EvalExtendedResult3 += 10;
+                                EvalExtendedResult3 += 20;
                                 If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], Idx) > 1)
                                 {
-                                    EvalExtendedResult3 += 40;
+                                    EvalExtendedResult3 += 30;
                                     If (Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], Idx) < PieceIdxLookup[BlackQueen])
                                     {
-                                        EvalExtendedResult3 += -25;
+                                        EvalExtendedResult3 += -20;
                                     }
                                 }
                             }
@@ -5858,7 +5892,7 @@ Define InitMoveLookup (warp=true)
 
 Define InitMovePosLookup (warp=true)
 {
-    MetaState = Operator.Join(IsBlackCastlingPossible, Operator.Join(IsWhiteCastlingPossible, IsEndgame));
+    MetaState = Operator.Join(IsBlackCastlingPossible, Operator.Join(IsWhiteCastlingPossible, Operator.Join(IsEndgame, IsEndgame2)));
     If (BlackQueenCount == 0)
     {
         MetaState = Operator.Join(MetaState, 0);
@@ -6642,13 +6676,13 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     {
         If (abs(TargetPieces[Depth]) == BlackPawn)
         {
-            List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + (TargetPieces[Depth] * 0.2)));
+            List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + (TargetPieces[Depth] * ((IsEndgame + IsEndgame2) * 0.1))));
         }
         Else
         {
             If (Not ((PromotionPieces[Depth] == 0)))
             {
-                List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + (SourcePieces[Depth] * 0.2)));
+                List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + (SourcePieces[Depth] * ((IsEndgame + IsEndgame2) * 0.1))));
             }
         }
     }
@@ -6657,7 +6691,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (BlackMobBonus[Depth] - WhiteMobBonus[Depth])));
         If (CapturesDeltaSum[Depth] == 0)
         {
-            CurrentValue = (((BlackQueenCount * 3) + BlackMinorCount) - ((WhiteQueenCount * 3) + WhiteMinorCount));
+            CurrentValue = ((((BlackQueenCount * 9) + (BlackRookCount * 5)) + (((BlackMinorCount - BlackRookCount) * 3) + BlackPawnCount)) - (((WhiteQueenCount * 9) + (WhiteMinorCount * 5)) + (((WhiteMinorCount - WhiteRookCount) * 3) + WhitePawnCount)));
             If (Not ((CurrentValue == 0)))
             {
                 HasCaptures = 0;
