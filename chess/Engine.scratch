@@ -86,17 +86,9 @@ WhenKeyPressed(c)
     }
 }
 
-WhenKeyPressed(j)
-{
-    If (Not ((Backdrop.GetNumberName(name) == "Intro")))
-    {
-        Call SwitchMode;
-    }
-}
-
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 3.98 (27.05.2022) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 4.01 (24.06.2022) by ArnoHu")(5);
 }
 
 
@@ -136,7 +128,7 @@ WhenBroadcastReceived(export)
 
 WhenBroadcastReceived(fromsquareselected)
 {
-    If ((IsModeJunior == 1) And (Not ((FromSquareIdx == -1))))
+    If ((Level < 4) And (Not ((FromSquareIdx == -1))))
     {
         BestMoveFromIdx = FromSquareIdx;
         List.DeleteAll(UserMoveTargets);
@@ -190,6 +182,11 @@ WhenBroadcastReceived(import)
             Call ImportBoard(Sensing.Answer());
         }
     }
+}
+
+WhenBroadcastReceived(levelchanged)
+{
+    Call DrawBoardAndWait;
 }
 
 WhenBroadcastReceived(progressvaluechangedinternal)
@@ -247,7 +244,6 @@ WhenBroadcastReceived(stageclicked)
 WhenBroadcastReceived(startgame)
 {
     Event.Broadcast("calcmode");
-    IsModeJunior = 0;
     IsModeProfiler = 0;
     IsModeDeepeningDebug = 0;
     IsModeCompetition = 0;
@@ -260,14 +256,6 @@ WhenBroadcastReceived(startgame)
     Call DrawBoardAndWait;
     Call ExecuteInit;
     Event.Broadcast("inputmode");
-}
-
-WhenBroadcastReceived(switchmode)
-{
-    If (IsExecutionRunning == 0)
-    {
-        Call SwitchMode;
-    }
 }
 
 WhenBroadcastReceived(triggerrestart)
@@ -299,6 +287,7 @@ Define AddBoardToHistory (warp=true)
     List.Add(BoardHistory, GetBoardStringRes);
     Call GetCurrentBoardHash;
     List.Add(BoardHistoryHash, CurrentBoardHash);
+    List.Add(BoardHistoryMetaState, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookQSMoved, HasBlackRookKSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookQSMoved, HasWhiteRookKSMoved))));
 }
 
 Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool LineMoveTypeStraight) (warp=true)
@@ -3948,7 +3937,7 @@ Define ExecuteEngineMove (warp=false)
         Event.Broadcast("OpeningBookHide");
         List.DeleteItem(MinMaxMovesRes, all);
         BestMove = "";
-        If (IsModeJunior == 0)
+        If (Level > 2)
         {
             Call CalculateOpeningMoves;
             If (List.Length(MinMaxMovesRes) > 0)
@@ -3963,15 +3952,15 @@ Define ExecuteEngineMove (warp=false)
             Looks.Think("Thinking...");
             Control.Wait(0);
             Call InitAlphaBeta(1)(1)((1 == 1));
-            If (IsModeJunior == 0)
+            If (Level > 3)
             {
-                If (Level == 1)
+                If (Level == 4)
                 {
                     ThinkTimeLimit = 5;
                 }
                 Else
                 {
-                    If (Level == 2)
+                    If (Level == 5)
                     {
                         ThinkTimeLimit = 10;
                     }
@@ -3999,7 +3988,7 @@ Define ExecuteEngineMove (warp=false)
                 IdxDeepening = 1;
                 BestMove = "";
                 BestMinMaxRes = "";
-                If (Level == 1)
+                If (Level == 4)
                 {
                     List.DeleteItem(MinMaxMovesRes, all);
                     Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((1 == 1))(10)((1 == 1));
@@ -4123,15 +4112,15 @@ Define ExecuteEngineMove (warp=false)
                 List.DeleteItem(MinMaxMovesRes, all);
                 If (Level == 1)
                 {
-                    JuniorDistQuota = 50;
-                    JuniorSearchQuota = 1;
+                    JuniorDistQuota = 15;
+                    JuniorSearchQuota = 50;
                 }
                 Else
                 {
                     If (Level == 2)
                     {
-                        JuniorDistQuota = 20;
-                        JuniorSearchQuota = 50;
+                        JuniorDistQuota = 10;
+                        JuniorSearchQuota = 80;
                     }
                     Else
                     {
@@ -4140,8 +4129,8 @@ Define ExecuteEngineMove (warp=false)
                     }
                 }
                 ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
-                ThinkTimeLimitMinMax = 2;
-                Call AlphaBetaMinMax(-100000)(100000)(1)(2)((1 == 0))(10)((1 == 1));
+                ThinkTimeLimitMinMax = 10;
+                Call AlphaBetaMinMax(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
                 BestMove = MinMaxMovesRes[1];
                 If ((BestMove == "") Or (Operator.Random(1 / 100) > JuniorSearchQuota))
                 {
@@ -4197,6 +4186,26 @@ Define ExecuteEngineMove (warp=false)
         List.ReplaceItem(MovesCount, 1, 1);
         Call ApplyMove(1);
         Call DrawBoardAndWait;
+        If (Board[(BestMove % 100)] == BlackKing)
+        {
+            HasBlackKingMoved = 1;
+        }
+        If (Board[(BestMove % 100)] == BlackRook)
+        {
+            If (floor((BestMove / 100)) == VirtualBoard[1])
+            {
+                HasBlackRookQSMoved = 1;
+            }
+            If (floor((BestMove / 100)) == VirtualBoard[8])
+            {
+                HasBlackRookKSMoved = 1;
+            }
+        }
+        If ((BestMove == BlackQueensideCastling) Or (BestMove == BlackKingsideCastling))
+        {
+            HasBlackKingMoved = 1;
+            HasBlackCastled = 1;
+        }
         Call AddBoardToHistory;
         Call GetRepetitionCount;
         If (RepetitionCountRes > 2)
@@ -4243,26 +4252,6 @@ Define ExecuteEngineMove (warp=false)
                         {
                             Call SayAsync("Check!")(2);
                             Event.Broadcast("SoundCheck");
-                        }
-                        If (Board[(BestMove % 100)] == BlackKing)
-                        {
-                            HasBlackKingMoved = 1;
-                        }
-                        If (Board[(BestMove % 100)] == BlackRook)
-                        {
-                            If (floor((BestMove / 100)) == VirtualBoard[1])
-                            {
-                                HasBlackRookQSMoved = 1;
-                            }
-                            If (floor((BestMove / 100)) == VirtualBoard[8])
-                            {
-                                HasBlackRookKSMoved = 1;
-                            }
-                        }
-                        If ((BestMove == BlackQueensideCastling) Or (BestMove == BlackKingsideCastling))
-                        {
-                            HasBlackKingMoved = 1;
-                            HasBlackCastled = 1;
                         }
                     }
                 }
@@ -4443,6 +4432,26 @@ Define ExecuteUserMove (warp=false)
                     Call DrawBoardAndWait;
                     Control.Wait(0);
                     Event.BroadcastAndWait("calcmode");
+                    If (Board[(UserMove % 100)] == WhiteKing)
+                    {
+                        HasWhiteKingMoved = 1;
+                    }
+                    If (Board[(UserMove % 100)] == WhiteRook)
+                    {
+                        If (floor((UserMove / 100)) == VirtualBoard[57])
+                        {
+                            HasWhiteRookQSMoved = 1;
+                        }
+                        If (floor((UserMove / 100)) == VirtualBoard[64])
+                        {
+                            HasWhiteRookKSMoved = 1;
+                        }
+                    }
+                    If ((UserMove == WhiteQueensideCastling) Or (UserMove == WhiteKingsideCastling))
+                    {
+                        HasWhiteCastled = 1;
+                        HasWhiteKingMoved = 1;
+                    }
                     Call AddBoardToHistory;
                     Call IsBlackKingCheckMate;
                     If (IsBlackKingCheckMateRes == 1)
@@ -4484,26 +4493,6 @@ Define ExecuteUserMove (warp=false)
                                 }
                                 Else
                                 {
-                                    If (Board[(UserMove % 100)] == WhiteKing)
-                                    {
-                                        HasWhiteKingMoved = 1;
-                                    }
-                                    If (Board[(UserMove % 100)] == WhiteRook)
-                                    {
-                                        If (floor((UserMove / 100)) == VirtualBoard[57])
-                                        {
-                                            HasWhiteRookQSMoved = 1;
-                                        }
-                                        If (floor((UserMove / 100)) == VirtualBoard[64])
-                                        {
-                                            HasWhiteRookKSMoved = 1;
-                                        }
-                                    }
-                                    If ((UserMove == WhiteQueensideCastling) Or (UserMove == WhiteKingsideCastling))
-                                    {
-                                        HasWhiteCastled = 1;
-                                        HasWhiteKingMoved = 1;
-                                    }
                                     Call ExecuteEngineMove;
                                 }
                             }
@@ -5456,6 +5445,7 @@ Define ImportBoard(string ImpBoard) (warp=false)
         GameMoves = "";
         List.DeleteItem(BoardHistory, all);
         List.DeleteItem(BoardHistoryHash, all);
+        List.DeleteItem(BoardHistoryMetaState, all);
         List.DeleteItem(GameMovesAN, all);
         If (Not ((Board[VirtualBoard[1]] == BlackRook)))
         {
@@ -5467,7 +5457,7 @@ Define ImportBoard(string ImpBoard) (warp=false)
         }
         If (Not ((Board[VirtualBoard[8]] == BlackRook)))
         {
-            HasBlackRookQSMoved = 1;
+            HasBlackRookKSMoved = 1;
         }
         If (Not ((Board[VirtualBoard[57]] == WhiteRook)))
         {
@@ -5748,6 +5738,7 @@ Define InitBoard (warp=true)
     }
     List.DeleteItem(BoardHistory, all);
     List.DeleteItem(BoardHistoryHash, all);
+    List.DeleteItem(BoardHistoryMetaState, all);
     List.DeleteItem(GameMovesAN, all);
     List.DeleteItem(BoardAttackedByWhite, all);
     List.DeleteItem(BoardAttackedByBlack, all);
@@ -6557,7 +6548,7 @@ Define IsLowerCase(string Char) (warp=true)
 Define IsQuiescentCheck(string Piece)(string SourceIdx)(string Depth) (warp=true)
 {
     IsQuiescentCheckRes = 0;
-    If (((IsModeJunior == 0) And (Level > 1)) And (((IsScratch3 == 0) Or (IsEndgame == 1)) Or (((IsWhiteCastlingPossible == 0) And (Piece > 0)) Or ((IsBlackCastlingPossible == 0) And (Piece < 0)))))
+    If ((Level > 4) And (((IsScratch3 == 0) Or (IsEndgame == 1)) Or (((IsWhiteCastlingPossible == 0) And (Piece > 0)) Or ((IsBlackCastlingPossible == 0) And (Piece < 0)))))
     {
         If (Piece > 0)
         {
@@ -6751,7 +6742,7 @@ Define Log(string Txt1)(string Txt2)(string Txt3)(string Txt4)(string Txt5)(stri
 
 Define OnEvaluationChanged(string Eval) (warp=true)
 {
-    If (IsModeJunior == 0)
+    If (Level > 2)
     {
         If (Eval > 1000)
         {
@@ -7945,22 +7936,6 @@ Define StoreKillerMove(string Depth)(string Move) (warp=true)
     }
 }
 
-Define SwitchMode (warp=false)
-{
-    If (IsModeJunior == 0)
-    {
-        IsModeJunior = 1;
-        Call SayAsync("Junior mode enabled. Low playing strength. Easy and Medium play semi-random moves, Difficult searches one ply. Valid move advice activated.")(5);
-        Event.Broadcast("JuniorModeEnabled");
-    }
-    Else
-    {
-        IsModeJunior = 0;
-        Call SayAsync("Standard mode enabled. Normal playing strength. Valid move advice deactivated.")(5);
-        Event.Broadcast("JuniorModeDisabled");
-    }
-}
-
 Define TTProbeBoard(string BoardHash) (warp=true)
 {
     TTProbeBoardScore1Res = "";
@@ -8222,61 +8197,21 @@ Define UndoPrevMove (warp=false)
 {
     If (List.Length(GameMovesAN) > 0)
     {
-        Call GetSubstringRight(GameMoves)(4);
-        If ((Board[(SubstringRes % 100)] > 0) Or ((SubstringRes == BlackQueensideCastling) Or (SubstringRes == BlackKingsideCastling)))
-        {
-            IsBlackMove = 1;
-        }
-        Else
-        {
-            IsBlackMove = 0;
-        }
-        Call ImportBoardImpl(BoardHistory[(List.Length(BoardHistory) - 1)]);
         List.DeleteItem(BoardHistory, List.Length(BoardHistory));
         List.DeleteItem(BoardHistoryHash, List.Length(BoardHistoryHash));
-        If ((GameMovesAN[List.Length(GameMovesAN)] == "O-O") Or (GameMovesAN[List.Length(GameMovesAN)] == "O-O-O"))
-        {
-            If (IsBlackMove == 1)
-            {
-                HasBlackCastled = 0;
-                HasBlackKingMoved = 0;
-            }
-            Else
-            {
-                HasWhiteCastled = 0;
-                HasWhiteKingMoved = 0;
-            }
-        }
-        If (Operator.LetterOf(GameMovesAN[List.Length(GameMovesAN)], 1) == "K")
-        {
-            If (IsBlackMove == 1)
-            {
-                HasBlackKingMoved = 0;
-            }
-            Else
-            {
-                HasWhiteKingMoved = 0;
-            }
-            Idx = (List.Length(GameMovesAN) - 2);
-            Repeat Until (Idx < 1)
-            {
-                If (Operator.LetterOf(GameMovesAN[Idx], 1) == "K")
-                {
-                    If (IsBlackMove == 1)
-                    {
-                        HasBlackKingMoved = 1;
-                    }
-                    Else
-                    {
-                        HasWhiteKingMoved = 0;
-                    }
-                }
-                Idx += -1;
-            }
-        }
+        List.DeleteItem(BoardHistoryMetaState, List.Length(BoardHistoryMetaState));
         List.DeleteItem(GameMovesAN, List.Length(GameMovesAN));
+        Call ImportBoardImpl(BoardHistory[List.Length(BoardHistory)]);
         Call GetSubstringLeft(GameMoves)((Variable.Length(GameMoves) - 4));
         GameMoves = SubstringRes;
+        HasBlackCastled = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 1);
+        HasBlackKingMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 2);
+        HasBlackRookQSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 3);
+        HasBlackRookKSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 4);
+        HasWhiteCastled = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 5);
+        HasWhiteKingMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 6);
+        HasWhiteRookQSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 7);
+        HasWhiteRookKSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 8);
     }
 }
 
