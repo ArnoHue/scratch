@@ -88,7 +88,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 4.39 (30.09.2022) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 4.43 (02.10.2022) by ArnoHu")(5);
 }
 
 
@@ -149,7 +149,7 @@ WhenBroadcastReceived(fromsquareselected)
     {
         BestMoveFromIdx = FromSquareIdx;
         List.DeleteAll(UserMoveTargets);
-        Call CalculateMoves(2);
+        Call GenerateMoves(2);
         List.ReplaceItem(MovesIdx, 2, 1);
         Repeat (MovesCount[2])
         {
@@ -250,7 +250,7 @@ WhenBroadcastReceived(squareclicked)
                     {
                         If ((MoveToIdx == VirtualBoard[59]) And (Board[VirtualBoard[57]] == WhiteRook))
                         {
-                            Call CalculateMoves(2);
+                            Call GenerateMoves(2);
                             If List.ContainsItem(Moves2, WhiteQueensideCastling)
                             {
                                 UserMove = WhiteQueensideCastling;
@@ -262,7 +262,7 @@ WhenBroadcastReceived(squareclicked)
                         }
                         If ((MoveToIdx == VirtualBoard[63]) And (Board[VirtualBoard[64]] == WhiteRook))
                         {
-                            Call CalculateMoves(2);
+                            Call GenerateMoves(2);
                             If List.ContainsItem(Moves2, WhiteKingsideCastling)
                             {
                                 UserMove = WhiteKingsideCastling;
@@ -305,19 +305,14 @@ WhenBroadcastReceived(stageclicked)
 
 WhenBroadcastReceived(startgame)
 {
-    Event.BroadcastAndWait("calcmode");
-    IsModeProfiler = 0;
-    IsModeDeepeningDebug = 0;
-    IsModeCompetition = 0;
-    MoveFromIdx = -1;
-    MoveToIdx = -1;
-    ProgressValue = 0;
-    EvaluationValue = 0;
     Motion.GoToXY(240, 80);
+    ExecutionDepth = 0;
+    IsExecutionRunning = 0;
+    Call EnterExecution;
     Call InitBoard;
     Call DrawBoardAndWait;
+    Call ExitExecution;
     Call ExecuteInit;
-    Event.BroadcastAndWait("inputmode");
 }
 
 WhenBroadcastReceived(triggerrestart)
@@ -1126,8 +1121,8 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call CalcBoardAttackedByMove(2);
         Call StoreAttackInfo(2)(1);
         List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-        Call CalculateMovesImplWrapper(1)((1 == 0))((1 == 0));
-        Call CalculateMovesImplWrapper(2)((1 == 0))((1 == 0));
+        Call GenerateMovesImplWrapper(1)((1 == 0))((1 == 0));
+        Call GenerateMovesImplWrapper(2)((1 == 0))((1 == 0));
         List.ReplaceItem(WhiteMobBonus, 1, WhiteMobBonus[2]);
     }
     Else
@@ -1393,7 +1388,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         If (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[SourceIdxOuter2]] * 10000) + ((SourceIdxOuter2 * 100) + WhiteKingIdx))] == "")))
                         {
                             IsWhiteChecked = 0;
-                            Call CalculateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 1))((1 == 0));
+                            Call GenerateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 1))((1 == 0));
                             List.ReplaceItem(PutsInCheck, Depth, IsWhiteChecked);
                         }
                     }
@@ -1402,7 +1397,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Board[SourceIdxOuter2])] * 10000) + ((SourceIdxOuter2 * 100) + BlackKingIdx))] == "")))
                         {
                             IsBlackChecked = 0;
-                            Call CalculateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 1))((1 == 0));
+                            Call GenerateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 1))((1 == 0));
                             List.ReplaceItem(PutsInCheck, Depth, IsBlackChecked);
                         }
                     }
@@ -1417,7 +1412,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 If (abs(SourcePieces[Depth]) < BlackRook)
                 {
                     Call ClearMoveList((Depth + 2));
-                    Call CalculateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
+                    Call GenerateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
                     CountOuter1 = 0;
                     CountOuter2 = 0;
                     List.ReplaceItem(MovesIdx, (Depth + 2), 1);
@@ -1480,7 +1475,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                     }
                                     Call ClearMoveList((Depth + 3));
                                     List.ReplaceItem(PieceMobility, TargetIdxOuter2, 0);
-                                    Call CalculateMovesForSourceEx((Depth + 3))(TargetIdxOuter2)((1 == 0))((1 == 1));
+                                    Call GenerateMovesForSourceEx((Depth + 3))(TargetIdxOuter2)((1 == 0))((1 == 1));
                                     If (PieceMobility[TargetIdxOuter2] > 0)
                                     {
                                         CountOuter2 = 0;
@@ -1646,14 +1641,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     Score = MinMaxResults[(Depth + 1)];
                     IsReductionAndDone = 0;
                 }
-                If (TargetPieces[Depth] == Empty)
-                {
-                    IsPotentialKillerMove = 1;
-                }
-                Else
-                {
-                    IsPotentialKillerMove = 0;
-                }
                 Call RevertMove(Depth);
                 If (IsMinMaxTimeout == 1)
                 {
@@ -1691,9 +1678,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 {
                                     If (Depth > 1)
                                     {
-                                        If (IsPotentialKillerMove == 1)
+                                        If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
                                         {
-                                            Call StoreKillerMove(Depth)(CurrentMove);
+                                            Call StoreKillerMove(Depth)(BestMoves[Depth]);
                                         }
                                         List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                         List.ReplaceItem(PickPhase, Depth, "*");
@@ -1767,9 +1754,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 List.ReplaceItem(Betas, Depth, Score);
                                 If (Not ((Score > Alphas[Depth])))
                                 {
-                                    If (IsPotentialKillerMove == 1)
+                                    If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
                                     {
-                                        Call StoreKillerMove(Depth)(CurrentMove);
+                                        Call StoreKillerMove(Depth)(BestMoves[Depth]);
                                     }
                                     List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                     List.ReplaceItem(PickPhase, Depth, "*");
@@ -2141,7 +2128,7 @@ Define ApplyMove(num Depth) (warp=true)
 Define CalcBoardAttackedByMove(string Depth) (warp=true)
 {
     Call ClearBoardAttackedByMove(Depth);
-    Call CalculateMovesImplWrapper(Depth)((1 == 1))((1 == 0));
+    Call GenerateMovesImplWrapper(Depth)((1 == 1))((1 == 0));
 }
 
 Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
@@ -2170,7 +2157,7 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
                 {
                     If (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[IdxOuter2]] * 10000) + ((IdxOuter2 * 100) + WhiteKingIdx))] == "")))
                     {
-                        Call CalculateMovesForSource(Depth)(IdxOuter2)((1 == 1))((1 == 0));
+                        Call GenerateMovesForSource(Depth)(IdxOuter2)((1 == 1))((1 == 0));
                     }
                 }
                 IdxOuter2 += 1;
@@ -2187,7 +2174,7 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
                 {
                     If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Board[IdxOuter2])] * 10000) + ((IdxOuter2 * 100) + BlackKingIdx))] == "")))
                     {
-                        Call CalculateMovesForSource(Depth)(IdxOuter2)((1 == 1))((1 == 0));
+                        Call GenerateMovesForSource(Depth)(IdxOuter2)((1 == 1))((1 == 0));
                     }
                 }
                 IdxOuter2 += 1;
@@ -2334,536 +2321,6 @@ Define CalcBoardStats (warp=true)
     WhiteMinorCountLocal = WhiteMinorCount;
     BlackQueenCountLocal = BlackQueenCount;
     BlackMinorCountLocal = BlackMinorCount;
-}
-
-Define CalculateMoves(num Depth) (warp=true)
-{
-    Call CalcBoardAttackedByMove((Depth + 1));
-    Call StoreAttackInfo((Depth + 1))(Depth);
-    List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-    Call CalculateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
-    List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
-}
-
-Define CalculateMovesForSource(num Depth)(num SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
-{
-    SourcePieceOuter2 = Board[SourceIdx];
-    If (SourcePieceOuter2 == BlackPawn)
-    {
-        If (CalcAttackState Or (Board[(SourceIdx + 7)] < 0))
-        {
-            If (IdxToFile[SourceIdx] > 1)
-            {
-                Call AddMoveImpl(SourceIdx)((SourceIdx + 7))(Depth)(CalcAttackState)(CapturesOnly);
-            }
-        }
-        If (CalcAttackState Or (Board[(SourceIdx + 9)] < 0))
-        {
-            If (IdxToFile[SourceIdx] < 8)
-            {
-                Call AddMoveImpl(SourceIdx)((SourceIdx + 9))(Depth)(CalcAttackState)(CapturesOnly);
-            }
-        }
-        If (Not (CalcAttackState))
-        {
-            If (Board[(SourceIdx + 8)] == 0)
-            {
-                If CapturesOnly
-                {
-                    If ((IdxToRank[SourceIdx] == 7) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 8)) == 1))
-                    {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
-                    }
-                    Else
-                    {
-                        Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx + 8))(Depth);
-                        If (IsQuiescentCheckRes == 1)
-                        {
-                            Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
-                            List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
-                        }
-                    }
-                }
-                Else
-                {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
-                }
-                If ((IdxToRank[SourceIdx] == 2) And (Board[(SourceIdx + 16)] == 0))
-                {
-                    If CapturesOnly
-                    {
-                        If (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 16)) == 1)
-                        {
-                            Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
-                        }
-                        Else
-                        {
-                            Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx + 16))(Depth);
-                            If (IsQuiescentCheckRes == 1)
-                            {
-                                Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
-                                List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
-                    }
-                }
-            }
-        }
-        If (IdxToRank[SourceIdx] == 5)
-        {
-            If (Not (CalcAttackState))
-            {
-                If (Board[(SourceIdx - 1)] == WhitePawn)
-                {
-                    If (IdxToFile[SourceIdx] > 1)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
-                    }
-                }
-                If (Board[(SourceIdx + 1)] == WhitePawn)
-                {
-                    If (IdxToFile[SourceIdx] < 8)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
-                    }
-                }
-            }
-        }
-        Stop(this script);
-    }
-    If (SourcePieceOuter2 == WhitePawn)
-    {
-        If (CalcAttackState Or (Board[(SourceIdx - 9)] > 0))
-        {
-            If (IdxToFile[SourceIdx] > 1)
-            {
-                Call AddMoveImpl(SourceIdx)((SourceIdx - 9))(Depth)(CalcAttackState)(CapturesOnly);
-            }
-        }
-        If (CalcAttackState Or (Board[(SourceIdx - 7)] > 0))
-        {
-            If (IdxToFile[SourceIdx] < 8)
-            {
-                Call AddMoveImpl(SourceIdx)((SourceIdx - 7))(Depth)(CalcAttackState)(CapturesOnly);
-            }
-        }
-        If (Not (CalcAttackState))
-        {
-            If (Board[(SourceIdx - 8)] == 0)
-            {
-                If CapturesOnly
-                {
-                    If ((IdxToRank[SourceIdx] == 2) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 8)) == 1))
-                    {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
-                    }
-                    Else
-                    {
-                        Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx - 8))(Depth);
-                        If (IsQuiescentCheckRes == 1)
-                        {
-                            Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
-                            List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
-                        }
-                    }
-                }
-                Else
-                {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
-                }
-                If ((IdxToRank[SourceIdx] == 7) And (Board[(SourceIdx - 16)] == 0))
-                {
-                    If CapturesOnly
-                    {
-                        If (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 16)) == 1)
-                        {
-                            Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
-                        }
-                        Else
-                        {
-                            Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx - 16))(Depth);
-                            If (IsQuiescentCheckRes == 1)
-                            {
-                                Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
-                                List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
-                    }
-                }
-            }
-        }
-        If (IdxToRank[SourceIdx] == 4)
-        {
-            If (Not (CalcAttackState))
-            {
-                If (Board[(SourceIdx - 1)] == BlackPawn)
-                {
-                    If (IdxToFile[SourceIdx] > 1)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
-                    }
-                }
-                If (Board[(SourceIdx + 1)] == BlackPawn)
-                {
-                    If (IdxToFile[SourceIdx] < 8)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
-                    }
-                }
-            }
-        }
-        Stop(this script);
-    }
-    SourcePieceOuter2 = abs(SourcePieceOuter2);
-    If (SourcePieceOuter2 == BlackRook)
-    {
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
-        Stop(this script);
-    }
-    If (SourcePieceOuter2 == BlackBishop)
-    {
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
-        Stop(this script);
-    }
-    If (SourcePieceOuter2 == BlackKnight)
-    {
-        Call AddLookupMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
-        Stop(this script);
-    }
-    If (SourcePieceOuter2 == BlackKing)
-    {
-        Call AddLookupMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
-        Stop(this script);
-    }
-    If (SourcePieceOuter2 == BlackQueen)
-    {
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
-        Stop(this script);
-    }
-}
-
-Define CalculateMovesForSourceEx(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
-{
-    List.DeleteAll(CalcMovesMoveList);
-    List.DeleteAll(CalcMovesScoreList);
-    Call CalculateMovesForSource(Depth)(SourceIdx)(CalcAttackState)(CapturesOnly);
-    Call SortMoveList(Depth);
-    List.ReplaceItem(MovesCount, Depth, List.Length(CalcMovesMoveList));
-}
-
-Define CalculateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool IsBlackMove) (warp=true)
-{
-    If ((Not (CalcAttackState)) And (Not (CapturesOnly)))
-    {
-        If IsBlackMove
-        {
-            List.ReplaceItem(BlackMobBonus, Depth, 0);
-        }
-        Else
-        {
-            List.ReplaceItem(WhiteMobBonus, Depth, 0);
-        }
-        List.DeleteAll(PieceMobility);
-        Repeat (64)
-        {
-            List.Add(PieceMobility, 0);
-        }
-    }
-    List.DeleteAll(CalcMovesScoreList);
-    List.DeleteAll(CalcMovesMoveList);
-    Call PrepareCurrentKillerMoves(Depth);
-    SourceIdxOuter2 = 1;
-    Repeat (64)
-    {
-        If ((IsBlackMove And (Board[SourceIdxOuter2] > 0)) Or ((Not (IsBlackMove)) And (Board[SourceIdxOuter2] < 0)))
-        {
-            Call CalculateMovesForSource(Depth)(SourceIdxOuter2)(CalcAttackState)(CapturesOnly);
-            If (((Not (CalcAttackState)) And (Not (CapturesOnly))) And (Not ((abs(Board[SourceIdxOuter2]) == BlackPawn))))
-            {
-                CurrentPiece = Board[SourceIdxOuter2];
-                If IsBlackMove
-                {
-                    If (IsEndgame == 0)
-                    {
-                        If (CurrentPiece == BlackRook)
-                        {
-                            List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + RookMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                        }
-                        Else
-                        {
-                            If (CurrentPiece == BlackBishop)
-                            {
-                                List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + BishopMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                            }
-                            Else
-                            {
-                                If (CurrentPiece == BlackKnight)
-                                {
-                                    List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + KnightMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                }
-                                Else
-                                {
-                                    If (CurrentPiece == BlackQueen)
-                                    {
-                                        List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + QueenMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        If (IsEndgame2 == 1)
-                        {
-                            If ((CurrentPiece == BlackKing) And ((BlackQueenCount == 0) And (BlackMinorCount == 0)))
-                            {
-                                List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + (PieceMobility[SourceIdxOuter2] * 10)));
-                            }
-                        }
-                    }
-                }
-                Else
-                {
-                    If (IsEndgame == 0)
-                    {
-                        If (CurrentPiece == WhiteRook)
-                        {
-                            List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + RookMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                        }
-                        Else
-                        {
-                            If (CurrentPiece == WhiteBishop)
-                            {
-                                List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + BishopMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                            }
-                            Else
-                            {
-                                If (CurrentPiece == WhiteKnight)
-                                {
-                                    List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + KnightMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                }
-                                Else
-                                {
-                                    If (CurrentPiece == WhiteQueen)
-                                    {
-                                        List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + QueenMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        If (IsEndgame2 == 1)
-                        {
-                            If ((CurrentPiece == WhiteKing) And ((WhiteQueenCount == 0) And (WhiteMinorCount == 0)))
-                            {
-                                List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + (PieceMobility[SourceIdxOuter2] * 10)));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        SourceIdxOuter2 += 1;
-    }
-    If ((Not (CalcAttackState)) And (Not (CapturesOnly)))
-    {
-        If IsBlackMove
-        {
-            If ((HasBlackKingMoved == 0) And (HasBlackCastled == 0))
-            {
-                If ((((Board[VirtualBoard[1]] == BlackRook) And (Board[VirtualBoard[2]] == Empty)) And ((Board[VirtualBoard[3]] == Empty) And (Board[VirtualBoard[4]] == Empty))) And (Board[VirtualBoard[5]] == BlackKing))
-                {
-                    If ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[3]) == 0) And ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[4]) == 0) And (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[5]) == 0)))
-                    {
-                        If (HasBlackRookQSMoved == 0)
-                        {
-                            Call AddSpecialMove(BlackQueensideCastling)(Depth);
-                        }
-                    }
-                }
-                If (((Board[VirtualBoard[5]] == BlackKing) And (Board[VirtualBoard[6]] == Empty)) And ((Board[VirtualBoard[7]] == Empty) And (Board[VirtualBoard[8]] == BlackRook)))
-                {
-                    If ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[5]) == 0) And ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[6]) == 0) And (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[7]) == 0)))
-                    {
-                        If (HasBlackRookKSMoved == 0)
-                        {
-                            Call AddSpecialMove(BlackKingsideCastling)(Depth);
-                        }
-                    }
-                }
-            }
-        }
-        Else
-        {
-            If ((HasWhiteKingMoved == 0) And (HasWhiteCastled == 0))
-            {
-                If (((Board[VirtualBoard[57]] == WhiteRook) And (Board[VirtualBoard[58]] == Empty)) And ((Board[VirtualBoard[59]] == Empty) And ((Board[VirtualBoard[60]] == Empty) And (Board[VirtualBoard[61]] == WhiteKing))))
-                {
-                    If ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[59]) == 0) And ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[60]) == 0) And (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[61]) == 0)))
-                    {
-                        If (HasWhiteRookQSMoved == 0)
-                        {
-                            Call AddSpecialMove(WhiteQueensideCastling)(Depth);
-                        }
-                    }
-                }
-                If (((Board[VirtualBoard[62]] == Empty) And (Board[VirtualBoard[61]] == WhiteKing)) And ((Board[VirtualBoard[63]] == Empty) And (Board[VirtualBoard[64]] == WhiteRook)))
-                {
-                    If ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[61]) == 0) And ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[62]) == 0) And (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[63]) == 0)))
-                    {
-                        If (HasWhiteRookKSMoved == 0)
-                        {
-                            Call AddSpecialMove(WhiteKingsideCastling)(Depth);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    If (Not (CalcAttackState))
-    {
-        If (CapturesOnly And (Depth < 22))
-        {
-            IdxOuter2 = 1;
-            Repeat Until (IdxOuter2 > List.Length(CalcMovesMoveList))
-            {
-                If (CalcMovesScoreList[IdxOuter2] == "*")
-                {
-                    SourceIdxOuter2 = floor((CalcMovesMoveList[IdxOuter2] / 100));
-                    TargetIdxOuter2 = floor((CalcMovesMoveList[IdxOuter2] % 100));
-                    Call ClearMoveList((Depth + 2));
-                    Call AddMoveToList(CalcMovesMoveList[IdxOuter2])(0)((Depth + 2));
-                    List.ReplaceItem(MovesCount, (Depth + 2), 1);
-                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                    Call ApplyMove((Depth + 2));
-                    If ((Depth % 2) == 1)
-                    {
-                        IsWhiteChecked = 0;
-                        Call CalculateMovesForSource((Depth + 4))(TargetIdxOuter2)((1 == 1))((1 == 0));
-                        If (IsWhiteChecked == 1)
-                        {
-                            Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("")("");
-                            Call RevertMove((Depth + 2));
-                            Call GetMoveScore(SourceIdxOuter2)(TargetIdxOuter2)(Board[SourceIdxOuter2])(Board[TargetIdxOuter2])(CalcMovesMoveList[IdxOuter2])(Depth)((1 == 1));
-                            List.ReplaceItem(CalcMovesScoreList, IdxOuter2, MoveScoreRes);
-                            IdxOuter2 += 1;
-                        }
-                        Else
-                        {
-                            Call RevertMove((Depth + 2));
-                            List.DeleteItem(CalcMovesMoveList, IdxOuter2);
-                            List.DeleteItem(CalcMovesScoreList, IdxOuter2);
-                        }
-                    }
-                    Else
-                    {
-                        IsBlackChecked = 0;
-                        Call CalculateMovesForSource((Depth + 4))(TargetIdxOuter2)((1 == 1))((1 == 0));
-                        If (IsBlackChecked == 1)
-                        {
-                            Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("")("");
-                            Call RevertMove((Depth + 2));
-                            Call GetMoveScore(SourceIdxOuter2)(TargetIdxOuter2)(Board[SourceIdxOuter2])(Board[TargetIdxOuter2])(CalcMovesMoveList[IdxOuter2])(Depth)((1 == 1));
-                            List.ReplaceItem(CalcMovesScoreList, IdxOuter2, MoveScoreRes);
-                            IdxOuter2 += 1;
-                        }
-                        Else
-                        {
-                            Call RevertMove((Depth + 2));
-                            List.DeleteItem(CalcMovesMoveList, IdxOuter2);
-                            List.DeleteItem(CalcMovesScoreList, IdxOuter2);
-                        }
-                    }
-                }
-                Else
-                {
-                    IdxOuter2 += 1;
-                }
-            }
-        }
-        If (Depth == 1)
-        {
-            If (List.Length(DeepeningScore) == 0)
-            {
-                Repeat (List.Length(CalcMovesScoreList))
-                {
-                    List.Add(DeepeningScoreOrderMap, "");
-                    List.Add(DeepeningScore, "");
-                }
-            }
-            Else
-            {
-                Call EvaluateBoard;
-                Idx = 1;
-                Repeat (List.Length(CalcMovesScoreList))
-                {
-                    If (DeepeningScore[Idx] == "")
-                    {
-                        List.ReplaceItem(CalcMovesScoreList, Idx, (EvalResult + CalcMovesScoreList[Idx]));
-                    }
-                    Else
-                    {
-                        List.ReplaceItem(CalcMovesScoreList, Idx, DeepeningScore[Idx]);
-                    }
-                    Idx += 1;
-                }
-            }
-        }
-        Call SortMoveList(Depth);
-        List.ReplaceItem(MovesCount, Depth, List.Length(CalcMovesMoveList));
-    }
-}
-
-Define CalculateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
-{
-    If (IsProfilerEnabled == 1)
-    {
-        If CalcAttackState
-        {
-            Call Profile_MethodEnter((30 + Depth));
-        }
-        Else
-        {
-            If CapturesOnly
-            {
-                Call Profile_MethodEnter((60 + Depth));
-            }
-            Else
-            {
-                Call Profile_MethodEnter((90 + Depth));
-            }
-        }
-    }
-    Call CalculateMovesImpl(Depth)(CalcAttackState)(CapturesOnly)(((Depth % 2) == 1));
-    If (IsProfilerEnabled == 1)
-    {
-        If CalcAttackState
-        {
-            Call Profile_MethodExit((30 + Depth));
-        }
-        Else
-        {
-            If CapturesOnly
-            {
-                Call Profile_MethodExit((60 + Depth));
-            }
-            Else
-            {
-                Call Profile_MethodExit((90 + Depth));
-            }
-        }
-    }
 }
 
 Define CalculateOpeningMoves (warp=true)
@@ -3235,7 +2692,6 @@ Define DrawBoard (warp=true)
 
 Define DrawBoardAndWait (warp=false)
 {
-    Idx += 1;
     ProgressValue = 0;
     Event.BroadcastAndWait("drawboard");
     Event.BroadcastAndWait("progressvaluechanged");
@@ -4188,7 +3644,7 @@ Define ExecuteEngineMoveImpl (warp=false)
                 BestMove = MinMaxMovesRes[1];
                 If ((BestMove == "") Or (Operator.Random(1 / 100) > JuniorSearchQuota))
                 {
-                    Call CalculateMoves(1);
+                    Call GenerateMoves(1);
                     List.ReplaceItem(MovesIdx, 1, Operator.Random(1 / ceiling((List.Length(Moves1) * (JuniorDistQuota / 100)))));
                     Call ApplyMove(1);
                     Call CalcBoardAttackedByMove(2);
@@ -4343,7 +3799,7 @@ Define ExecuteUserMoveImpl(string UserMove) (warp=false)
         ToSquareIdx = -1;
         Event.BroadcastAndWait("fromsquareselected");
         Event.BroadcastAndWait("tosquareselected");
-        Call CalculateMoves(2);
+        Call GenerateMoves(2);
         If (Not (List.ContainsItem(Moves2, UserMove)))
         {
             Call Log("User Move: ")(UserMove)("")("")("")("")("")("");
@@ -4668,6 +4124,536 @@ Define FillBoard (warp=true)
     List.ReplaceItem(Board, VirtualBoard[62], WhiteBishop);
     List.ReplaceItem(Board, VirtualBoard[63], WhiteKnight);
     List.ReplaceItem(Board, VirtualBoard[64], WhiteRook);
+}
+
+Define GenerateMoves(string Depth) (warp=true)
+{
+    Call CalcBoardAttackedByMove((Depth + 1));
+    Call StoreAttackInfo((Depth + 1))(Depth);
+    List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
+    Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
+    List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
+}
+
+Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
+{
+    SourcePieceOuter2 = Board[SourceIdx];
+    If (SourcePieceOuter2 == BlackPawn)
+    {
+        If (CalcAttackState Or (Board[(SourceIdx + 7)] < 0))
+        {
+            If (IdxToFile[SourceIdx] > 1)
+            {
+                Call AddMoveImpl(SourceIdx)((SourceIdx + 7))(Depth)(CalcAttackState)(CapturesOnly);
+            }
+        }
+        If (CalcAttackState Or (Board[(SourceIdx + 9)] < 0))
+        {
+            If (IdxToFile[SourceIdx] < 8)
+            {
+                Call AddMoveImpl(SourceIdx)((SourceIdx + 9))(Depth)(CalcAttackState)(CapturesOnly);
+            }
+        }
+        If (Not (CalcAttackState))
+        {
+            If (Board[(SourceIdx + 8)] == 0)
+            {
+                If CapturesOnly
+                {
+                    If ((IdxToRank[SourceIdx] == 7) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 8)) == 1))
+                    {
+                        Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
+                    }
+                    Else
+                    {
+                        Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx + 8))(Depth);
+                        If (IsQuiescentCheckRes == 1)
+                        {
+                            Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
+                            List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
+                        }
+                    }
+                }
+                Else
+                {
+                    Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
+                }
+                If ((IdxToRank[SourceIdx] == 2) And (Board[(SourceIdx + 16)] == 0))
+                {
+                    If CapturesOnly
+                    {
+                        If (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx + 16)) == 1)
+                        {
+                            Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
+                        }
+                        Else
+                        {
+                            Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx + 16))(Depth);
+                            If (IsQuiescentCheckRes == 1)
+                            {
+                                Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
+                                List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
+                    }
+                }
+            }
+        }
+        If (IdxToRank[SourceIdx] == 5)
+        {
+            If (Not (CalcAttackState))
+            {
+                If (Board[(SourceIdx - 1)] == WhitePawn)
+                {
+                    If (IdxToFile[SourceIdx] > 1)
+                    {
+                        Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
+                    }
+                }
+                If (Board[(SourceIdx + 1)] == WhitePawn)
+                {
+                    If (IdxToFile[SourceIdx] < 8)
+                    {
+                        Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
+                    }
+                }
+            }
+        }
+        Stop(this script);
+    }
+    If (SourcePieceOuter2 == WhitePawn)
+    {
+        If (CalcAttackState Or (Board[(SourceIdx - 9)] > 0))
+        {
+            If (IdxToFile[SourceIdx] > 1)
+            {
+                Call AddMoveImpl(SourceIdx)((SourceIdx - 9))(Depth)(CalcAttackState)(CapturesOnly);
+            }
+        }
+        If (CalcAttackState Or (Board[(SourceIdx - 7)] > 0))
+        {
+            If (IdxToFile[SourceIdx] < 8)
+            {
+                Call AddMoveImpl(SourceIdx)((SourceIdx - 7))(Depth)(CalcAttackState)(CapturesOnly);
+            }
+        }
+        If (Not (CalcAttackState))
+        {
+            If (Board[(SourceIdx - 8)] == 0)
+            {
+                If CapturesOnly
+                {
+                    If ((IdxToRank[SourceIdx] == 2) Or (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 8)) == 1))
+                    {
+                        Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
+                    }
+                    Else
+                    {
+                        Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx - 8))(Depth);
+                        If (IsQuiescentCheckRes == 1)
+                        {
+                            Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
+                            List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
+                        }
+                    }
+                }
+                Else
+                {
+                    Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
+                }
+                If ((IdxToRank[SourceIdx] == 7) And (Board[(SourceIdx - 16)] == 0))
+                {
+                    If CapturesOnly
+                    {
+                        If (Operator.LetterOf(CheckedStateAttackLines[Depth], (SourceIdx - 16)) == 1)
+                        {
+                            Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
+                        }
+                        Else
+                        {
+                            Call IsQuiescentCheck(SourcePieceOuter2)((SourceIdx - 16))(Depth);
+                            If (IsQuiescentCheckRes == 1)
+                            {
+                                Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
+                                List.ReplaceItem(CalcMovesScoreList, List.Length(CalcMovesScoreList), "*");
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
+                    }
+                }
+            }
+        }
+        If (IdxToRank[SourceIdx] == 4)
+        {
+            If (Not (CalcAttackState))
+            {
+                If (Board[(SourceIdx - 1)] == BlackPawn)
+                {
+                    If (IdxToFile[SourceIdx] > 1)
+                    {
+                        Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
+                    }
+                }
+                If (Board[(SourceIdx + 1)] == BlackPawn)
+                {
+                    If (IdxToFile[SourceIdx] < 8)
+                    {
+                        Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
+                    }
+                }
+            }
+        }
+        Stop(this script);
+    }
+    SourcePieceOuter2 = abs(SourcePieceOuter2);
+    If (SourcePieceOuter2 == BlackRook)
+    {
+        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
+        Stop(this script);
+    }
+    If (SourcePieceOuter2 == BlackBishop)
+    {
+        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Stop(this script);
+    }
+    If (SourcePieceOuter2 == BlackKnight)
+    {
+        Call AddLookupMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Stop(this script);
+    }
+    If (SourcePieceOuter2 == BlackKing)
+    {
+        Call AddLookupMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
+        Stop(this script);
+    }
+    If (SourcePieceOuter2 == BlackQueen)
+    {
+        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
+        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Stop(this script);
+    }
+}
+
+Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
+{
+    List.DeleteAll(CalcMovesMoveList);
+    List.DeleteAll(CalcMovesScoreList);
+    Call GenerateMovesForSource(Depth)(SourceIdx)(CalcAttackState)(CapturesOnly);
+    Call SortMoveList(Depth);
+    List.ReplaceItem(MovesCount, Depth, List.Length(CalcMovesMoveList));
+}
+
+Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool IsBlackMove) (warp=true)
+{
+    If ((Not (CalcAttackState)) And (Not (CapturesOnly)))
+    {
+        If IsBlackMove
+        {
+            List.ReplaceItem(BlackMobBonus, Depth, 0);
+        }
+        Else
+        {
+            List.ReplaceItem(WhiteMobBonus, Depth, 0);
+        }
+        List.DeleteAll(PieceMobility);
+        Repeat (64)
+        {
+            List.Add(PieceMobility, 0);
+        }
+    }
+    List.DeleteAll(CalcMovesScoreList);
+    List.DeleteAll(CalcMovesMoveList);
+    Call PrepareCurrentKillerMoves(Depth);
+    SourceIdxOuter2 = 1;
+    Repeat (64)
+    {
+        If ((IsBlackMove And (Board[SourceIdxOuter2] > 0)) Or ((Not (IsBlackMove)) And (Board[SourceIdxOuter2] < 0)))
+        {
+            Call GenerateMovesForSource(Depth)(SourceIdxOuter2)(CalcAttackState)(CapturesOnly);
+            If (((Not (CalcAttackState)) And (Not (CapturesOnly))) And (Not ((abs(Board[SourceIdxOuter2]) == BlackPawn))))
+            {
+                CurrentPiece = Board[SourceIdxOuter2];
+                If IsBlackMove
+                {
+                    If (IsEndgame == 0)
+                    {
+                        If (CurrentPiece == BlackRook)
+                        {
+                            List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + RookMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                        }
+                        Else
+                        {
+                            If (CurrentPiece == BlackBishop)
+                            {
+                                List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + BishopMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                            }
+                            Else
+                            {
+                                If (CurrentPiece == BlackKnight)
+                                {
+                                    List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + KnightMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                                }
+                                Else
+                                {
+                                    If (CurrentPiece == BlackQueen)
+                                    {
+                                        List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + QueenMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If (IsEndgame2 == 1)
+                        {
+                            If ((CurrentPiece == BlackKing) And ((BlackQueenCount == 0) And (BlackMinorCount == 0)))
+                            {
+                                List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + (PieceMobility[SourceIdxOuter2] * 10)));
+                            }
+                        }
+                    }
+                }
+                Else
+                {
+                    If (IsEndgame == 0)
+                    {
+                        If (CurrentPiece == WhiteRook)
+                        {
+                            List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + RookMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                        }
+                        Else
+                        {
+                            If (CurrentPiece == WhiteBishop)
+                            {
+                                List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + BishopMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                            }
+                            Else
+                            {
+                                If (CurrentPiece == WhiteKnight)
+                                {
+                                    List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + KnightMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                                }
+                                Else
+                                {
+                                    If (CurrentPiece == WhiteQueen)
+                                    {
+                                        List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + QueenMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If (IsEndgame2 == 1)
+                        {
+                            If ((CurrentPiece == WhiteKing) And ((WhiteQueenCount == 0) And (WhiteMinorCount == 0)))
+                            {
+                                List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + (PieceMobility[SourceIdxOuter2] * 10)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        SourceIdxOuter2 += 1;
+    }
+    If ((Not (CalcAttackState)) And (Not (CapturesOnly)))
+    {
+        If IsBlackMove
+        {
+            If ((HasBlackKingMoved == 0) And (HasBlackCastled == 0))
+            {
+                If ((((Board[VirtualBoard[1]] == BlackRook) And (Board[VirtualBoard[2]] == Empty)) And ((Board[VirtualBoard[3]] == Empty) And (Board[VirtualBoard[4]] == Empty))) And (Board[VirtualBoard[5]] == BlackKing))
+                {
+                    If ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[3]) == 0) And ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[4]) == 0) And (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[5]) == 0)))
+                    {
+                        If (HasBlackRookQSMoved == 0)
+                        {
+                            Call AddSpecialMove(BlackQueensideCastling)(Depth);
+                        }
+                    }
+                }
+                If (((Board[VirtualBoard[5]] == BlackKing) And (Board[VirtualBoard[6]] == Empty)) And ((Board[VirtualBoard[7]] == Empty) And (Board[VirtualBoard[8]] == BlackRook)))
+                {
+                    If ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[5]) == 0) And ((Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[6]) == 0) And (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], VirtualBoard[7]) == 0)))
+                    {
+                        If (HasBlackRookKSMoved == 0)
+                        {
+                            Call AddSpecialMove(BlackKingsideCastling)(Depth);
+                        }
+                    }
+                }
+            }
+        }
+        Else
+        {
+            If ((HasWhiteKingMoved == 0) And (HasWhiteCastled == 0))
+            {
+                If (((Board[VirtualBoard[57]] == WhiteRook) And (Board[VirtualBoard[58]] == Empty)) And ((Board[VirtualBoard[59]] == Empty) And ((Board[VirtualBoard[60]] == Empty) And (Board[VirtualBoard[61]] == WhiteKing))))
+                {
+                    If ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[59]) == 0) And ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[60]) == 0) And (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[61]) == 0)))
+                    {
+                        If (HasWhiteRookQSMoved == 0)
+                        {
+                            Call AddSpecialMove(WhiteQueensideCastling)(Depth);
+                        }
+                    }
+                }
+                If (((Board[VirtualBoard[62]] == Empty) And (Board[VirtualBoard[61]] == WhiteKing)) And ((Board[VirtualBoard[63]] == Empty) And (Board[VirtualBoard[64]] == WhiteRook)))
+                {
+                    If ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[61]) == 0) And ((Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[62]) == 0) And (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], VirtualBoard[63]) == 0)))
+                    {
+                        If (HasWhiteRookKSMoved == 0)
+                        {
+                            Call AddSpecialMove(WhiteKingsideCastling)(Depth);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    If (Not (CalcAttackState))
+    {
+        If (CapturesOnly And (Depth < 22))
+        {
+            IdxOuter2 = 1;
+            Repeat Until (IdxOuter2 > List.Length(CalcMovesMoveList))
+            {
+                If (CalcMovesScoreList[IdxOuter2] == "*")
+                {
+                    SourceIdxOuter2 = floor((CalcMovesMoveList[IdxOuter2] / 100));
+                    TargetIdxOuter2 = floor((CalcMovesMoveList[IdxOuter2] % 100));
+                    Call ClearMoveList((Depth + 2));
+                    Call AddMoveToList(CalcMovesMoveList[IdxOuter2])(0)((Depth + 2));
+                    List.ReplaceItem(MovesCount, (Depth + 2), 1);
+                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                    Call ApplyMove((Depth + 2));
+                    If ((Depth % 2) == 1)
+                    {
+                        IsWhiteChecked = 0;
+                        Call GenerateMovesForSource((Depth + 4))(TargetIdxOuter2)((1 == 1))((1 == 0));
+                        If (IsWhiteChecked == 1)
+                        {
+                            Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("")("");
+                            Call RevertMove((Depth + 2));
+                            Call GetMoveScore(SourceIdxOuter2)(TargetIdxOuter2)(Board[SourceIdxOuter2])(Board[TargetIdxOuter2])(CalcMovesMoveList[IdxOuter2])(Depth)((1 == 1));
+                            List.ReplaceItem(CalcMovesScoreList, IdxOuter2, MoveScoreRes);
+                            IdxOuter2 += 1;
+                        }
+                        Else
+                        {
+                            Call RevertMove((Depth + 2));
+                            List.DeleteItem(CalcMovesMoveList, IdxOuter2);
+                            List.DeleteItem(CalcMovesScoreList, IdxOuter2);
+                        }
+                    }
+                    Else
+                    {
+                        IsBlackChecked = 0;
+                        Call GenerateMovesForSource((Depth + 4))(TargetIdxOuter2)((1 == 1))((1 == 0));
+                        If (IsBlackChecked == 1)
+                        {
+                            Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("")("");
+                            Call RevertMove((Depth + 2));
+                            Call GetMoveScore(SourceIdxOuter2)(TargetIdxOuter2)(Board[SourceIdxOuter2])(Board[TargetIdxOuter2])(CalcMovesMoveList[IdxOuter2])(Depth)((1 == 1));
+                            List.ReplaceItem(CalcMovesScoreList, IdxOuter2, MoveScoreRes);
+                            IdxOuter2 += 1;
+                        }
+                        Else
+                        {
+                            Call RevertMove((Depth + 2));
+                            List.DeleteItem(CalcMovesMoveList, IdxOuter2);
+                            List.DeleteItem(CalcMovesScoreList, IdxOuter2);
+                        }
+                    }
+                }
+                Else
+                {
+                    IdxOuter2 += 1;
+                }
+            }
+        }
+        If (Depth == 1)
+        {
+            If (List.Length(DeepeningScore) == 0)
+            {
+                Repeat (List.Length(CalcMovesScoreList))
+                {
+                    List.Add(DeepeningScoreOrderMap, "");
+                    List.Add(DeepeningScore, "");
+                }
+            }
+            Else
+            {
+                Call EvaluateBoard;
+                Idx = 1;
+                Repeat (List.Length(CalcMovesScoreList))
+                {
+                    If (DeepeningScore[Idx] == "")
+                    {
+                        List.ReplaceItem(CalcMovesScoreList, Idx, (EvalResult + CalcMovesScoreList[Idx]));
+                    }
+                    Else
+                    {
+                        List.ReplaceItem(CalcMovesScoreList, Idx, DeepeningScore[Idx]);
+                    }
+                    Idx += 1;
+                }
+            }
+        }
+        Call SortMoveList(Depth);
+        List.ReplaceItem(MovesCount, Depth, List.Length(CalcMovesMoveList));
+    }
+}
+
+Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
+{
+    If (IsProfilerEnabled == 1)
+    {
+        If CalcAttackState
+        {
+            Call Profile_MethodEnter((30 + Depth));
+        }
+        Else
+        {
+            If CapturesOnly
+            {
+                Call Profile_MethodEnter((60 + Depth));
+            }
+            Else
+            {
+                Call Profile_MethodEnter((90 + Depth));
+            }
+        }
+    }
+    Call GenerateMovesImpl(Depth)(CalcAttackState)(CapturesOnly)(((Depth % 2) == 1));
+    If (IsProfilerEnabled == 1)
+    {
+        If CalcAttackState
+        {
+            Call Profile_MethodExit((30 + Depth));
+        }
+        Else
+        {
+            If CapturesOnly
+            {
+                Call Profile_MethodExit((60 + Depth));
+            }
+            Else
+            {
+                Call Profile_MethodExit((90 + Depth));
+            }
+        }
+    }
 }
 
 Define GetBoardString (warp=true)
@@ -5652,10 +5638,15 @@ Define InitBishopSquare (warp=true)
 
 Define InitBoard (warp=true)
 {
+    IsModeProfiler = 0;
+    IsModeDeepeningDebug = 0;
+    IsModeCompetition = 0;
+    MoveFromIdx = -1;
+    MoveToIdx = -1;
+    ProgressValue = 0;
+    EvaluationValue = 0;
     IsAdvisorEnabled = 1;
     IsInUndo = 0;
-    ExecutionDepth = 0;
-    IsExecutionRunning = 0;
     IsProfilerEnabled = 0;
     IsEndgame = 0;
     IsEndgame2 = 0;
@@ -5729,6 +5720,29 @@ Define InitBoard (warp=true)
     {
         List.Add(CharsUpperCaseList, Operator.LetterOf(CharsUpperCase, Idx));
         Idx += 1;
+    }
+    List.DeleteItem(KillerMoves1, all);
+    List.DeleteItem(KillerMoves2, all);
+    List.DeleteItem(KillerMoves3, all);
+    List.DeleteItem(KillerMoves4, all);
+    List.DeleteItem(KillerMoves5, all);
+    List.DeleteItem(KillerMoves6, all);
+    List.DeleteItem(KillerMoves7, all);
+    List.DeleteItem(KillerMoves8, all);
+    List.DeleteItem(KillerMoves9, all);
+    List.DeleteItem(KillerMoves10, all);
+    Repeat (4)
+    {
+        List.Add(KillerMoves1, "");
+        List.Add(KillerMoves2, "");
+        List.Add(KillerMoves3, "");
+        List.Add(KillerMoves4, "");
+        List.Add(KillerMoves5, "");
+        List.Add(KillerMoves6, "");
+        List.Add(KillerMoves7, "");
+        List.Add(KillerMoves8, "");
+        List.Add(KillerMoves9, "");
+        List.Add(KillerMoves10, "");
     }
     List.DeleteItem(BoardHistory, all);
     List.DeleteItem(BoardHistoryHash, all);
@@ -6427,7 +6441,7 @@ Define IsBlackKingCheckMate (warp=true)
     If (IsBlackChecked == 1)
     {
         IsBlackKingCheckMateRes = 1;
-        Call CalculateMoves(1);
+        Call GenerateMoves(1);
         List.ReplaceItem(MovesIdx, 1, 1);
         Repeat (MovesCount[1])
         {
@@ -6493,7 +6507,7 @@ Define IsDrawByStalemate(string Depth) (warp=true)
         Stop(this script);
     }
     IsDrawRes = 1;
-    Call CalculateMoves(Depth);
+    Call GenerateMoves(Depth);
     List.ReplaceItem(MovesIdx, Depth, 1);
     Repeat (MovesCount[Depth])
     {
@@ -6632,7 +6646,7 @@ Define IsWhiteKingCheckMate (warp=true)
     If (IsWhiteChecked == 1)
     {
         IsWhiteKingCheckMateRes = 1;
-        Call CalculateMoves(2);
+        Call GenerateMoves(2);
         List.ReplaceItem(MovesIdx, 2, 1);
         Repeat (MovesCount[2])
         {
@@ -7040,12 +7054,22 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
                                     {
                                         CurrentMoveOuter = ((SourceIdxOuter2 * 100) + TargetIdxOuter2);
                                     }
-                                    List.DeleteAll(CalcMovesMoveList);
-                                    Call CalculateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 1));
-                                    If ((Not (List.ContainsItem(PickedMove, CurrentMoveOuter))) And List.ContainsItem(CalcMovesMoveList, CurrentMoveOuter))
+                                    If (Not (List.ContainsItem(PickedMove, CurrentMoveOuter)))
                                     {
-                                        List.Add(TmpList1, CurrentMoveOuter);
-                                        List.Add(TmpList2, (100 + Delta));
+                                        List.DeleteAll(CalcMovesMoveList);
+                                        Call GenerateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 1));
+                                        If List.ContainsItem(CalcMovesMoveList, CurrentMoveOuter)
+                                        {
+                                            List.Add(TmpList1, CurrentMoveOuter);
+                                            If (Not ((Delta < 0)))
+                                            {
+                                                List.Add(TmpList2, (100 + Delta));
+                                            }
+                                            Else
+                                            {
+                                                List.Add(TmpList2, 500);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -7077,12 +7101,22 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
                                     {
                                         CurrentMoveOuter = ((SourceIdxOuter2 * 100) + TargetIdxOuter2);
                                     }
-                                    List.DeleteAll(CalcMovesMoveList);
-                                    Call CalculateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 1));
-                                    If ((Not (List.ContainsItem(PickedMove, CurrentMoveOuter))) And List.ContainsItem(CalcMovesMoveList, CurrentMoveOuter))
+                                    If (Not (List.ContainsItem(PickedMove, CurrentMoveOuter)))
                                     {
-                                        List.Add(TmpList1, CurrentMoveOuter);
-                                        List.Add(TmpList2, (-100 + Delta));
+                                        List.DeleteAll(CalcMovesMoveList);
+                                        Call GenerateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 1));
+                                        If List.ContainsItem(CalcMovesMoveList, CurrentMoveOuter)
+                                        {
+                                            List.Add(TmpList1, CurrentMoveOuter);
+                                            If (Not ((Delta > 0)))
+                                            {
+                                                List.Add(TmpList2, (-100 + Delta));
+                                            }
+                                            Else
+                                            {
+                                                List.Add(TmpList2, -500);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -7139,11 +7173,11 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
         Call Profile_IncCounter(504);
         List.DeleteAll(TmpList1);
         List.DeleteAll(TmpList2);
-        If ((Not (Quiescence)) And ((Depth > 1) And (Depth < 9)))
+        If ((Not (Quiescence)) And ((Depth > 1) And (Depth < 11)))
         {
             Call PrepareCurrentKillerMoves(Depth);
             IdxOuter3 = List.Length(CurrentKillerMoves);
-            Repeat Until ((IdxOuter3 == 0) Or (List.Length(TmpList1) == 2))
+            Repeat Until (IdxOuter3 == 0)
             {
                 SourceIdxOuter2 = floor((CurrentKillerMoves[IdxOuter3] / 100));
                 TargetIdxOuter2 = floor((CurrentKillerMoves[IdxOuter3] % 100));
@@ -7154,14 +7188,20 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
                     {
                         If ((SourceIdxOuter2 > 0) And (Board[TargetIdxOuter2] == 0))
                         {
-                            Call CalculateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 0));
+                            If (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[SourceIdxOuter2]] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2))] == "")))
+                            {
+                                Call GenerateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 0));
+                            }
                         }
                     }
                     Else
                     {
                         If ((SourceIdxOuter2 < 0) And (Board[TargetIdxOuter2] == 0))
                         {
-                            Call CalculateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 0));
+                            If (Not ((MovePosLookupWhite[((PieceIdxLookup[(0 - Board[SourceIdxOuter2])] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2))] == "")))
+                            {
+                                Call GenerateMovesForSource((Depth + 2))(SourceIdxOuter2)((1 == 0))((1 == 0));
+                            }
                         }
                     }
                     If (List.ContainsItem(CalcMovesMoveList, CurrentKillerMoves[IdxOuter3]) And (Not (Operator.Contains(PickedMove[Depth], CurrentKillerMoves[IdxOuter3]))))
@@ -7248,15 +7288,14 @@ Define PickMove(string Depth)(string MaxDepth)(bool InitialDeepening)(bool Quies
             }
         }
         CalculateMovesRequiresAttackRecalc = 0;
-        Call CalculateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         If (Quiescence And (CalculateMovesRequiresAttackRecalc == 1))
         {
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            Call CalculateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         }
-        List.DeleteAll(KingAttackLines);
         List.ReplaceItem(MovesIdx, Depth, 1);
         Call GetCurrentMove(Depth);
         BoardAttackedString = "";
@@ -7376,6 +7415,26 @@ Define PrepareCurrentKillerMoves(string Depth) (warp=true)
                                 List.Add(CurrentKillerMoves, KillerMoves8[2]);
                                 List.Add(CurrentKillerMoves, KillerMoves8[3]);
                                 List.Add(CurrentKillerMoves, KillerMoves8[4]);
+                            }
+                            Else
+                            {
+                                If (Depth == 9)
+                                {
+                                    List.Add(CurrentKillerMoves, KillerMoves9[1]);
+                                    List.Add(CurrentKillerMoves, KillerMoves9[2]);
+                                    List.Add(CurrentKillerMoves, KillerMoves9[3]);
+                                    List.Add(CurrentKillerMoves, KillerMoves9[4]);
+                                }
+                                Else
+                                {
+                                    If (Depth == 10)
+                                    {
+                                        List.Add(CurrentKillerMoves, KillerMoves10[1]);
+                                        List.Add(CurrentKillerMoves, KillerMoves10[2]);
+                                        List.Add(CurrentKillerMoves, KillerMoves10[3]);
+                                        List.Add(CurrentKillerMoves, KillerMoves10[4]);
+                                    }
+                                }
                             }
                         }
                     }
@@ -7637,6 +7696,8 @@ Define RUN_BEFORE_SAVING (warp=true)
     List.DeleteItem(KillerMoves6, all);
     List.DeleteItem(KillerMoves7, all);
     List.DeleteItem(KillerMoves8, all);
+    List.DeleteItem(KillerMoves9, all);
+    List.DeleteItem(KillerMoves10, all);
     List.DeleteItem(TTNodeHorizon, all);
     List.DeleteItem(TTNodeBlackMobility, all);
     List.DeleteItem(TTNodeWhiteMobility, all);
@@ -8241,90 +8302,194 @@ Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
 
 Define StoreKillerMove(string Depth)(string Move) (warp=true)
 {
-    If (Depth == 8)
+    If (Depth == 10)
     {
-        List.DeleteItem(KillerMoves8, List.IndexOf(KillerMoves8, Move));
-        List.Add(KillerMoves8, Move);
-        If (List.Length(KillerMoves8) > 4)
+        Idx = List.IndexOf(KillerMoves10, Move);
+        If (Idx == 0)
         {
-            List.DeleteItem(KillerMoves8, 1);
+            List.ReplaceItem(KillerMoves10, 1, Move);
+        }
+        Else
+        {
+            If (Idx < 4)
+            {
+                CurrentValue = KillerMoves10[(Idx + 1)];
+                List.ReplaceItem(KillerMoves10, (Idx + 1), Move);
+                List.ReplaceItem(KillerMoves10, Idx, CurrentValue);
+            }
         }
     }
     Else
     {
-        If (Depth == 7)
+        If (Depth == 9)
         {
-            List.DeleteItem(KillerMoves7, List.IndexOf(KillerMoves7, Move));
-            List.Add(KillerMoves7, Move);
-            If (List.Length(KillerMoves7) > 4)
+            Idx = List.IndexOf(KillerMoves9, Move);
+            If (Idx == 0)
             {
-                List.DeleteItem(KillerMoves7, 1);
+                List.ReplaceItem(KillerMoves9, 1, Move);
+            }
+            Else
+            {
+                If (Idx < 4)
+                {
+                    CurrentValue = KillerMoves10[(Idx + 1)];
+                    List.ReplaceItem(KillerMoves7, (Idx + 1), Move);
+                    List.ReplaceItem(KillerMoves9, Idx, CurrentValue);
+                }
             }
         }
         Else
         {
-            If (Depth == 6)
+            If (Depth == 8)
             {
-                List.DeleteItem(KillerMoves6, List.IndexOf(KillerMoves6, Move));
-                List.Add(KillerMoves6, Move);
-                If (List.Length(KillerMoves6) > 4)
+                Idx = List.IndexOf(KillerMoves8, Move);
+                If (Idx == 0)
                 {
-                    List.DeleteItem(KillerMoves6, 1);
+                    List.ReplaceItem(KillerMoves8, 1, Move);
+                }
+                Else
+                {
+                    If (Idx < 4)
+                    {
+                        CurrentValue = KillerMoves8[(Idx + 1)];
+                        List.ReplaceItem(KillerMoves8, (Idx + 1), Move);
+                        List.ReplaceItem(KillerMoves8, Idx, CurrentValue);
+                    }
                 }
             }
             Else
             {
-                If (Depth == 5)
+                If (Depth == 7)
                 {
-                    List.DeleteItem(KillerMoves5, List.IndexOf(KillerMoves5, Move));
-                    List.Add(KillerMoves5, Move);
-                    If (List.Length(KillerMoves5) > 4)
+                    Idx = List.IndexOf(KillerMoves7, Move);
+                    If (Idx == 0)
                     {
-                        List.DeleteItem(KillerMoves5, 1);
+                        List.ReplaceItem(KillerMoves7, 1, Move);
+                    }
+                    Else
+                    {
+                        If (Idx < 4)
+                        {
+                            CurrentValue = KillerMoves7[(Idx + 1)];
+                            List.ReplaceItem(KillerMoves7, (Idx + 1), Move);
+                            List.ReplaceItem(KillerMoves7, Idx, CurrentValue);
+                        }
                     }
                 }
                 Else
                 {
-                    If (Depth == 4)
+                    If (Depth == 6)
                     {
-                        List.DeleteItem(KillerMoves4, List.IndexOf(KillerMoves4, Move));
-                        List.Add(KillerMoves4, Move);
-                        If (List.Length(KillerMoves4) > 4)
+                        Idx = List.IndexOf(KillerMoves6, Move);
+                        If (Idx == 0)
                         {
-                            List.DeleteItem(KillerMoves4, 1);
+                            List.ReplaceItem(KillerMoves6, 1, Move);
+                        }
+                        Else
+                        {
+                            If (Idx < 4)
+                            {
+                                CurrentValue = KillerMoves6[(Idx + 1)];
+                                List.ReplaceItem(KillerMoves6, (Idx + 1), Move);
+                                List.ReplaceItem(KillerMoves6, Idx, CurrentValue);
+                            }
                         }
                     }
                     Else
                     {
-                        If (Depth == 3)
+                        If (Depth == 5)
                         {
-                            List.DeleteItem(KillerMoves3, List.IndexOf(KillerMoves3, Move));
-                            List.Add(KillerMoves3, Move);
-                            If (List.Length(KillerMoves3) > 4)
+                            Idx = List.IndexOf(KillerMoves5, Move);
+                            If (Idx == 0)
                             {
-                                List.DeleteItem(KillerMoves3, 1);
+                                List.ReplaceItem(KillerMoves5, 1, Move);
+                            }
+                            Else
+                            {
+                                If (Idx < 4)
+                                {
+                                    CurrentValue = KillerMoves5[(Idx + 1)];
+                                    List.ReplaceItem(KillerMoves5, (Idx + 1), Move);
+                                    List.ReplaceItem(KillerMoves5, Idx, CurrentValue);
+                                }
                             }
                         }
                         Else
                         {
-                            If (Depth == 2)
+                            If (Depth == 4)
                             {
-                                List.DeleteItem(KillerMoves2, List.IndexOf(KillerMoves2, Move));
-                                List.Add(KillerMoves2, Move);
-                                If (List.Length(KillerMoves2) > 4)
+                                Idx = List.IndexOf(KillerMoves4, Move);
+                                If (Idx == 0)
                                 {
-                                    List.DeleteItem(KillerMoves2, 1);
+                                    List.ReplaceItem(KillerMoves4, 1, Move);
+                                }
+                                Else
+                                {
+                                    If (Idx < 4)
+                                    {
+                                        CurrentValue = KillerMoves4[(Idx + 1)];
+                                        List.ReplaceItem(KillerMoves4, (Idx + 1), Move);
+                                        List.ReplaceItem(KillerMoves4, Idx, CurrentValue);
+                                    }
                                 }
                             }
                             Else
                             {
-                                If (Depth == 1)
+                                If (Depth == 3)
                                 {
-                                    List.DeleteItem(KillerMoves1, List.IndexOf(KillerMoves1, Depth));
-                                    List.Add(KillerMoves1, Depth);
-                                    If (List.Length(KillerMoves1) > 4)
+                                    Idx = List.IndexOf(KillerMoves3, Move);
+                                    If (Idx == 0)
                                     {
-                                        List.DeleteItem(KillerMoves1, 1);
+                                        List.ReplaceItem(KillerMoves3, 1, Move);
+                                    }
+                                    Else
+                                    {
+                                        If (Idx < 4)
+                                        {
+                                            CurrentValue = KillerMoves3[(Idx + 1)];
+                                            List.ReplaceItem(KillerMoves3, (Idx + 1), Move);
+                                            List.ReplaceItem(KillerMoves3, Idx, CurrentValue);
+                                        }
+                                    }
+                                }
+                                Else
+                                {
+                                    If (Depth == 2)
+                                    {
+                                        Idx = List.IndexOf(KillerMoves2, Move);
+                                        If (Idx == 0)
+                                        {
+                                            List.ReplaceItem(KillerMoves2, 1, Move);
+                                        }
+                                        Else
+                                        {
+                                            If (Idx < 4)
+                                            {
+                                                CurrentValue = KillerMoves2[(Idx + 1)];
+                                                List.ReplaceItem(KillerMoves2, (Idx + 1), Move);
+                                                List.ReplaceItem(KillerMoves2, Idx, CurrentValue);
+                                            }
+                                        }
+                                    }
+                                    Else
+                                    {
+                                        If (Depth == 1)
+                                        {
+                                            Idx = List.IndexOf(KillerMoves1, Move);
+                                            If (Idx == 0)
+                                            {
+                                                List.ReplaceItem(KillerMoves1, 1, Move);
+                                            }
+                                            Else
+                                            {
+                                                If (Idx < 4)
+                                                {
+                                                    CurrentValue = KillerMoves1[(Idx + 1)];
+                                                    List.ReplaceItem(KillerMoves1, (Idx + 1), Move);
+                                                    List.ReplaceItem(KillerMoves1, Idx, CurrentValue);
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
