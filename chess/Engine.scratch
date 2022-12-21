@@ -88,7 +88,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 4.87 (09.12.2022) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 4.90 (20.12.2022) by ArnoHu")(5);
 }
 
 
@@ -321,6 +321,10 @@ WhenBroadcastReceived(startgame)
 WhenBroadcastReceived(triggerrestart)
 {
     Looks.Say("");
+    List.Hide(BoardHistory);
+    List.Hide(GameMovesAN);
+    List.Hide(ExportData);
+    List.Hide(ExportMoves);
 }
 
 WhenBroadcastReceived(undo)
@@ -1849,7 +1853,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     Else
     {
-        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(CurrentValue)((MaxDepth - Depth))(BlackMobBonus[Depth])(WhiteMobBonus[Depth])(BoardAttackedString)(BoardAttackedString2)(CurrentValue2);
+        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(CurrentValue)((MaxDepth - Depth))("")("")(BoardAttackedString)(BoardAttackedString2)(CurrentValue2);
     }
 }
 
@@ -3276,11 +3280,11 @@ Define ExecuteEngineMoveImpl (warp=false)
             Looks.Think("Thinking...");
             Control.Wait(0);
             Call InitAlphaBeta(1)(1)((1 == 1));
-            If (Level > 3)
+            If (Level > 2)
             {
-                If (Level == 4)
+                If ((Level == 3) Or (Level == 4))
                 {
-                    ThinkTimeLimit = 5;
+                    ThinkTimeLimit = ((Level - 2) * 2);
                 }
                 Else
                 {
@@ -3308,29 +3312,31 @@ Define ExecuteEngineMoveImpl (warp=false)
                     }
                 }
                 ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
+                IsMinMaxTimeout = 0;
                 IsDeepeningDone = 0;
                 IdxDeepening = 1;
                 BestMove = "";
                 BestMinMaxRes = "";
-                If (Level == 4)
+                If ((Level == 3) Or (Level == 4))
                 {
-                    List.DeleteItem(MinMaxMovesRes, all);
-                    Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((1 == 1))(10)((1 == 1));
-                    If (List.Length(MinMaxMovesRes) > 0)
+                    ThinkTimeLimitMinMax = ThinkTimeLimit;
+                    Repeat ((Level - 1))
                     {
-                        BestMove = MinMaxMovesRes[1];
-                        BestMinMaxRes = MinMaxValuesRes[1];
-                    }
-                    If (Not (((BestMinMaxRes > (BlackKing / 2)) Or (BestMinMaxRes < (WhiteKing / 2)))))
-                    {
-                        IdxDeepening += 1;
-                        List.DeleteItem(MinMaxMovesRes, all);
-                        Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((1 == 0))(10)((1 == 1));
-                        If (List.Length(MinMaxMovesRes) > 0)
+                        If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (Not (((BestMinMaxRes > (BlackKing / 2)) Or (BestMinMaxRes < (WhiteKing / 2)))))))
                         {
-                            BestMove = MinMaxMovesRes[1];
-                            BestMinMaxRes = MinMaxValuesRes[1];
+                            List.DeleteItem(MinMaxMovesRes, all);
+                            Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(10)((1 == 1));
+                            If (List.Length(MinMaxMovesRes) > 0)
+                            {
+                                If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
+                                {
+                                    BestMove = MinMaxMovesRes[1];
+                                    BestMinMaxRes = MinMaxValuesRes[1];
+                                    Call OnEvaluationChanged(BestMinMaxRes);
+                                }
+                            }
                         }
+                        IdxDeepening += 1;
                     }
                 }
                 Else
@@ -3443,13 +3449,8 @@ Define ExecuteEngineMoveImpl (warp=false)
                 {
                     If (Level == 2)
                     {
-                        JuniorDistQuota = 20;
-                        JuniorSearchQuota = 60;
-                    }
-                    Else
-                    {
-                        JuniorDistQuota = 1;
-                        JuniorSearchQuota = 100;
+                        JuniorDistQuota = 10;
+                        JuniorSearchQuota = 75;
                     }
                 }
                 ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
@@ -6921,14 +6922,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     TargetIdx = floor((TTProbeBestMoveRes % 100));
                     If ((Not (Quiescence)) Or (Quiescence And ((TTProbeHorizonRes == -1) Or (Not ((Board[TargetIdx] == 0))))))
                     {
-                        If ((Depth % 2) == 1)
-                        {
-                            Call AddMoveToList(TTProbeBestMoveRes)(1000)(Depth);
-                        }
-                        Else
-                        {
-                            Call AddMoveToList(TTProbeBestMoveRes)(-1000)(Depth);
-                        }
+                        Call AddMoveToList(TTProbeBestMoveRes)(0)(Depth);
                         List.ReplaceItem(MovesIdx, Depth, 1);
                         Call ApplyMove(Depth);
                         List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
@@ -7067,7 +7061,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     Repeat (MovesCount[(Depth + 2)])
                     {
                         Call GetCurrentMove((Depth + 2));
-                        Call AddMoveToList(CurrentMove)("")(Depth);
+                        Call AddMoveToList(CurrentMove)(0)(Depth);
                         List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
                     }
                     List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + MovesCount[(Depth + 2)]));
@@ -7182,7 +7176,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 Repeat (MovesCount[(Depth + 2)])
                 {
                     Call GetCurrentMove((Depth + 2));
-                    Call AddMoveToList(CurrentMove)("")(Depth);
+                    Call AddMoveToList(CurrentMove)(0)(Depth);
                     List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
                 }
                 List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + MovesCount[(Depth + 2)]));
@@ -7283,7 +7277,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         Else
         {
-            Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")(CurrentValue)(0)(BlackMobBonus[Depth])(WhiteMobBonus[Depth])(BoardAttackedString)(BoardAttackedString2)(CurrentValue2);
+            If ((Depth % 2) == 1)
+            {
+                Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")(CurrentValue)(0)(BlackMobBonus[Depth])("")(BoardAttackedString)(BoardAttackedString2)(CurrentValue2);
+            }
+            Else
+            {
+                Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")(CurrentValue)(0)("")(WhiteMobBonus[Depth])(BoardAttackedString)(BoardAttackedString2)(CurrentValue2);
+            }
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
