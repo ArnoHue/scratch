@@ -88,7 +88,19 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 4.97 (01.01.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.0 (06.01.2023) by ArnoHu")(5);
+}
+
+WhenKeyPressed(t)
+{
+    If (IsExecutionRunning == 0)
+    {
+        Sensing.Ask("Please enter transposition table cache size (default is 200000 on Scratch 3, 2000000 on TurboWarp)");
+        If (Sensing.Answer() > 0)
+        {
+            Call ClearTTImpl(Sensing.Answer());
+        }
+    }
 }
 
 
@@ -2627,6 +2639,18 @@ Define ClearMoveList(num Depth) (warp=true)
 
 Define ClearTT (warp=true)
 {
+    If (IsScratch3 == 1)
+    {
+        Call ClearTTImpl(200000);
+    }
+    Else
+    {
+        Call ClearTTImpl(2000000);
+    }
+}
+
+Define ClearTTImpl(string Size) (warp=true)
+{
     List.DeleteItem(TTNodeHash, all);
     List.DeleteItem(TTNodeBestMove, all);
     List.DeleteItem(TTNodeScore, all);
@@ -2645,15 +2669,7 @@ Define ClearTT (warp=true)
     List.DeleteItem(TTNodeBoardAttackedByOpp, all);
     List.DeleteItem(TTNodeBoardAttackedByOppPiece, all);
     List.DeleteItem(TTNodeCheckedAttackLines, all);
-    If (IsScratch3 == 1)
-    {
-        Count = 200000;
-    }
-    Else
-    {
-        Count = 5000000;
-    }
-    Repeat (Count)
+    Repeat (Size)
     {
         List.Add(TTNodeHash, 0);
         List.Add(TTNodeBestMove, "");
@@ -4481,6 +4497,8 @@ Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool Capture
             }
         }
     }
+    Call IsQuiescentCheckCond(Depth);
+    IsQuiescentCheckInvariantRes = IsQuiescentCheckRes;
     Call GenerateMovesImpl(Depth)(CalcAttackState)(CapturesOnly)(((Depth % 2) == 1));
     If (IsProfilerEnabled == 1)
     {
@@ -6036,9 +6054,11 @@ Define InitMovePosLookup (warp=true)
                 Repeat (65)
                 {
                     IsLegalMove = 0;
+                    X = (IdxToFile[TargetIdx] - IdxToFile[SourceIdx]);
+                    Y = (IdxToRank[TargetIdx] - IdxToRank[SourceIdx]);
                     If (SourcePiece == WhitePawn)
                     {
-                        If (((abs((IdxToFile[TargetIdx] - IdxToFile[SourceIdx])) < 2) And ((IdxToRank[TargetIdx] - IdxToRank[SourceIdx]) > -3)) And ((IdxToRank[TargetIdx] - IdxToRank[SourceIdx]) < 0))
+                        If (((Y == -1) And (abs(X) < 2)) Or ((IdxToRank[SourceIdx] == 7) And ((Y == -2) And (X == 0))))
                         {
                             IsLegalMove = 1;
                         }
@@ -6047,7 +6067,7 @@ Define InitMovePosLookup (warp=true)
                     {
                         If (SourcePiece == BlackPawn)
                         {
-                            If (((abs((IdxToFile[TargetIdx] - IdxToFile[SourceIdx])) < 2) And ((IdxToRank[TargetIdx] - IdxToRank[SourceIdx]) < 3)) And ((IdxToRank[TargetIdx] - IdxToRank[SourceIdx]) > 0))
+                            If (((Y == 1) And (abs(X) < 2)) Or ((IdxToRank[SourceIdx] == 2) And ((Y == 2) And (X == 0))))
                             {
                                 IsLegalMove = 1;
                             }
@@ -6056,7 +6076,7 @@ Define InitMovePosLookup (warp=true)
                         {
                             If (abs(SourcePiece) == BlackKing)
                             {
-                                If ((abs((IdxToRank[TargetIdx] - IdxToRank[SourceIdx])) < 2) And (abs((IdxToFile[TargetIdx] - IdxToFile[SourceIdx])) < 2))
+                                If (((abs(X) == 1) And (abs(Y) == 1)) Or (((abs(X) == 1) And (abs(Y) == 0)) Or ((abs(X) == 0) And (abs(Y) == 1))))
                                 {
                                     IsLegalMove = 1;
                                 }
@@ -6065,9 +6085,16 @@ Define InitMovePosLookup (warp=true)
                             {
                                 If (abs(SourcePiece) == BlackKnight)
                                 {
-                                    If ((abs((IdxToRank[TargetIdx] - IdxToRank[SourceIdx])) < 3) And (abs((IdxToFile[TargetIdx] - IdxToFile[SourceIdx])) < 3))
+                                    If ((abs((IdxToRank[TargetIdx] - IdxToRank[SourceIdx])) == 2) And (abs((IdxToFile[TargetIdx] - IdxToFile[SourceIdx])) == 1))
                                     {
                                         IsLegalMove = 1;
+                                    }
+                                    Else
+                                    {
+                                        If ((abs((IdxToRank[TargetIdx] - IdxToRank[SourceIdx])) == 1) And (abs((IdxToFile[TargetIdx] - IdxToFile[SourceIdx])) == 2))
+                                        {
+                                            IsLegalMove = 1;
+                                        }
                                     }
                                 }
                                 Else
@@ -6458,6 +6485,10 @@ Define IsLowerCase(string Char) (warp=true)
 Define IsQuiescentCheck(string Piece)(string SourceIdx)(string Depth) (warp=true)
 {
     IsQuiescentCheckRes = 0;
+    If (IsQuiescentCheckInvariantRes == 0)
+    {
+        Stop(this script);
+    }
     If (Piece > 0)
     {
         If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((SourceIdx * 100) + WhiteKingIdx))] == "")
@@ -6472,11 +6503,7 @@ Define IsQuiescentCheck(string Piece)(string SourceIdx)(string Depth) (warp=true
             Stop(this script);
         }
     }
-    Call IsQuiescentCheckCond(Piece)(SourceIdx)(Depth);
-    If (IsQuiescentCheckRes == 0)
-    {
-        Stop(this script);
-    }
+    IsQuiescentCheckRes = 1;
     If ((abs(Piece) == BlackKnight) Or (abs(Piece) == BlackPawn))
     {
         Stop(this script);
@@ -6517,10 +6544,10 @@ Define IsQuiescentCheck(string Piece)(string SourceIdx)(string Depth) (warp=true
     }
 }
 
-Define IsQuiescentCheckCond(string Piece)(string SourceIdx)(string Depth) (warp=true)
+Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     IsQuiescentCheckRes = 1;
-    If ((Level > 4) And (((IsScratch3 == 0) Or (IsEndgame == 1)) Or (((IsWhiteCastlingPossible == 0) And (Piece > 0)) Or ((IsBlackCastlingPossible == 0) And (Piece < 0)))))
+    If ((Level > 4) And (((IsScratch3 == 0) Or (IsEndgame == 1)) Or (((IsWhiteCastlingPossible == 0) And ((Depth % 2) == 1)) Or ((IsBlackCastlingPossible == 0) And ((Depth % 2) == 0)))))
     {
         If ((Quiescence[2] == 1) And ((CheckedState[(Depth - 1)] == 1) And (Depth < 6)))
         {
@@ -6695,38 +6722,40 @@ Define Log(string Txt1)(string Txt2)(string Txt3)(string Txt4)(string Txt5)(stri
     List.Add(Logfile, Operator.Join(Txt1, Operator.Join(Txt2, Operator.Join(Txt3, Operator.Join(Txt4, Operator.Join(Txt5, Operator.Join(Txt6, Operator.Join(Txt7, Txt8))))))));
 }
 
-Define MVVLVA_Black(string SourceIdx)(string TargetIdx)(string Depth) (warp=true)
+Define MVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(string SourcePieceAbs)(string TargetPieceAbs)(string PrevTargetIdx) (warp=true)
 {
-    If (MovePosLookupBlack[((PieceIdxLookup[Board[SourceIdx]] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
+    If (TargetPieceAbs < SourcePieceAbs)
     {
-        Stop(this script);
-    }
-    If ((abs(Board[TargetIdx]) - Board[SourceIdx]) < 0)
-    {
-        If (Not ((CheckedState[Depth] == 1)))
+        If ((Not ((TargetIdx == PrevTargetIdx))) Or (Not ((CheckedState[Depth] == 1))))
         {
             Stop(this script);
         }
-        If (Board[SourceIdx] == BlackKing)
+    }
+    If (SourcePieceAbs == BlackPawn)
+    {
+        If (IdxToFile[SourceIdx] == IdxToFile[TargetIdx])
         {
-            If (BoardAttackedCalculated[Depth] == 0)
-            {
-                Stop(this script);
-            }
+            Stop(this script);
         }
-        Else
+        If ((IdxToRank[TargetIdx] == 1) Or (IdxToRank[TargetIdx] == 8))
         {
-            If (Not ((TargetIdx == floor((AppliedMove[(Depth - 1)] % 100)))))
-            {
-                Stop(this script);
-            }
+            Stop(this script);
         }
     }
-    Call MVVLVA_Common(SourceIdx)(TargetIdx);
-}
-
-Define MVVLVA_Common(string SourceIdx)(string TargetIdx) (warp=true)
-{
+    If ((Depth % 2) == 1)
+    {
+        If (MovePosLookupBlack[((PieceIdxLookup[SourcePieceAbs] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
+        {
+            Stop(this script);
+        }
+    }
+    Else
+    {
+        If (MovePosLookupWhite[((PieceIdxLookup[SourcePieceAbs] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
+        {
+            Stop(this script);
+        }
+    }
     CurrentMoveOuter = ((SourceIdx * 100) + TargetIdx);
     If (SourceIdx < 10)
     {
@@ -6740,73 +6769,32 @@ Define MVVLVA_Common(string SourceIdx)(string TargetIdx) (warp=true)
     {
         Stop(this script);
     }
-    If List.ContainsItem(TmpList4, SourceIdx)
+    If (SourcePieceAbs > BlackKnight)
     {
-        If List.ContainsItem(TmpList5, CurrentMoveOuter)
+        X = (IdxToFile[TargetIdx] - IdxToFile[SourceIdx]);
+        Y = (IdxToRank[TargetIdx] - IdxToRank[SourceIdx]);
+        If (abs(X) > abs(Y))
         {
-            List.Add(TmpList1, CurrentMoveOuter);
-            If (abs(Board[SourceIdx]) == BlackKing)
-            {
-                List.Add(TmpList2, Board[SourceIdx]);
-            }
-            Else
-            {
-                List.Add(TmpList2, ((0 - Board[SourceIdx]) - (10 * Board[TargetIdx])));
-            }
-        }
-        Stop(this script);
-    }
-    List.DeleteAll(CalcMovesMoveList);
-    Call GenerateMovesForSource((Depth + 2))(SourceIdx)((1 == 0))((1 == 1));
-    If List.ContainsItem(CalcMovesMoveList, CurrentMoveOuter)
-    {
-        List.Add(TmpList1, CurrentMoveOuter);
-        If (abs(Board[SourceIdx]) == BlackKing)
-        {
-            List.Add(TmpList2, Board[SourceIdx]);
+            Delta = abs(X);
         }
         Else
         {
-            List.Add(TmpList2, ((0 - Board[SourceIdx]) - (10 * Board[TargetIdx])));
+            Delta = abs(Y);
         }
-    }
-    List.Add(TmpList4, SourceIdx);
-    Idx = 1;
-    Repeat Until (Idx > List.Length(CalcMovesMoveList))
-    {
-        List.Add(TmpList5, CalcMovesMoveList[Idx]);
-        Idx += 1;
-    }
-}
-
-Define MVVLVA_White(string SourceIdx)(string TargetIdx)(string Depth) (warp=true)
-{
-    If (MovePosLookupWhite[((PieceIdxLookup[(0 - Board[SourceIdx])] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
-    {
-        Stop(this script);
-    }
-    If ((Board[TargetIdx] - abs(Board[SourceIdx])) < 0)
-    {
-        If (Not ((CheckedState[Depth] == 1)))
+        X = (X / Delta);
+        Y = (Y / Delta);
+        SourceIdx = SourceIdx;
+        Repeat ((Delta - 1))
         {
-            Stop(this script);
-        }
-        If (Board[SourceIdx] == WhiteKing)
-        {
-            If (BoardAttackedCalculated[Depth] == 0)
-            {
-                Stop(this script);
-            }
-        }
-        Else
-        {
-            If (Not ((TargetIdx == floor((AppliedMove[(Depth - 1)] % 100)))))
+            SourceIdx += ((8 * Y) + X);
+            If (Not ((Board[SourceIdx] == 0)))
             {
                 Stop(this script);
             }
         }
     }
-    Call MVVLVA_Common(SourceIdx)(TargetIdx);
+    List.Add(TmpList1, CurrentMoveOuter);
+    List.Add(TmpList2, ((0 - Board[SourceIdx]) - (10 * Board[TargetIdx])));
 }
 
 Define OnEvaluationChanged(string Eval) (warp=true)
@@ -7050,13 +7038,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         List.ReplaceItem(PickedMoves, Depth, "");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
+        List.ReplaceItem(MovesCount, Depth, 0);
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.DeleteAll(CalcMovesMoveList);
         List.DeleteAll(CalcMovesScoreList);
         List.DeleteAll(TmpList1);
         List.DeleteAll(TmpList2);
         Call ClearMoveList(Depth);
-        If ((Depth > 1) And (Not (Quiescence)))
+        If ((Depth > 1) And ((Not (Quiescence)) Or (1 == 1)))
         {
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If (TTProbeRes == 1)
@@ -7146,116 +7135,122 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 Else
                 {
-                    If ((Depth > 1) And (Depth < 24))
+                    List.DeleteAll(TmpList1);
+                    List.DeleteAll(TmpList2);
+                    List.DeleteAll(TmpList3);
+                    List.DeleteAll(TmpList4);
+                    List.DeleteAll(TmpList5);
+                    If ((Not (Quiescence)) Or (1 == 0))
                     {
-                        List.DeleteAll(TmpList1);
-                        List.DeleteAll(TmpList2);
-                        List.DeleteAll(TmpList3);
-                        List.DeleteAll(TmpList4);
-                        List.DeleteAll(TmpList5);
-                        If (Not (Quiescence))
+                        Idx = (Depth - 2);
+                        Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
                         {
-                            Idx = (Depth - 2);
-                            Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
+                            SourceIdxOuter2 = floor((AppliedMove[Idx] % 100));
+                            If ((SourceIdxOuter2 > 0) And (SourceIdxOuter2 < 65))
                             {
-                                SourceIdxOuter2 = floor((AppliedMove[Idx] % 100));
-                                If ((SourceIdxOuter2 > 0) And (SourceIdxOuter2 < 65))
+                                If (Not (List.ContainsItem(TmpList3, SourceIdxOuter2)))
                                 {
-                                    If (Not (List.ContainsItem(TmpList3, SourceIdxOuter2)))
+                                    If ((Depth % 2) == 1)
                                     {
-                                        If ((Depth % 2) == 1)
-                                        {
-                                            If (Board[SourceIdxOuter2] > 0)
-                                            {
-                                                List.Add(TmpList3, SourceIdxOuter2);
-                                            }
-                                        }
-                                        Else
-                                        {
-                                            If (Board[SourceIdxOuter2] < 0)
-                                            {
-                                                List.Add(TmpList3, SourceIdxOuter2);
-                                            }
-                                        }
-                                    }
-                                }
-                                Idx += -2;
-                            }
-                        }
-                        If ((Depth % 2) == 1)
-                        {
-                            TargetIdxOuter2 = 1;
-                            Repeat (64)
-                            {
-                                If (Board[TargetIdxOuter2] < 0)
-                                {
-                                    If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], TargetIdxOuter2) > 0)
-                                    {
-                                        SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], (TargetIdxOuter2 * 2)));
                                         If (Board[SourceIdxOuter2] > 0)
                                         {
-                                            Call MVVLVA_Black(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
+                                            List.Add(TmpList3, SourceIdxOuter2);
+                                            List.Add(TmpList4, ((PieceIdxLookup[Board[SourceIdxOuter2]] * 10000) + (SourceIdxOuter2 * 100)));
                                         }
                                     }
-                                    IdxOuter3 = 1;
-                                    Repeat Until (IdxOuter3 > List.Length(TmpList3))
+                                    Else
                                     {
-                                        SourceIdxOuter2 = TmpList3[IdxOuter3];
-                                        Call MVVLVA_Black(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
-                                        IdxOuter3 += 1;
-                                    }
-                                }
-                                TargetIdxOuter2 += 1;
-                            }
-                        }
-                        Else
-                        {
-                            TargetIdxOuter2 = 1;
-                            Repeat (64)
-                            {
-                                If (Board[TargetIdxOuter2] > 0)
-                                {
-                                    If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], TargetIdxOuter2) > 0)
-                                    {
-                                        SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], (TargetIdxOuter2 * 2)));
                                         If (Board[SourceIdxOuter2] < 0)
                                         {
-                                            Call MVVLVA_White(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
+                                            List.Add(TmpList3, SourceIdxOuter2);
+                                            List.Add(TmpList4, ((PieceIdxLookup[abs(Board[SourceIdxOuter2])] * 10000) + (SourceIdxOuter2 * 100)));
                                         }
                                     }
-                                    IdxOuter3 = 1;
-                                    Repeat Until (IdxOuter3 > List.Length(TmpList3))
+                                }
+                            }
+                            Idx += -2;
+                        }
+                    }
+                    TargetIdxOuter = floor((AppliedMove[(Depth - 1)] % 100));
+                    If ((Depth % 2) == 1)
+                    {
+                        TargetIdxOuter2 = 1;
+                        Repeat (64)
+                        {
+                            If (Board[TargetIdxOuter2] < 0)
+                            {
+                                If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], TargetIdxOuter2) > 0)
+                                {
+                                    SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], (TargetIdxOuter2 * 2)));
+                                    If (Board[SourceIdxOuter2] > 0)
                                     {
-                                        SourceIdxOuter2 = TmpList3[IdxOuter3];
-                                        Call MVVLVA_White(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
-                                        IdxOuter3 += 1;
+                                        Call MVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
                                     }
                                 }
-                                TargetIdxOuter2 += 1;
+                                IdxOuter3 = 1;
+                                Repeat Until (IdxOuter3 > List.Length(TmpList3))
+                                {
+                                    SourceIdxOuter2 = TmpList3[IdxOuter3];
+                                    If (Not ((MovePosLookupBlack[(TmpList3[IdxOuter3] + TargetIdxOuter2)] == "")))
+                                    {
+                                        Call MVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
+                                    }
+                                    IdxOuter3 += 1;
+                                }
                             }
+                            TargetIdxOuter2 += 1;
                         }
-                        If (List.Length(TmpList1) > 0)
+                    }
+                    Else
+                    {
+                        TargetIdxOuter2 = 1;
+                        Repeat (64)
                         {
-                            List.DeleteAll(CalcMovesMoveList);
-                            List.DeleteAll(CalcMovesScoreList);
-                            Idx = 1;
-                            Repeat (List.Length(TmpList1))
+                            If (Board[TargetIdxOuter2] > 0)
                             {
-                                List.Add(CalcMovesMoveList, TmpList1[Idx]);
-                                List.Add(CalcMovesScoreList, TmpList2[Idx]);
-                                Idx += 1;
+                                If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], TargetIdxOuter2) > 0)
+                                {
+                                    SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], (TargetIdxOuter2 * 2)));
+                                    If (Board[SourceIdxOuter2] < 0)
+                                    {
+                                        Call MVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
+                                    }
+                                }
+                                IdxOuter3 = 1;
+                                Repeat Until (IdxOuter3 > List.Length(TmpList3))
+                                {
+                                    SourceIdxOuter2 = TmpList3[IdxOuter3];
+                                    If (Not ((MovePosLookupWhite[(TmpList4[IdxOuter3] + TargetIdxOuter2)] == "")))
+                                    {
+                                        Call MVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
+                                    }
+                                    IdxOuter3 += 1;
+                                }
                             }
-                            Call SortMoveList((Depth + 2));
-                            List.ReplaceItem(MovesCount, (Depth + 2), List.Length(CalcMovesMoveList));
-                            List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                            Repeat (MovesCount[(Depth + 2)])
-                            {
-                                Call GetCurrentMove((Depth + 2));
-                                Call AddMoveToList(CurrentMove)(0)(Depth);
-                                List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
-                            }
-                            List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + MovesCount[(Depth + 2)]));
+                            TargetIdxOuter2 += 1;
                         }
+                    }
+                    If (List.Length(TmpList1) > 0)
+                    {
+                        List.DeleteAll(CalcMovesMoveList);
+                        List.DeleteAll(CalcMovesScoreList);
+                        Idx = 1;
+                        Repeat (List.Length(TmpList1))
+                        {
+                            List.Add(CalcMovesMoveList, TmpList1[Idx]);
+                            List.Add(CalcMovesScoreList, TmpList2[Idx]);
+                            Idx += 1;
+                        }
+                        Call SortMoveList((Depth + 2));
+                        List.ReplaceItem(MovesCount, (Depth + 2), List.Length(CalcMovesMoveList));
+                        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                        Repeat (MovesCount[(Depth + 2)])
+                        {
+                            Call GetCurrentMove((Depth + 2));
+                            Call AddMoveToList(CurrentMove)(0)(Depth);
+                            List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                        }
+                        List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + MovesCount[(Depth + 2)]));
                     }
                     List.ReplaceItem(PickPhase, Depth, 3);
                 }
