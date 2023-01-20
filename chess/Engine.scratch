@@ -1480,9 +1480,12 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         }
                         If (CheckedState[Idx] == 1)
                         {
-                            If (Not ((PlyExtension[(Depth - 1)] == 1)))
+                            If (Idx > 1)
                             {
-                                List.ReplaceItem(PlyExtension, Depth, 1);
+                                If (Not ((PlyExtension[(Depth - 1)] == 1)))
+                                {
+                                    List.ReplaceItem(PlyExtension, Depth, 1);
+                                }
                             }
                         }
                         Idx += -1;
@@ -2817,14 +2820,16 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
     WhiteRank = 8;
     Repeat (8)
     {
-        If ((IsEndgame == 1) Or (IsWhiteCastlingPossible == 0))
+        If (IsEndgame == 1)
         {
-            If ((IsEndgame == 1) Or (abs((Idx - IdxToFile[WhiteKingIdx])) > 1))
+            WhitePawnBackwardRank = PawnAdvancePerFile[Idx];
+            WhitePawnForwardRank = PawnAdvancePerFile[(Idx + 8)];
+            BlackPawnBackwardRank = PawnAdvancePerFile[(Idx + 16)];
+            BlackPawnForwardRank = PawnAdvancePerFile[(Idx + 24)];
+            If ((IsEndgame == 1) Or ((IsWhiteCastlingPossible == 0) And (abs((Idx - IdxToFile[WhiteKingIdx])) > 1)))
             {
-                WhitePawnForwardRank = PawnAdvancePerFile[(Idx + 8)];
                 If ((WhitePawnForwardRank < 6) And (WhitePawnForwardRank > 0))
                 {
-                    BlackPawnBackwardRank = PawnAdvancePerFile[(Idx + 16)];
                     If ((WhitePawnForwardRank < BlackPawnBackwardRank) Or (BlackPawnBackwardRank == 0))
                     {
                         EvalExtendedResult1 += (-5 * (6 - WhitePawnForwardRank));
@@ -2845,15 +2850,10 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
                     }
                 }
             }
-        }
-        If ((IsEndgame == 1) Or (IsBlackCastlingPossible == 0))
-        {
-            If ((IsEndgame == 1) Or (abs((Idx - IdxToFile[BlackKingIdx])) > 1))
+            If ((IsEndgame == 1) Or ((IsBlackCastlingPossible == 0) And (abs((Idx - IdxToFile[BlackKingIdx])) > 1)))
             {
-                BlackPawnForwardRank = PawnAdvancePerFile[(Idx + 24)];
                 If (BlackPawnForwardRank > 3)
                 {
-                    WhitePawnBackwardRank = PawnAdvancePerFile[Idx];
                     If (BlackPawnForwardRank > WhitePawnBackwardRank)
                     {
                         EvalExtendedResult1 += (5 * (BlackPawnForwardRank - 3));
@@ -2877,11 +2877,11 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
         }
         If (BlackPawnCount[Idx] > 1)
         {
-            EvalExtendedResult1 += (-25 * (BlackPawnCount[Idx] - 1));
+            EvalExtendedResult1 += (-30 * (BlackPawnCount[Idx] - 1));
         }
         If (WhitePawnCount[Idx] > 1)
         {
-            EvalExtendedResult1 += (25 * (WhitePawnCount[Idx] - 1));
+            EvalExtendedResult1 += (30 * (WhitePawnCount[Idx] - 1));
         }
         Idx += 1;
     }
@@ -2985,6 +2985,17 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
     }
     If ((IsEndgame == 1) And ((PawnPromotionFile[1] == "") And (PawnPromotionFile[2] == "")))
     {
+        If (1 == 0)
+        {
+            If ((Not ((WhiteKingEndgameTargetIdx == 0))) And (BlackKingEndgameTargetIdx == 0))
+            {
+                BlackKingEndgameTargetIdx = WhiteKingEndgameTargetIdx;
+            }
+            If ((Not ((BlackKingEndgameTargetIdx == 0))) And (WhiteKingEndgameTargetIdx == 0))
+            {
+                WhiteKingEndgameTargetIdx = BlackKingEndgameTargetIdx;
+            }
+        }
         If (Not ((BlackKingEndgameTargetIdx == 0)))
         {
             Delta = abs((IdxToRank[BlackKingEndgameTargetIdx] - IdxToRank[BlackKingIdx]));
@@ -7043,7 +7054,15 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 Call Profile_IncCounter((678 + (Depth * 4)));
             }
         }
-        If ((Quiescence And ((StagedMoveGenStats[Depth] > 200) And ((StagedMoveGenStats[(30 + Depth)] / StagedMoveGenStats[Depth]) > 0.75))) Or ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7)))))
+        If (IsScratch3 == 1)
+        {
+            CurrentValue = 200;
+        }
+        Else
+        {
+            CurrentValue = 2000;
+        }
+        If ((Quiescence And ((StagedMoveGenStats[Depth] > CurrentValue) And ((StagedMoveGenStats[(30 + Depth)] / StagedMoveGenStats[Depth]) > 0.75))) Or ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7)))))
         {
             List.ReplaceItem(PickPhase, Depth, 6);
         }
@@ -7058,7 +7077,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.DeleteAll(TmpList3);
             List.DeleteAll(TmpList4);
             List.DeleteAll(TmpList5);
-            If ((Not (Quiescence)) Or (1 == 1))
+            If (Not (Quiescence))
             {
                 Idx = (Depth - 2);
                 Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
@@ -7095,20 +7114,18 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             TargetIdxOuter = floor((AppliedMove[(Depth - 1)] % 100));
             If ((Depth % 2) == 1)
             {
-                BoardAttackedString = BoardAttackedByBlackSnapshot[Depth];
-                BoardAttackedString2 = BoardAttackedByBlackPieceSnapshot[Depth];
                 TargetIdxOuter2 = 1;
                 Repeat (64)
                 {
                     If (Board[TargetIdxOuter2] < 0)
                     {
-                        If (Operator.LetterOf(BoardAttackedString, TargetIdxOuter2) > 0)
+                        If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], TargetIdxOuter2) > 0)
                         {
-                            SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedString2, ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedString2, (TargetIdxOuter2 * 2)));
+                            SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], (TargetIdxOuter2 * 2)));
                             SourcePieceOuter2 = Board[SourceIdxOuter2];
                             If ((SourcePieceOuter2 > 0) And (Not ((MovePosLookupBlack[((PieceIdxLookup[SourcePieceOuter2] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2))] == ""))))
                             {
-                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(SourcePieceOuter2)(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
+                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(SourcePieceOuter2))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
                             }
                         }
                         IdxOuter3 = 1;
@@ -7117,7 +7134,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             If (Not ((MovePosLookupBlack[(TmpList4[IdxOuter3] + TargetIdxOuter2)] == "")))
                             {
                                 SourceIdxOuter2 = TmpList3[IdxOuter3];
-                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(Board[SourceIdxOuter2])(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
+                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
                             }
                             IdxOuter3 += 1;
                         }
@@ -7127,20 +7144,18 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             }
             Else
             {
-                BoardAttackedString = BoardAttackedByWhiteSnapshot[Depth];
-                BoardAttackedString2 = BoardAttackedByWhitePieceSnapshot[Depth];
                 TargetIdxOuter2 = 1;
                 Repeat (64)
                 {
                     If (Board[TargetIdxOuter2] > 0)
                     {
-                        If (Operator.LetterOf(BoardAttackedString, TargetIdxOuter2) > 0)
+                        If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], TargetIdxOuter2) > 0)
                         {
-                            SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedString2, ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedString2, (TargetIdxOuter2 * 2)));
+                            SourceIdxOuter2 = Operator.Join(Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], ((TargetIdxOuter2 * 2) - 1)), Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], (TargetIdxOuter2 * 2)));
                             SourcePieceOuter2 = Board[SourceIdxOuter2];
                             If ((SourcePieceOuter2 < 0) And (Not ((MovePosLookupWhite[((PieceIdxLookup[abs(SourcePieceOuter2)] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2))] == ""))))
                             {
-                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(SourcePieceOuter2))(Board[TargetIdxOuter2])(TargetIdxOuter);
+                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(SourcePieceOuter2))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
                             }
                         }
                         IdxOuter3 = 1;
@@ -7149,7 +7164,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             If (Not ((MovePosLookupWhite[(TmpList4[IdxOuter3] + TargetIdxOuter2)] == "")))
                             {
                                 SourceIdxOuter2 = TmpList3[IdxOuter3];
-                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(Board[TargetIdxOuter2])(TargetIdxOuter);
+                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
                             }
                             IdxOuter3 += 1;
                         }
@@ -7316,10 +7331,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     }
     If (PickPhase[Depth] == 6)
     {
-        If Quiescence
-        {
-            List.ReplaceItem(StagedMoveGenStats, (30 + Depth), (StagedMoveGenStats[(30 + Depth)] + 1));
-        }
         If (IsProfilerEnabled > 0)
         {
             If Quiescence
@@ -7330,6 +7341,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             {
                 Call Profile_IncCounter((680 + (Depth * 4)));
             }
+        }
+        If Quiescence
+        {
+            List.ReplaceItem(StagedMoveGenStats, (30 + Depth), (StagedMoveGenStats[(30 + Depth)] + 1));
         }
         Call ClearMoveList(Depth);
         If (Depth == 1)
