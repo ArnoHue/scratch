@@ -88,7 +88,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.20 (21.01.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.22 (22.01.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1087,7 +1087,17 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If Quiescence
     {
-        Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
+        Call TTProbeBoard(CurrentBoardHash);
+        If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
+        {
+            ScoreCalcRes = TTProbeBoardScoreSumRes;
+            Found = 1;
+        }
+        Else
+        {
+            Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
+            Found = 0;
+        }
         If (PutsInCheck[(Depth - 1)] == 0)
         {
             List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
@@ -1127,17 +1137,15 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
             }
         }
-    }
-    Else
-    {
-        Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
-    }
-    If Quiescence
-    {
+        If (Found == 1)
+        {
+            Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
+        }
         List.ReplaceItem(Quiescence, Depth, 1);
     }
     Else
     {
+        Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
         List.ReplaceItem(Quiescence, Depth, 0);
     }
     List.ReplaceItem(PawnPromotionFile, Depth, "");
@@ -2670,6 +2678,7 @@ Define ClearTTImpl(string Size) (warp=true)
     List.DeleteItem(TTBoardScore1, all);
     List.DeleteItem(TTBoardScore2, all);
     List.DeleteItem(TTBoardScore3, all);
+    List.DeleteItem(TTBoardScoreSum, all);
     List.DeleteItem(TTNodeBoardAttackedByOpp, all);
     List.DeleteItem(TTNodeBoardAttackedByOppPiece, all);
     List.DeleteItem(TTNodeCheckedAttackLines, all);
@@ -2690,6 +2699,7 @@ Define ClearTTImpl(string Size) (warp=true)
         List.Add(TTBoardScore1, "");
         List.Add(TTBoardScore2, "");
         List.Add(TTBoardScore3, "");
+        List.Add(TTBoardScoreSum, "");
         List.Add(TTNodeBoardAttackedByOpp, "");
         List.Add(TTNodeBoardAttackedByOppPiece, "");
         List.Add(TTNodeCheckedAttackLines, "");
@@ -3057,7 +3067,7 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
             }
         }
     }
-    Call TTStoreBoard(CurrentBoardHash2)(EvalExtendedResult1)("")("");
+    Call TTStoreBoard(CurrentBoardHash2)(EvalExtendedResult1)("")("")("");
     If (IsProfilerEnabled > 0)
     {
         Call Profile_MethodExit((240 + Depth));
@@ -3191,7 +3201,7 @@ Define EvaluateBoardExtended2(string Depth) (warp=true)
             }
         }
     }
-    Call TTStoreBoard(CurrentBoardHash)("")(EvalExtendedResult2)("");
+    Call TTStoreBoard(CurrentBoardHash)("")(EvalExtendedResult2)("")("");
 }
 
 Define EvaluateBoardExtended3(string Depth) (warp=true)
@@ -3287,7 +3297,7 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
             Rank += 1;
         }
     }
-    Call TTStoreBoard(CurrentBoardHash)("")("")(EvalExtendedResult3);
+    Call TTStoreBoard(CurrentBoardHash)("")("")(EvalExtendedResult3)("");
     If (IsProfilerEnabled > 0)
     {
         Call Profile_MethodExit((270 + Depth));
@@ -6056,6 +6066,7 @@ Define InitMovePosLookup (warp=true)
             List.ReplaceItem(TTBoardScore1, IdxOuter, "");
             List.ReplaceItem(TTBoardScore2, IdxOuter, "");
             List.ReplaceItem(TTBoardScore3, IdxOuter, "");
+            List.ReplaceItem(TTBoardScoreSum, IdxOuter, "");
             IdxOuter += 1;
         }
         If (((Not ((List.Length(MovePosLookupBlack) == 100000))) Or (Not ((List.Length(MovePosLookupWhite) == 100000)))) Or ((Not ((List.Length(MoveHashLookupBlack) == 100000))) Or (Not ((List.Length(MoveHashLookupWhite) == 100000)))))
@@ -6891,6 +6902,12 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     }
     If (Depth == MaxDepth)
     {
+        Call TTProbeBoard(CurrentBoardHash);
+        If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
+        {
+            ScoreCalcRes = TTProbeBoardScoreSumRes;
+            Stop(this script);
+        }
         ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (BlackMobBonus[Depth] - WhiteMobBonus[Depth])));
         If (CapturesDeltaSum[Depth] == 0)
         {
@@ -6985,6 +7002,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 }
             }
         }
+        Call TTStoreBoard(CurrentBoardHash)("")("")("")(ScoreCalcRes);
     }
     If (IsProfilerEnabled > 0)
     {
@@ -7090,7 +7108,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         If (IsScratch3 == 1)
         {
-            CurrentValue = 200;
+            CurrentValue = 100;
         }
         Else
         {
@@ -7104,7 +7122,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         {
             If Quiescence
             {
-                List.ReplaceItem(StagedMoveGenStats, Depth, (StagedMoveGenStats[Depth] + 1));
+                If ((StagedMoveGenStats[(Depth - 1)] == 0) Or (StagedMoveGenStats[(Depth - 2)] == 0))
+                {
+                    List.ReplaceItem(StagedMoveGenStats, Depth, (StagedMoveGenStats[Depth] + 1));
+                }
             }
             List.DeleteAll(TmpList1);
             List.DeleteAll(TmpList2);
@@ -7378,7 +7399,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         If Quiescence
         {
-            List.ReplaceItem(StagedMoveGenStats, (30 + Depth), (StagedMoveGenStats[(30 + Depth)] + 1));
+            If ((StagedMoveGenStats[(Depth - 1)] == 0) Or (StagedMoveGenStats[(Depth - 2)] == 0))
+            {
+                List.ReplaceItem(StagedMoveGenStats, (30 + Depth), (StagedMoveGenStats[(30 + Depth)] + 1));
+            }
         }
         Call ClearMoveList(Depth);
         If (Depth == 1)
@@ -7775,6 +7799,7 @@ Define RUN_BEFORE_SAVING (warp=true)
     List.DeleteItem(TTBoardScore1, all);
     List.DeleteItem(TTBoardScore2, all);
     List.DeleteItem(TTBoardScore3, all);
+    List.DeleteItem(TTBoardScoreSum, all);
     List.DeleteItem(TTBoardHash, all);
     List.DeleteItem(TTBoardAge, all);
     List.DeleteItem(TTNodeChecked, all);
@@ -8228,23 +8253,6 @@ Define SortMoveList(string Depth) (warp=true)
 
 Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(string TargetIdx)(string SourcePiece)(string TargetPiece)(string KillerMoveIdx) (warp=true)
 {
-    If (1 == 0)
-    {
-        If ((Depth % 2) == 1)
-        {
-            If (MovePosLookupBlack[((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
-            {
-                Stop(this script);
-            }
-        }
-        Else
-        {
-            If (MovePosLookupWhite[((PieceIdxLookup[abs(SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
-            {
-                Stop(this script);
-            }
-        }
-    }
     If (abs(SourcePiece) == BlackPawn)
     {
         If (Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx])))
@@ -8290,23 +8298,6 @@ Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(str
 
 Define StagedMoveGenMVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(string SourcePieceAbs)(string TargetPieceAbs)(string PrevTargetIdx) (warp=true)
 {
-    If (1 == 0)
-    {
-        If ((Depth % 2) == 1)
-        {
-            If (MovePosLookupBlack[((PieceIdxLookup[SourcePieceAbs] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
-            {
-                Stop(this script);
-            }
-        }
-        Else
-        {
-            If (MovePosLookupWhite[((PieceIdxLookup[SourcePieceAbs] * 10000) + ((SourceIdx * 100) + TargetIdx))] == "")
-            {
-                Stop(this script);
-            }
-        }
-    }
     If (TargetPieceAbs < SourcePieceAbs)
     {
         If (Not ((TargetIdx == PrevTargetIdx)))
@@ -8752,6 +8743,7 @@ Define TTProbeBoard(string BoardHash) (warp=true)
     TTProbeBoardScore1Res = TTBoardScore1[HashBucket];
     TTProbeBoardScore2Res = TTBoardScore2[HashBucket];
     TTProbeBoardScore3Res = TTBoardScore3[HashBucket];
+    TTProbeBoardScoreSumRes = TTBoardScoreSum[HashBucket];
 }
 
 Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
@@ -8789,7 +8781,7 @@ Define TTProbeNodeImpl(string BoardHash) (warp=true)
     TTProbeBoardAttackedByOppPiece = TTNodeBoardAttackedByOppPiece[HashBucket];
 }
 
-Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3) (warp=true)
+Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum) (warp=true)
 {
     HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 3)) + 1);
     If (Not (((TTBoardHash[HashBucket] == BoardHash) Or (TTBoardHash[HashBucket] == 0))))
@@ -8836,6 +8828,7 @@ Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(st
         List.ReplaceItem(TTBoardScore1, HashBucket, BoardScore1);
         List.ReplaceItem(TTBoardScore2, HashBucket, BoardScore2);
         List.ReplaceItem(TTBoardScore3, HashBucket, BoardScore3);
+        List.ReplaceItem(TTBoardScoreSum, HashBucket, BoardScoreSum);
     }
     Else
     {
@@ -8850,6 +8843,10 @@ Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(st
         If (Not ((BoardScore3 == "")))
         {
             List.ReplaceItem(TTBoardScore3, HashBucket, BoardScore3);
+        }
+        If (Not ((BoardScoreSum == "")))
+        {
+            List.ReplaceItem(TTBoardScoreSum, HashBucket, BoardScoreSum);
         }
     }
 }
