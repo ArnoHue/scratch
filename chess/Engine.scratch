@@ -58,8 +58,8 @@ WhenKeyPressed(d)
         Variable.Show(IdxDeepening);
         Variable.Show(BestMinMaxRes);
         Variable.Show(BestMove);
-        Variable.Show(PruningAlphaWindow);
-        Variable.Show(PruningBetaWindow);
+        Variable.Show(NPS);
+        Variable.Show(MPS);
     }
     Else
     {
@@ -67,8 +67,8 @@ WhenKeyPressed(d)
         Variable.Hide(IdxDeepening);
         Variable.Hide(BestMinMaxRes);
         Variable.Hide(BestMove);
-        Variable.Hide(PruningAlphaWindow);
-        Variable.Hide(PruningBetaWindow);
+        Variable.Hide(NPS);
+        Variable.Hide(MPS);
     }
 }
 
@@ -88,7 +88,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.30 (27.01.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.32 (29.01.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1085,6 +1085,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call TTProbeBoard(CurrentBoardHash);
         If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
         {
+            NodeCount += 1;
             ScoreCalcRes = TTProbeBoardScoreSumRes;
             Found = 1;
         }
@@ -1301,6 +1302,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         {
             If ((((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeNodeScoreRes == 0)))) And (Not ((abs(TTProbeNodeScoreRes) > (BlackKing / 2))))) And ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1))))
             {
+                NodeCount += 1;
                 If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
                 {
                     List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
@@ -1412,6 +1414,18 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 If (CurrentValue > (PrevProgressUpdate + 1))
                 {
                     Call OnProgressChanged((((CurrentValue - ThinkTimeStart) / ThinkTimeLimitMinMax) * 100));
+                    CurrentValue2 = Operator.Round(((NodeCount - PrevNodeCount) / (CurrentValue - PrevProgressUpdate)));
+                    If (CurrentValue2 > 0)
+                    {
+                        NPS = CurrentValue2;
+                        PrevNodeCount = NodeCount;
+                    }
+                    CurrentValue2 = Operator.Round(((MoveCount - PrevMoveCount) / (CurrentValue - PrevProgressUpdate)));
+                    If (CurrentValue2 > 0)
+                    {
+                        MPS = CurrentValue2;
+                        PrevMoveCount = MoveCount;
+                    }
                     PrevProgressUpdate = CurrentValue;
                 }
             }
@@ -1765,6 +1779,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
         }
     }
+    MoveCount += MovesCount[Depth];
     If ((Depth % 2) == 1)
     {
         If (Not ((MinMaxResults[Depth] < Betas[Depth])))
@@ -5430,6 +5445,10 @@ Define InitAlphaBeta(string Depth)(string MaxDepth)(bool InitialDeepening) (warp
     {
         IsInNullMove = 0;
         IsMinMaxTimeout = 0;
+        NodeCount = 0;
+        PrevNodeCount = 0;
+        MoveCount = 0;
+        PrevMoveCount = 0;
         If InitialDeepening
         {
             Call Profile_Reset;
@@ -5459,7 +5478,6 @@ Define InitBishopSquare (warp=true)
 
 Define InitBoard (warp=true)
 {
-    IsCalcAttackStateSimpleMode = 0;
     FromSquareIdx = -1;
     ToSquareIdx = -1;
     IsModeProfiler = 0;
@@ -6776,6 +6794,7 @@ Define OnProgressChanged(num Progress) (warp=true)
 Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescence) (warp=true)
 {
     ScoreCalcRes = "";
+    NodeCount += 1;
     If (Depth == 0)
     {
         Call EvaluateBoard;
@@ -7186,8 +7205,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             {
                 If (List.Length(TmpList1) == 1)
                 {
-                    Call AddMoveToList(TmpList1[1])(TmpList1[2])(Depth);
-                    List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + 1));
+                    Call AddMoveToList(TmpList1[1])(TmpList2[1])(Depth);
                 }
                 Else
                 {
@@ -7209,7 +7227,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         Call AddMoveToList(CurrentMove)(0)(Depth);
                         List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
                     }
-                    List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + MovesCount[(Depth + 2)]));
                 }
             }
             List.ReplaceItem(PickPhase, Depth, 3);
@@ -7220,20 +7237,11 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call GetCurrentMove(Depth);
-            Repeat Until ((Not (Operator.Contains(PickedMoves[Depth], CurrentMove))) Or (MovesIdx[Depth] > MovesCount[Depth]))
-            {
-                List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-                Call GetCurrentMove(Depth);
-            }
-            If (Not ((MovesIdx[Depth] > MovesCount[Depth])))
-            {
-                Call ApplyMove(Depth);
-                List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(AppliedMove[Depth], ":")));
-                List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                List.ReplaceItem(PickMoveRes, Depth, 1);
-                Stop(this script);
-            }
+            Call ApplyMove(Depth);
+            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(AppliedMove[Depth], ":")));
+            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+            List.ReplaceItem(PickMoveRes, Depth, 1);
+            Stop(this script);
         }
         List.ReplaceItem(PickPhase, Depth, 4);
     }
@@ -7288,8 +7296,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             {
                 If (List.Length(TmpList1) == 1)
                 {
-                    Call AddMoveToList(TmpList1[1])(TmpList1[2])(Depth);
-                    List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + 1));
+                    Call AddMoveToList(TmpList1[1])(TmpList2[1])(Depth);
                 }
                 Else
                 {
@@ -7311,7 +7318,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         Call AddMoveToList(CurrentMove)(0)(Depth);
                         List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
                     }
-                    List.ReplaceItem(MovesCount, Depth, (MovesCount[Depth] + MovesCount[(Depth + 2)]));
                 }
             }
             List.ReplaceItem(PickPhase, Depth, 5);
@@ -7322,20 +7328,11 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call GetCurrentMove(Depth);
-            Repeat Until ((Not (Operator.Contains(PickedMoves[Depth], CurrentMove))) Or (MovesIdx[Depth] > MovesCount[Depth]))
-            {
-                List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-                Call GetCurrentMove(Depth);
-            }
-            If (Not ((MovesIdx[Depth] > MovesCount[Depth])))
-            {
-                Call ApplyMove(Depth);
-                List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(AppliedMove[Depth], ":")));
-                List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                List.ReplaceItem(PickMoveRes, Depth, 1);
-                Stop(this script);
-            }
+            Call ApplyMove(Depth);
+            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(AppliedMove[Depth], ":")));
+            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+            List.ReplaceItem(PickMoveRes, Depth, 1);
+            Stop(this script);
         }
         List.ReplaceItem(PickPhase, Depth, 6);
     }
@@ -7383,7 +7380,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
             Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         }
-        List.ReplaceItem(MovesIdx, Depth, 0);
+        List.ReplaceItem(MovesIdx, Depth, PickedMoveCount[Depth]);
         List.ReplaceItem(PickPhase, Depth, 7);
     }
     If (PickPhase[Depth] == 7)
@@ -7391,19 +7388,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call GetCurrentMove(Depth);
-            Repeat Until ((Not (Operator.Contains(PickedMoves[Depth], CurrentMove))) Or (MovesIdx[Depth] > MovesCount[Depth]))
-            {
-                List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-                Call GetCurrentMove(Depth);
-            }
-            If (Not ((MovesIdx[Depth] > MovesCount[Depth])))
-            {
-                Call ApplyMove(Depth);
-                List.ReplaceItem(PickMoveRes, Depth, 1);
-                List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                Stop(this script);
-            }
+            Call ApplyMove(Depth);
+            List.ReplaceItem(PickMoveRes, Depth, 1);
+            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+            Stop(this script);
         }
         List.ReplaceItem(PickPhase, Depth, "*");
         List.ReplaceItem(PickMoveRes, Depth, 0);
