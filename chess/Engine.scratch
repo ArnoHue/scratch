@@ -52,9 +52,9 @@ WhenKeyPressed(p)
 
 WhenKeyPressed(d)
 {
-    If (IsModeDeepeningDebug == 0)
+    If (IsModeDebug == 0)
     {
-        IsModeDeepeningDebug = 1;
+        IsModeDebug = 1;
         Variable.Show(IdxDeepening);
         Variable.Show(BestMinMaxRes);
         Variable.Show(BestMove);
@@ -63,7 +63,7 @@ WhenKeyPressed(d)
     }
     Else
     {
-        IsModeDeepeningDebug = 0;
+        IsModeDebug = 0;
         Variable.Hide(IdxDeepening);
         Variable.Hide(BestMinMaxRes);
         Variable.Hide(BestMove);
@@ -88,7 +88,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.40 (03.02.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.41 (04.02.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -326,8 +326,12 @@ WhenBroadcastReceived(startgame)
     Call EnterExecution;
     Call InitBoard;
     Call DrawBoardAndWait;
+    Looks.Say("Initializing engine, please wait...");
+    Control.Wait(0.1);
+    Call InitBoardPhase2;
     Call ExitExecution;
     Call ExecuteInit;
+    Looks.Say("");
 }
 
 WhenBroadcastReceived(triggerrestart)
@@ -2151,6 +2155,110 @@ Define ApplyMove(num Depth) (warp=true)
     }
 }
 
+Define ApplyMoveLight(string Depth) (warp=true)
+{
+    List.ReplaceItem(PreviousBoardHash, Depth, CurrentBoardHash);
+    Call GetCurrentMove(Depth);
+    List.ReplaceItem(AppliedMove, Depth, CurrentMove);
+    SourceIdx = floor((CurrentMove / 100));
+    If (SourceIdx > 0)
+    {
+        TargetIdx = floor((CurrentMove % 100));
+        SourcePiece = Board[SourceIdx];
+        TargetPiece = Board[TargetIdx];
+        List.ReplaceItem(SourcePieces, Depth, SourcePiece);
+        List.ReplaceItem(TargetPiecesIdx, Depth, TargetIdx);
+        List.ReplaceItem(TargetPieces, Depth, TargetPiece);
+        List.ReplaceItem(PromotionPieces, Depth, 0);
+        List.ReplaceItem(Board, TargetIdx, SourcePiece);
+        List.ReplaceItem(Board, SourceIdx, 0);
+        If (SourcePiece > 0)
+        {
+            IdxSub = ((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx));
+            CurrentBoardHash += MoveHashLookupBlack[IdxSub];
+        }
+        Else
+        {
+            IdxSub = ((PieceIdxLookup[(0 - SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx));
+            CurrentBoardHash += MoveHashLookupWhite[IdxSub];
+        }
+        If (TargetPiece > 0)
+        {
+            IdxSub = ((PieceIdxLookup[TargetPiece] * 10000) + (TargetIdx * 100));
+            CurrentBoardHash += MoveHashLookupBlack[IdxSub];
+        }
+        Else
+        {
+            If (TargetPiece < 0)
+            {
+                IdxSub = ((PieceIdxLookup[(0 - TargetPiece)] * 10000) + (TargetIdx * 100));
+                CurrentBoardHash += MoveHashLookupWhite[IdxSub];
+            }
+        }
+    }
+    Else
+    {
+        List.ReplaceItem(PosScoreDelta, Depth, 0);
+        List.ReplaceItem(SourcePieces, Depth, Empty);
+        List.ReplaceItem(TargetPiecesIdx, Depth, "");
+        List.ReplaceItem(TargetPieces, Depth, Empty);
+        List.ReplaceItem(PromotionPieces, Depth, Empty);
+        If (CurrentMove == WhiteKingsideCastling)
+        {
+            List.ReplaceItem(SourcePieces, Depth, WhiteKing);
+            List.ReplaceItem(Board, VirtualBoard[61], Empty);
+            List.ReplaceItem(Board, VirtualBoard[62], WhiteRook);
+            List.ReplaceItem(Board, VirtualBoard[63], WhiteKing);
+            List.ReplaceItem(Board, VirtualBoard[64], Empty);
+            WhiteKingIdx = VirtualBoard[63];
+            Call UpdateMoveHashPosScore(WhiteKing)(VirtualBoard[61])(VirtualBoard[63])((1 == 0));
+            Call UpdateMoveHashPosScore(WhiteRook)(VirtualBoard[64])(VirtualBoard[62])((1 == 1));
+        }
+        Else
+        {
+            If (CurrentMove == WhiteQueensideCastling)
+            {
+                List.ReplaceItem(SourcePieces, Depth, WhiteKing);
+                List.ReplaceItem(Board, VirtualBoard[57], Empty);
+                List.ReplaceItem(Board, VirtualBoard[59], WhiteKing);
+                List.ReplaceItem(Board, VirtualBoard[60], WhiteRook);
+                List.ReplaceItem(Board, VirtualBoard[61], Empty);
+                WhiteKingIdx = VirtualBoard[59];
+                Call UpdateMoveHashPosScore(WhiteKing)(VirtualBoard[61])(VirtualBoard[59])((1 == 0));
+                Call UpdateMoveHashPosScore(WhiteRook)(VirtualBoard[57])(VirtualBoard[59])((1 == 1));
+            }
+            Else
+            {
+                If (CurrentMove == BlackKingsideCastling)
+                {
+                    List.ReplaceItem(SourcePieces, Depth, BlackKing);
+                    List.ReplaceItem(Board, VirtualBoard[5], Empty);
+                    List.ReplaceItem(Board, VirtualBoard[6], BlackRook);
+                    List.ReplaceItem(Board, VirtualBoard[7], BlackKing);
+                    List.ReplaceItem(Board, VirtualBoard[8], Empty);
+                    BlackKingIdx = VirtualBoard[3];
+                    Call UpdateMoveHashPosScore(BlackKing)(VirtualBoard[5])(VirtualBoard[7])((1 == 0));
+                    Call UpdateMoveHashPosScore(BlackRook)(VirtualBoard[8])(VirtualBoard[6])((1 == 1));
+                }
+                Else
+                {
+                    If (CurrentMove == BlackQueensideCastling)
+                    {
+                        List.ReplaceItem(SourcePieces, Depth, BlackKing);
+                        List.ReplaceItem(Board, VirtualBoard[1], Empty);
+                        List.ReplaceItem(Board, VirtualBoard[3], BlackKing);
+                        List.ReplaceItem(Board, VirtualBoard[4], BlackRook);
+                        List.ReplaceItem(Board, VirtualBoard[5], Empty);
+                        BlackKingIdx = VirtualBoard[5];
+                        Call UpdateMoveHashPosScore(BlackKing)(VirtualBoard[5])(VirtualBoard[3])((1 == 0));
+                        Call UpdateMoveHashPosScore(BlackRook)(VirtualBoard[1])(VirtualBoard[4])((1 == 1));
+                    }
+                }
+            }
+        }
+    }
+}
+
 Define CalcBoardAttackedByMove(string Depth) (warp=true)
 {
     Call ClearBoardAttackedByMove(Depth);
@@ -2367,41 +2475,19 @@ Define CalcBoardStats (warp=true)
 Define CalculateOpeningMoves (warp=true)
 {
     List.DeleteItem(MinMaxMovesRes, all);
-    If (IsImportedBoard == 0)
+    Call GenerateMoves(1);
+    Call GetCurrentBoardHash;
+    IdxOuter = 1;
+    Repeat (List.Length(OpeningMovesMapHash))
     {
-        If (IsPlayerBlack == 0)
+        If (OpeningMovesMapHash[IdxOuter] == CurrentBoardHash)
         {
-            Idx = 1;
-        }
-        Else
-        {
-            Idx = ((List.Length(OpeningMoves) / 2) + 1);
-        }
-        Repeat ((List.Length(OpeningMoves) / 2))
-        {
-            If (Variable.Length(GameMoves) < Variable.Length(OpeningMoves[Idx]))
+            If List.ContainsItem(Moves1, OpeningMovesMapMove[IdxOuter])
             {
-                IdxString = 1;
-                IsEqual = 1;
-                Repeat (Variable.Length(GameMoves))
-                {
-                    If (Not ((Operator.LetterOf(GameMoves, IdxString) == Operator.LetterOf(OpeningMoves[Idx], IdxString))))
-                    {
-                        IsEqual = 0;
-                    }
-                    IdxString += 1;
-                }
-                If (IsEqual == 1)
-                {
-                    BestMove = Operator.LetterOf(OpeningMoves[Idx], (Variable.Length(GameMoves) + 1));
-                    BestMove = Operator.Join(BestMove, Operator.LetterOf(OpeningMoves[Idx], (Variable.Length(GameMoves) + 2)));
-                    BestMove = Operator.Join(BestMove, Operator.LetterOf(OpeningMoves[Idx], (Variable.Length(GameMoves) + 3)));
-                    BestMove = Operator.Join(BestMove, Operator.LetterOf(OpeningMoves[Idx], (Variable.Length(GameMoves) + 4)));
-                    List.Add(MinMaxMovesRes, BestMove);
-                }
+                List.Add(MinMaxMovesRes, OpeningMovesMapMove[IdxOuter]);
             }
-            Idx += 1;
         }
+        IdxOuter += 1;
     }
 }
 
@@ -4824,6 +4910,41 @@ Define GetMoveScore(string SourcePiece)(string TargetPiece)(string FromIdx)(stri
     }
 }
 
+Define GetOpeningMoves (warp=true)
+{
+    List.DeleteItem(MinMaxMovesRes, all);
+    If (IsPlayerBlack == 0)
+    {
+        Idx = 1;
+    }
+    Else
+    {
+        Idx = ((List.Length(OpeningMoves) / 2) + 1);
+    }
+    Repeat ((List.Length(OpeningMoves) / 2))
+    {
+        CurrentValue = OpeningMoves[Idx];
+        If (Variable.Length(GameMoves) < Variable.Length(CurrentValue))
+        {
+            IdxString = 1;
+            IsEqual = 1;
+            Repeat Until ((IsEqual == 0) Or (IdxString > Variable.Length(GameMoves)))
+            {
+                If (Not ((Operator.LetterOf(GameMoves, IdxString) == Operator.LetterOf(CurrentValue, IdxString))))
+                {
+                    IsEqual = 0;
+                }
+                IdxString += 1;
+            }
+            If (IsEqual == 1)
+            {
+                List.Add(MinMaxMovesRes, Operator.Join(Operator.Join(Operator.LetterOf(CurrentValue, IdxString), Operator.LetterOf(CurrentValue, (IdxString + 1))), Operator.Join(Operator.LetterOf(CurrentValue, (IdxString + 2)), Operator.LetterOf(CurrentValue, (IdxString + 3)))));
+            }
+        }
+        Idx += 1;
+    }
+}
+
 Define GetPiecePosHash(string Piece)(string Pos) (warp=true)
 {
     PiecePosHash = 0;
@@ -5481,7 +5602,7 @@ Define InitBoard (warp=true)
     FromSquareIdx = -1;
     ToSquareIdx = -1;
     IsModeProfiler = 0;
-    IsModeDeepeningDebug = 0;
+    IsModeDebug = 0;
     IsModeCompetition = 0;
     MoveFromIdx = -1;
     MoveToIdx = -1;
@@ -5521,6 +5642,7 @@ Define InitBoard (warp=true)
     BlackBishop = 330;
     BlackKnight = 310;
     BlackPawn = 100;
+    Call FillBoard;
     SpecialCaptureDeltaSum = abs(((BlackPawn + BlackRook) + (WhiteBishop + WhiteKnight)));
     List.DeleteItem(PieceIdxLookup, all);
     Idx = 1;
@@ -5535,26 +5657,15 @@ Define InitBoard (warp=true)
     List.ReplaceItem(PieceIdxLookup, BlackRook, 4);
     List.ReplaceItem(PieceIdxLookup, BlackQueen, 5);
     List.ReplaceItem(PieceIdxLookup, BlackKing, 6);
-    Call InitKingSafety;
-    Call InitMobilityBonusLookup;
-    Call InitCoordLookup;
-    Call InitHashLookup;
-    Call InitMoveLookup;
-    Call InitKnightSquare;
-    Call InitPawnSquare;
-    Call InitPawnSquareEndgame;
-    Call InitBishopSquare;
-    Call InitRookSquare;
-    Call InitQueenSquare;
-    Call InitKingSquare;
-    Call InitKingSquareEndgame;
-    Call InitPawnSquarePreCastling;
-    Call FillBoard;
-    Call InitOpeningBook;
     List.Hide(BoardHistory);
     List.Hide(GameMovesAN);
     List.Hide(ExportData);
     List.Hide(ExportMoves);
+    Variable.Hide(IdxDeepening);
+    Variable.Hide(BestMinMaxRes);
+    Variable.Hide(BestMove);
+    Variable.Hide(NPS);
+    Variable.Hide(MPS);
     CharsUpperCase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     List.DeleteItem(CharsUpperCaseList, all);
     Idx = 1;
@@ -5613,6 +5724,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(TargetPieces, all);
     List.DeleteItem(PreviousBoardHash, all);
     List.DeleteItem(PreviousBoardHash2, all);
+    List.DeleteItem(PreviousGameMoves, all);
     List.DeleteItem(ScoreTypes, all);
     List.DeleteItem(PickMoveRes, all);
     List.DeleteItem(PickPhase, all);
@@ -5655,6 +5767,7 @@ Define InitBoard (warp=true)
         List.Add(TargetPieces, "");
         List.Add(PreviousBoardHash, "");
         List.Add(PreviousBoardHash2, "");
+        List.Add(PreviousGameMoves, "");
         List.Add(ScoreTypes, "");
         List.Add(PickMoveRes, "");
         List.Add(PickPhase, "");
@@ -5693,7 +5806,29 @@ Define InitBoard (warp=true)
         List.Add(BlackPawnCount, 0);
         List.Add(WhitePawnCount, 0);
     }
+}
+
+Define InitBoardPhase2 (warp=true)
+{
+    Call InitCoordLookup;
+    Call InitHashLookup;
+    Call InitMoveLookup;
+    Call InitMobilityBonusLookup;
+    Call InitKingSafety;
+    Call InitKnightSquare;
+    Call InitPawnSquare;
+    Call InitPawnSquareEndgame;
+    Call InitBishopSquare;
+    Call InitRookSquare;
+    Call InitQueenSquare;
+    Call InitKingSquare;
+    Call InitKingSquareEndgame;
+    Call InitPawnSquarePreCastling;
+    Call CalcBoardStats;
     Call InvalidateMovePosLookup;
+    Call InitMovePosLookup;
+    Call InitOpeningBook;
+    Call InitOpeningMovesMap;
     Call AddBoardToHistory;
 }
 
@@ -6296,9 +6431,8 @@ Define InitOpeningBook (warp=true)
     List.Add(OpeningMoves, 634612285236072251351321584306135931009053451624);
     List.Add(OpeningMoves, 634612285843132152360722593106135345009062441624);
     List.Add(OpeningMoves, 6346122846631329634629374663072258432836435802195244374451440620);
-    Count = List.Length(OpeningMoves);
     Idx = 1;
-    Repeat (Count)
+    Repeat (List.Length(OpeningMoves))
     {
         List.Add(OpeningMoves, "");
         If ((Variable.Length(OpeningMoves[Idx]) / 4) > 4)
@@ -6307,11 +6441,59 @@ Define InitOpeningBook (warp=true)
             Repeat ((Variable.Length(OpeningMoves[Idx]) / 4))
             {
                 Call GetVirtualMove(Operator.Join(Operator.Join(Operator.LetterOf(OpeningMoves[Idx], IdxSub), Operator.LetterOf(OpeningMoves[Idx], (IdxSub + 1))), Operator.Join(Operator.LetterOf(OpeningMoves[Idx], (IdxSub + 2)), Operator.LetterOf(OpeningMoves[Idx], (IdxSub + 3)))));
-                List.ReplaceItem(OpeningMoves, last, Operator.Join(OpeningMoves[last], VirtualMove));
+                List.ReplaceItem(OpeningMoves, List.Length(OpeningMoves), Operator.Join(OpeningMoves[List.Length(OpeningMoves)], VirtualMove));
                 IdxSub += 4;
             }
         }
+        CurrentValue = Operator.Join(Operator.LetterOf(OpeningMoves[List.Length(OpeningMoves)], 1), Operator.LetterOf(OpeningMoves[List.Length(OpeningMoves)], 2));
+        If ((CurrentValue == 9) Or (CurrentValue == 16))
+        {
+            List.ReplaceItem(OpeningMoves, List.Length(OpeningMoves), "");
+        }
         Idx += 1;
+    }
+}
+
+Define InitOpeningMovesMap (warp=true)
+{
+    List.DeleteAll(OpeningMovesMapHash);
+    List.DeleteAll(OpeningMovesMapMove);
+    GameMoves = "";
+    Call GetCurrentBoardHash;
+    Call InitOpeningMovesMapImpl((1 + IsPlayerBlack));
+}
+
+Define InitOpeningMovesMapImpl(string Depth) (warp=true)
+{
+    Call GetOpeningMoves;
+    If (List.Length(MinMaxMovesRes) > 0)
+    {
+        List.DeleteAll(TmpList1);
+        Call ClearMoveList(Depth);
+        IdxOuter = 1;
+        Repeat (List.Length(MinMaxMovesRes))
+        {
+            List.Add(OpeningMovesMapHash, CurrentBoardHash);
+            List.Add(OpeningMovesMapMove, MinMaxMovesRes[IdxOuter]);
+            If (Not (List.ContainsItem(TmpList1, MinMaxMovesRes[IdxOuter])))
+            {
+                Call AddMoveToList(MinMaxMovesRes[IdxOuter])("")(Depth);
+                List.Add(TmpList1, MinMaxMovesRes[IdxOuter]);
+            }
+            IdxOuter += 1;
+        }
+        List.ReplaceItem(MovesIdx, Depth, 1);
+        Repeat (MovesCount[Depth])
+        {
+            Call GetCurrentMove(Depth);
+            List.ReplaceItem(PreviousGameMoves, Depth, GameMoves);
+            GameMoves = Operator.Join(GameMoves, CurrentMove);
+            Call ApplyMoveLight(Depth);
+            Call InitOpeningMovesMapImpl((Depth + 1));
+            Call RevertMoveLight(Depth);
+            GameMoves = PreviousGameMoves[Depth];
+            List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
+        }
     }
 }
 
@@ -7719,6 +7901,60 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPieces, Depth, "");
 }
 
+Define RevertMoveLight(string Depth) (warp=true)
+{
+    CurrentMove = AppliedMove[Depth];
+    SourceIdx = floor((CurrentMove / 100));
+    If (SourceIdx > 0)
+    {
+        TargetIdx = floor((CurrentMove % 100));
+        List.ReplaceItem(Board, SourceIdx, Board[TargetIdx]);
+        List.ReplaceItem(Board, TargetIdx, 0);
+        List.ReplaceItem(Board, TargetPiecesIdx[Depth], TargetPieces[Depth]);
+    }
+    Else
+    {
+        If (CurrentMove == WhiteKingsideCastling)
+        {
+            List.ReplaceItem(Board, VirtualBoard[61], WhiteKing);
+            List.ReplaceItem(Board, VirtualBoard[62], Empty);
+            List.ReplaceItem(Board, VirtualBoard[63], Empty);
+            List.ReplaceItem(Board, VirtualBoard[64], WhiteRook);
+        }
+        Else
+        {
+            If (CurrentMove == WhiteQueensideCastling)
+            {
+                List.ReplaceItem(Board, VirtualBoard[57], WhiteRook);
+                List.ReplaceItem(Board, VirtualBoard[59], Empty);
+                List.ReplaceItem(Board, VirtualBoard[60], Empty);
+                List.ReplaceItem(Board, VirtualBoard[61], WhiteKing);
+            }
+            Else
+            {
+                If (CurrentMove == BlackKingsideCastling)
+                {
+                    List.ReplaceItem(Board, VirtualBoard[5], BlackKing);
+                    List.ReplaceItem(Board, VirtualBoard[6], Empty);
+                    List.ReplaceItem(Board, VirtualBoard[7], Empty);
+                    List.ReplaceItem(Board, VirtualBoard[8], BlackRook);
+                }
+                Else
+                {
+                    If (CurrentMove == BlackQueensideCastling)
+                    {
+                        List.ReplaceItem(Board, VirtualBoard[1], BlackRook);
+                        List.ReplaceItem(Board, VirtualBoard[4], Empty);
+                        List.ReplaceItem(Board, VirtualBoard[3], Empty);
+                        List.ReplaceItem(Board, VirtualBoard[5], BlackKing);
+                    }
+                }
+            }
+        }
+    }
+    CurrentBoardHash = PreviousBoardHash[Depth];
+}
+
 Define RUN_BEFORE_SAVING (warp=true)
 {
     List.DeleteItem(Logfile, all);
@@ -7780,6 +8016,8 @@ Define RUN_BEFORE_SAVING (warp=true)
         List.DeleteItem(MoveNotationLookup, all);
         List.DeleteItem(MovePathDelta, all);
         List.DeleteItem(MovePathStepInc, all);
+        List.DeleteItem(OpeningMovesMapHash, all);
+        List.DeleteItem(OpeningMovesMapMove, all);
     }
 }
 
