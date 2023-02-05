@@ -88,7 +88,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.41 (04.02.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.42 (05.02.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -360,7 +360,7 @@ Define AddBoardToHistory (warp=true)
 {
     Call GetBoardString;
     List.Add(BoardHistory, GetBoardStringRes);
-    Call GetCurrentBoardHash;
+    Call CreateCurrentBoardHash;
     List.Add(BoardHistoryHash, CurrentBoardHash);
     List.Add(BoardHistoryMetaState, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookQSMoved, HasBlackRookKSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookQSMoved, HasWhiteRookKSMoved))));
 }
@@ -2476,7 +2476,7 @@ Define CalculateOpeningMoves (warp=true)
 {
     List.DeleteItem(MinMaxMovesRes, all);
     Call GenerateMoves(1);
-    Call GetCurrentBoardHash;
+    Call CreateCurrentBoardHash;
     IdxOuter = 1;
     Repeat (List.Length(OpeningMovesMapHash))
     {
@@ -2812,6 +2812,23 @@ Define ClearTTImpl(string Size) (warp=true)
         List.Add(TTNodeBoardAttackedByOpp, "");
         List.Add(TTNodeBoardAttackedByOppPiece, "");
         List.Add(TTNodeCheckedAttackLines, "");
+    }
+}
+
+Define CreateCurrentBoardHash (warp=true)
+{
+    CurrentBoardHash = 0;
+    CurrentBoardHash2 = 0;
+    Idx = 1;
+    Repeat (64)
+    {
+        Call GetPiecePosHash(Board[Idx])(Idx);
+        CurrentBoardHash = (CurrentBoardHash + PiecePosHash);
+        If ((abs(Board[Idx]) == BlackPawn) Or (abs(Board[Idx]) == BlackKing))
+        {
+            CurrentBoardHash2 = (CurrentBoardHash2 + PiecePosHash);
+        }
+        Idx += 1;
     }
 }
 
@@ -3434,7 +3451,7 @@ Define ExecuteEngineMoveImpl (warp=false)
             }
             BestMove = MinMaxMovesRes[Operator.Random(1 / List.Length(MinMaxMovesRes))];
         }
-        Call IsValidMove(BestMove);
+        Call IsEngineValidMove(BestMove);
         If (ValidMoveRes == 0)
         {
             Looks.Think("Thinking...");
@@ -3645,7 +3662,7 @@ Define ExecuteEngineMoveImpl (warp=false)
         Event.BroadcastAndWait("hidebestmove");
         Call OnProgressChanged(100);
         Control.Wait(0);
-        Call IsValidMove(BestMove);
+        Call IsEngineValidMove(BestMove);
         If (ValidMoveRes == 0)
         {
             Looks.Say(Operator.Join("Internal Error: No valid move found. Sorry, this should not happen. Maybe you cleared lookup lists in the editor? If you are running a normal game, please export board data and report bug via project comment", Operator.Join(" Move: ", BestMove)), 10);
@@ -4607,23 +4624,6 @@ Define GetBoardString (warp=true)
     }
 }
 
-Define GetCurrentBoardHash (warp=true)
-{
-    CurrentBoardHash = 0;
-    CurrentBoardHash2 = 0;
-    Idx = 1;
-    Repeat (64)
-    {
-        Call GetPiecePosHash(Board[Idx])(Idx);
-        CurrentBoardHash = (CurrentBoardHash + PiecePosHash);
-        If ((abs(Board[Idx]) == BlackPawn) Or (abs(Board[Idx]) == BlackKing))
-        {
-            CurrentBoardHash2 = (CurrentBoardHash2 + PiecePosHash);
-        }
-        Idx += 1;
-    }
-}
-
 Define GetCurrentMove(num Depth) (warp=true)
 {
     If (Depth < 6)
@@ -4910,7 +4910,7 @@ Define GetMoveScore(string SourcePiece)(string TargetPiece)(string FromIdx)(stri
     }
 }
 
-Define GetOpeningMoves (warp=true)
+Define GetOpeningMoves(string GameMoves) (warp=true)
 {
     List.DeleteItem(MinMaxMovesRes, all);
     If (IsPlayerBlack == 0)
@@ -5724,7 +5724,6 @@ Define InitBoard (warp=true)
     List.DeleteItem(TargetPieces, all);
     List.DeleteItem(PreviousBoardHash, all);
     List.DeleteItem(PreviousBoardHash2, all);
-    List.DeleteItem(PreviousGameMoves, all);
     List.DeleteItem(ScoreTypes, all);
     List.DeleteItem(PickMoveRes, all);
     List.DeleteItem(PickPhase, all);
@@ -5767,7 +5766,6 @@ Define InitBoard (warp=true)
         List.Add(TargetPieces, "");
         List.Add(PreviousBoardHash, "");
         List.Add(PreviousBoardHash2, "");
-        List.Add(PreviousGameMoves, "");
         List.Add(ScoreTypes, "");
         List.Add(PickMoveRes, "");
         List.Add(PickPhase, "");
@@ -6458,14 +6456,13 @@ Define InitOpeningMovesMap (warp=true)
 {
     List.DeleteAll(OpeningMovesMapHash);
     List.DeleteAll(OpeningMovesMapMove);
-    GameMoves = "";
-    Call GetCurrentBoardHash;
-    Call InitOpeningMovesMapImpl((1 + IsPlayerBlack));
+    Call CreateCurrentBoardHash;
+    Call InitOpeningMovesMapImpl((1 + IsPlayerBlack))("");
 }
 
-Define InitOpeningMovesMapImpl(string Depth) (warp=true)
+Define InitOpeningMovesMapImpl(string Depth)(string GameMoves) (warp=true)
 {
-    Call GetOpeningMoves;
+    Call GetOpeningMoves(GameMoves);
     If (List.Length(MinMaxMovesRes) > 0)
     {
         List.DeleteAll(TmpList1);
@@ -6486,12 +6483,9 @@ Define InitOpeningMovesMapImpl(string Depth) (warp=true)
         Repeat (MovesCount[Depth])
         {
             Call GetCurrentMove(Depth);
-            List.ReplaceItem(PreviousGameMoves, Depth, GameMoves);
-            GameMoves = Operator.Join(GameMoves, CurrentMove);
             Call ApplyMoveLight(Depth);
-            Call InitOpeningMovesMapImpl((Depth + 1));
+            Call InitOpeningMovesMapImpl((Depth + 1))(Operator.Join(GameMoves, CurrentMove));
             Call RevertMoveLight(Depth);
-            GameMoves = PreviousGameMoves[Depth];
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
         }
     }
@@ -6674,6 +6668,19 @@ Define IsDrawByStalemate(string Depth) (warp=true)
     }
 }
 
+Define IsEngineValidMove(string Move) (warp=true)
+{
+    Call GenerateMoves(1);
+    If List.ContainsItem(Moves1, Move)
+    {
+        ValidMoveRes = 1;
+    }
+    Else
+    {
+        ValidMoveRes = 0;
+    }
+}
+
 Define IsLowerCase(string Char) (warp=true)
 {
     Chars = "";
@@ -6834,15 +6841,6 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
         }
     }
     IsQuiescentCheckRes = 0;
-}
-
-Define IsValidMove(num Move) (warp=true)
-{
-    ValidMoveRes = 1;
-    If (((Move < 0) Or (Move > 9999)) Or (((floor((Move / 100)) == 0) Or (floor((Move % 100)) == 0)) And (Not ((((Move == BlackQueensideCastling) Or (Move == BlackKingsideCastling)) Or ((Move == WhiteQueensideCastling) Or (Move == WhiteKingsideCastling)))))))
-    {
-        ValidMoveRes = 0;
-    }
 }
 
 Define IsWhiteKingCheckMate (warp=true)
