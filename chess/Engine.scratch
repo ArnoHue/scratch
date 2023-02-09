@@ -90,7 +90,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.43 (05.02.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.44 (09.02.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -7293,13 +7293,13 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         If (IsScratch3 == 1)
         {
-            CurrentValue = 200;
+            CurrentValue = 100;
         }
         Else
         {
-            CurrentValue = 2000;
+            CurrentValue = 1000;
         }
-        If ((Quiescence And ((StagedMoveGenStats[Depth] > CurrentValue) And ((StagedMoveGenStats[(30 + Depth)] / StagedMoveGenStats[Depth]) > 0.8))) Or ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7)))))
+        If ((CheckedState[Depth] == 0) And ((Quiescence And ((StagedMoveGenStats[Depth] > CurrentValue) And ((StagedMoveGenStats[(30 + Depth)] / StagedMoveGenStats[Depth]) > 0.8))) Or ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7))))))
         {
             If Quiescence
             {
@@ -7318,39 +7318,36 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.DeleteAll(TmpList3);
             List.DeleteAll(TmpList4);
             List.DeleteAll(TmpList5);
-            If (Not (Quiescence))
+            Idx = (Depth - 2);
+            Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
             {
-                Idx = (Depth - 2);
-                Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
+                SourceIdxOuter2 = floor((AppliedMove[Idx] % 100));
+                If ((SourceIdxOuter2 > 0) And (SourceIdxOuter2 < 65))
                 {
-                    SourceIdxOuter2 = floor((AppliedMove[Idx] % 100));
-                    If ((SourceIdxOuter2 > 0) And (SourceIdxOuter2 < 65))
+                    If ((Depth % 2) == 1)
                     {
-                        If ((Depth % 2) == 1)
+                        If (Board[SourceIdxOuter2] > 0)
                         {
-                            If (Board[SourceIdxOuter2] > 0)
+                            If (Not (List.ContainsItem(TmpList3, SourceIdxOuter2)))
                             {
-                                If (Not (List.ContainsItem(TmpList3, SourceIdxOuter2)))
-                                {
-                                    List.Add(TmpList3, SourceIdxOuter2);
-                                    List.Add(TmpList4, ((PieceIdxLookup[Board[SourceIdxOuter2]] * 10000) + (SourceIdxOuter2 * 100)));
-                                }
-                            }
-                        }
-                        Else
-                        {
-                            If (Board[SourceIdxOuter2] < 0)
-                            {
-                                If (Not (List.ContainsItem(TmpList3, SourceIdxOuter2)))
-                                {
-                                    List.Add(TmpList3, SourceIdxOuter2);
-                                    List.Add(TmpList4, ((PieceIdxLookup[abs(Board[SourceIdxOuter2])] * 10000) + (SourceIdxOuter2 * 100)));
-                                }
+                                List.Add(TmpList3, SourceIdxOuter2);
+                                List.Add(TmpList4, ((PieceIdxLookup[Board[SourceIdxOuter2]] * 10000) + (SourceIdxOuter2 * 100)));
                             }
                         }
                     }
-                    Idx += -2;
+                    Else
+                    {
+                        If (Board[SourceIdxOuter2] < 0)
+                        {
+                            If (Not (List.ContainsItem(TmpList3, SourceIdxOuter2)))
+                            {
+                                List.Add(TmpList3, SourceIdxOuter2);
+                                List.Add(TmpList4, ((PieceIdxLookup[abs(Board[SourceIdxOuter2])] * 10000) + (SourceIdxOuter2 * 100)));
+                            }
+                        }
+                    }
                 }
+                Idx += -2;
             }
             TargetIdxOuter = floor((AppliedMove[(Depth - 1)] % 100));
             If ((Depth % 2) == 1)
@@ -8481,6 +8478,13 @@ Define StagedMoveGenMVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(str
             Stop(this script);
         }
     }
+    If (CheckedState[Depth] == 1)
+    {
+        If (Not ((TargetIdx == PrevTargetIdx)))
+        {
+            Stop(this script);
+        }
+    }
     If (SourcePieceAbs == BlackPawn)
     {
         If (IdxToFile[SourceIdx] == IdxToFile[TargetIdx])
@@ -8494,7 +8498,24 @@ Define StagedMoveGenMVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(str
     }
     If (SourcePieceAbs == BlackKing)
     {
-        Stop(this script);
+        If (BoardAttackedCalculated[Depth] == 0)
+        {
+            Stop(this script);
+        }
+        If ((Depth % 2) == 1)
+        {
+            If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], TargetIdx) > 0)
+            {
+                Stop(this script);
+            }
+        }
+        Else
+        {
+            If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], TargetIdx) > 0)
+            {
+                Stop(this script);
+            }
+        }
     }
     CurrentMoveOuter = MoveNotationLookup[((SourceIdx * 100) + TargetIdx)];
     If Operator.Contains(PickedMoves[Depth], CurrentMoveOuter)
@@ -8519,7 +8540,21 @@ Define StagedMoveGenMVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(str
         }
     }
     List.Add(TmpList1, CurrentMoveOuter);
-    List.Add(TmpList2, ((0 - Board[SourceIdx]) - (10 * Board[TargetIdx])));
+    If ((CheckedState[Depth] == 1) And ((SourcePieceAbs == BlackKing) Or (TargetIdx == PrevTargetIdx)))
+    {
+        If ((Depth % 2) == 1)
+        {
+            List.Add(TmpList2, BlackKing);
+        }
+        Else
+        {
+            List.Add(TmpList2, WhiteKing);
+        }
+    }
+    Else
+    {
+        List.Add(TmpList2, ((0 - Board[SourceIdx]) - (10 * Board[TargetIdx])));
+    }
 }
 
 Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
