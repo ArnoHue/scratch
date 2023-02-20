@@ -90,7 +90,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.60 (19.02.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.61 (20.02.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -2393,13 +2393,16 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
     }
 }
 
-Define CalcBoardAttackedIfRequiredForDepth(string Depth) (warp=true)
+Define CalcBoardAttackedIfRequiredForDepth(string Depth)(bool Quiescence) (warp=true)
 {
-    If (BoardAttackedCalculated[Depth] == 0)
+    If ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7))))
     {
-        Call CalcBoardAttackedByMove((Depth + 1));
-        Call StoreAttackInfo((Depth + 1))(Depth);
-        List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
+        If (BoardAttackedCalculated[Depth] == 0)
+        {
+            Call CalcBoardAttackedByMove((Depth + 1));
+            Call StoreAttackInfo((Depth + 1))(Depth);
+            List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
+        }
     }
 }
 
@@ -7203,7 +7206,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.DeleteAll(TmpList1);
         List.DeleteAll(TmpList2);
         Call ClearMoveList(Depth);
-        If (Depth > 1)
+        If ((Depth > 1) And (Not (Quiescence)))
         {
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If (TTProbeRes == 1)
@@ -7248,27 +7251,31 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     TargetIdx = floor((TTProbeBestMoveRes % 100));
                     If ((Not (Quiescence)) Or (Quiescence And ((TTProbeHorizonRes == -1) Or (Not ((Board[TargetIdx] == 0))))))
                     {
-                        If ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7))))
+                        Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence);
+                        List.DeleteAll(CalcMovesMoveList);
+                        List.DeleteAll(CalcMovesScoreList);
+                        Call GenerateMovesForSource(Depth)(floor((TTProbeBestMoveRes / 100)))((1 == 0))(Quiescence);
+                        If List.ContainsItem(CalcMovesMoveList, TTProbeBestMoveRes)
                         {
-                            Call CalcBoardAttackedIfRequiredForDepth(Depth);
+                            Call AddMoveToList(TTProbeBestMoveRes)(0)(Depth);
+                            List.ReplaceItem(BestMoves, Depth, TTProbeBestMoveRes);
+                            List.ReplaceItem(MovesIdx, Depth, 1);
+                            Call ApplyMove(Depth);
+                            List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
+                            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+                            List.ReplaceItem(PickPhase, Depth, 2);
+                            List.ReplaceItem(PickMoveRes, Depth, 1);
+                            List.DeleteAll(CalcMovesMoveList);
+                            List.DeleteAll(CalcMovesScoreList);
+                            Stop(this script);
                         }
-                        Call AddMoveToList(TTProbeBestMoveRes)(0)(Depth);
-                        List.ReplaceItem(BestMoves, Depth, TTProbeBestMoveRes);
-                        List.ReplaceItem(MovesIdx, Depth, 1);
-                        Call ApplyMove(Depth);
-                        List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
-                        List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                        List.ReplaceItem(PickPhase, Depth, 2);
-                        List.ReplaceItem(PickMoveRes, Depth, 1);
-                        Stop(this script);
+                        List.DeleteAll(CalcMovesMoveList);
+                        List.DeleteAll(CalcMovesScoreList);
                     }
                 }
             }
         }
-        If ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7))))
-        {
-            Call CalcBoardAttackedIfRequiredForDepth(Depth);
-        }
+        Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence);
         List.ReplaceItem(PickPhase, Depth, 2);
     }
     If (PickPhase[Depth] == 2)
