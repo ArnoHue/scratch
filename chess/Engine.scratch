@@ -90,7 +90,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.61 (20.02.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.63 (20.02.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1494,6 +1494,10 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         }
         If (PickMoveRes[Depth] == 1)
         {
+            If (BestMoves[Depth] == "")
+            {
+                List.ReplaceItem(BestMoves, Depth, AppliedMove[Depth]);
+            }
             If (ShowProgress And (Depth < 3))
             {
                 CurrentValue = (Sensing.DaysSince2000() * 86400);
@@ -2395,9 +2399,9 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
 
 Define CalcBoardAttackedIfRequiredForDepth(string Depth)(bool Quiescence) (warp=true)
 {
-    If ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7))))
+    If (BoardAttackedCalculated[Depth] == 0)
     {
-        If (BoardAttackedCalculated[Depth] == 0)
+        If ((CheckedState[Depth] == 1) Or ((Not (Quiescence)) And (((IsScratch3 == 1) And (Depth < 4)) Or ((IsScratch3 == 0) And (Depth < 7)))))
         {
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
@@ -7206,7 +7210,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.DeleteAll(TmpList1);
         List.DeleteAll(TmpList2);
         Call ClearMoveList(Depth);
-        If ((Depth > 1) And (Not (Quiescence)))
+        If (Depth > 1)
         {
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If (TTProbeRes == 1)
@@ -7248,34 +7252,31 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 If (Not ((TTProbeBestMoveRes == "")))
                 {
-                    TargetIdx = floor((TTProbeBestMoveRes % 100));
-                    If ((Not (Quiescence)) Or (Quiescence And ((TTProbeHorizonRes == -1) Or (Not ((Board[TargetIdx] == 0))))))
+                    If ((Not (Quiescence)) Or (Quiescence And ((TTProbeHorizonRes == -1) Or (Not ((Board[floor((TTProbeBestMoveRes % 100))] == 0))))))
                     {
-                        Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence);
-                        List.DeleteAll(CalcMovesMoveList);
-                        List.DeleteAll(CalcMovesScoreList);
-                        Call GenerateMovesForSource(Depth)(floor((TTProbeBestMoveRes / 100)))((1 == 0))(Quiescence);
-                        If List.ContainsItem(CalcMovesMoveList, TTProbeBestMoveRes)
+                        SourceIdx = floor((TTProbeBestMoveRes / 100));
+                        TargetIdx = floor((TTProbeBestMoveRes % 100));
+                        Found = 1;
+                        If ((abs(Board[SourceIdx]) == BlackPawn) And ((Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx]))) And ((IdxToRank[TargetIdx] == 3) Or (IdxToRank[TargetIdx] == 6))))
                         {
+                            Found = 0;
+                        }
+                        If (Found == 1)
+                        {
+                            Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence);
                             Call AddMoveToList(TTProbeBestMoveRes)(0)(Depth);
-                            List.ReplaceItem(BestMoves, Depth, TTProbeBestMoveRes);
                             List.ReplaceItem(MovesIdx, Depth, 1);
                             Call ApplyMove(Depth);
                             List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
                             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
                             List.ReplaceItem(PickPhase, Depth, 2);
                             List.ReplaceItem(PickMoveRes, Depth, 1);
-                            List.DeleteAll(CalcMovesMoveList);
-                            List.DeleteAll(CalcMovesScoreList);
                             Stop(this script);
                         }
-                        List.DeleteAll(CalcMovesMoveList);
-                        List.DeleteAll(CalcMovesScoreList);
                     }
                 }
             }
         }
-        Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence);
         List.ReplaceItem(PickPhase, Depth, 2);
     }
     If (PickPhase[Depth] == 2)
@@ -7291,6 +7292,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 Call Profile_IncCounter((678 + (Depth * 4)));
             }
         }
+        Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence);
         If (IsScratch3 == 1)
         {
             CurrentValue = 100;
@@ -7415,10 +7417,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 If (List.Length(TmpList1) == 1)
                 {
                     Call AddMoveToList(TmpList1[1])(TmpList2[1])(Depth);
-                    If (BestMoves[Depth] == "")
-                    {
-                        List.ReplaceItem(BestMoves, Depth, TmpList1[1]);
-                    }
                 }
                 Else
                 {
@@ -7434,11 +7432,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     Call SortMoveList((Depth + 2));
                     List.ReplaceItem(MovesCount, (Depth + 2), List.Length(CalcMovesMoveList));
                     List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                    If (BestMoves[Depth] == "")
-                    {
-                        Call GetCurrentMove((Depth + 2));
-                        List.ReplaceItem(BestMoves, Depth, CurrentMove);
-                    }
                     Repeat (MovesCount[(Depth + 2)])
                     {
                         Call GetCurrentMove((Depth + 2));
@@ -7515,10 +7508,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 If (List.Length(TmpList1) == 1)
                 {
                     Call AddMoveToList(TmpList1[1])(TmpList2[1])(Depth);
-                    If (BestMoves[Depth] == "")
-                    {
-                        List.ReplaceItem(BestMoves, Depth, TmpList1[1]);
-                    }
                 }
                 Else
                 {
@@ -7534,11 +7523,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     Call SortMoveList((Depth + 2));
                     List.ReplaceItem(MovesCount, (Depth + 2), List.Length(CalcMovesMoveList));
                     List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                    If (BestMoves[Depth] == "")
-                    {
-                        Call GetCurrentMove((Depth + 2));
-                        List.ReplaceItem(BestMoves, Depth, CurrentMove);
-                    }
                     Repeat (MovesCount[(Depth + 2)])
                     {
                         Call GetCurrentMove((Depth + 2));
@@ -7614,12 +7598,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             {
                 Call TTStoreNode(CurrentBoardHash)(Depth)("")("")("")("")("")("")(WhiteMobBonus[Depth])("")("")("");
             }
-        }
-        If (BestMoves[Depth] == "")
-        {
-            List.ReplaceItem(MovesIdx, Depth, 1);
-            Call GetCurrentMove(Depth);
-            List.ReplaceItem(BestMoves, Depth, CurrentMove);
         }
         List.ReplaceItem(MovesIdx, Depth, PickedMoveCount[Depth]);
         List.ReplaceItem(PickPhase, Depth, 7);
@@ -8462,6 +8440,13 @@ Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(str
         If ((TargetIdx > 56) Or (TargetIdx < 9))
         {
             Stop(this script);
+        }
+        If (abs((TargetIdx - SourceIdx)) == 16)
+        {
+            If (Not ((Board[((TargetIdx + SourceIdx) / 2)] == 0)))
+            {
+                Stop(this script);
+            }
         }
     }
     If (SourcePieceAbs == BlackKing)
