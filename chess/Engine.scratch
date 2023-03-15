@@ -878,64 +878,6 @@ Define AddMoveToList(string Move)(string Depth) (warp=true)
     }
 }
 
-Define AddPossibleEnPassantImpl(string SourceIdx)(string Dir)(string Depth) (warp=true)
-{
-    Call GetTargetIdx(SourceIdx)(Dir)(0);
-    If (Not ((GetTargetIdxRes == -1)))
-    {
-        If ((((Depth % 2) == 1) And (Board[GetTargetIdxRes] == WhitePawn)) Or (((Depth % 2) == 0) And (Board[GetTargetIdxRes] == BlackPawn)))
-        {
-            IsEnPassantAllowed = 0;
-            If ((Depth % 2) == 1)
-            {
-                EnPassantPrevMove = Operator.Join((GetTargetIdxRes + 16), GetTargetIdxRes);
-            }
-            Else
-            {
-                EnPassantPrevMove = Operator.Join((GetTargetIdxRes - 16), GetTargetIdxRes);
-            }
-            If (Depth == 1)
-            {
-                Call GetSubstringRight(GameMoves)(4);
-                If (SubstringRes == EnPassantPrevMove)
-                {
-                    IsEnPassantAllowed = 1;
-                }
-            }
-            Else
-            {
-                If (Depth == 2)
-                {
-                    Call GetSubstringRight(GameMoves)(4);
-                    If ((SubstringRes == EnPassantPrevMove) Or (Moves1[MovesIdx[1]] == EnPassantPrevMove))
-                    {
-                        IsEnPassantAllowed = 1;
-                    }
-                }
-                Else
-                {
-                    Call GetCurrentMove((Depth - 1));
-                    If (CurrentMove == EnPassantPrevMove)
-                    {
-                        IsEnPassantAllowed = 1;
-                    }
-                }
-            }
-            If (IsEnPassantAllowed == 1)
-            {
-                If ((Depth % 2) == 1)
-                {
-                    Call AddSpecialMove(Operator.Join(SourceIdx, (GetTargetIdxRes + 8)))(Depth);
-                }
-                Else
-                {
-                    Call AddSpecialMove(Operator.Join(SourceIdx, (GetTargetIdxRes - 8)))(Depth);
-                }
-            }
-        }
-    }
-}
-
 Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Piece)(string Depth) (warp=true)
 {
     If (Operator.LetterOf(CheckedStateAttackLines[Depth], TargetIdx) == 1)
@@ -1934,6 +1876,10 @@ Define ApplyMove(num Depth) (warp=true)
                         CurrentBoardHash2 = (CurrentBoardHash2 - PiecePosHash);
                     }
                 }
+                If ((TargetIdx - SourceIdx) == 16)
+                {
+                    List.ReplaceItem(EnPassantTarget, (Depth + 1), TargetIdx);
+                }
                 If (TargetIdx > 56)
                 {
                     List.ReplaceItem(PromotionPieces, Depth, Empty);
@@ -2011,6 +1957,10 @@ Define ApplyMove(num Depth) (warp=true)
                         CurrentBoardHash = (CurrentBoardHash - PiecePosHash);
                         CurrentBoardHash2 = (CurrentBoardHash2 - PiecePosHash);
                     }
+                }
+                If ((TargetIdx - SourceIdx) == -16)
+                {
+                    List.ReplaceItem(EnPassantTarget, (Depth + 1), TargetIdx);
                 }
                 If (TargetIdx < 9)
                 {
@@ -4067,11 +4017,25 @@ Define FillBoard (warp=true)
 
 Define GenerateMoves(string Depth) (warp=true)
 {
+    If ((Depth == 2) And (AppliedMove[1] == ""))
+    {
+        Call GetSubstringRight(GameMoves)(4);
+        SourceIdx = floor((SubstringRes / 100));
+        TargetIdx = floor((SubstringRes % 100));
+        If ((Board[TargetIdx] == BlackPawn) And ((IdxToRank[TargetIdx] == 4) And ((TargetIdx - SourceIdx) == 16)))
+        {
+            List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
+        }
+    }
     Call CalcBoardAttackedByMove((Depth + 1));
     Call StoreAttackInfo((Depth + 1))(Depth);
     List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
     Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
     List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
+    If ((Depth == 2) And (AppliedMove[1] == ""))
+    {
+        List.ReplaceItem(EnPassantTarget, Depth, "");
+    }
 }
 
 Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
@@ -4118,23 +4082,14 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                 }
             }
         }
-        If (IdxToRank[SourceIdx] == 5)
+        If (Not ((EnPassantTarget[Depth] == "")))
         {
-            If (Not (CalcAttackState))
+            TargetIdx = EnPassantTarget[Depth];
+            If ((Not (CalcAttackState)) And (IdxToRank[SourceIdx] == IdxToRank[TargetIdx]))
             {
-                If (Board[(SourceIdx - 1)] == WhitePawn)
+                If (abs((IdxToFile[SourceIdx] - IdxToFile[TargetIdx])) == 1)
                 {
-                    If (IdxToFile[SourceIdx] > 1)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
-                    }
-                }
-                If (Board[(SourceIdx + 1)] == WhitePawn)
-                {
-                    If (IdxToFile[SourceIdx] < 8)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
-                    }
+                    Call AddMoveImpl(SourceIdx)((TargetIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
                 }
             }
         }
@@ -4181,23 +4136,14 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                 }
             }
         }
-        If (IdxToRank[SourceIdx] == 4)
+        If (Not ((EnPassantTarget[Depth] == "")))
         {
-            If (Not (CalcAttackState))
+            TargetIdx = EnPassantTarget[Depth];
+            If ((Not (CalcAttackState)) And (IdxToRank[SourceIdx] == IdxToRank[TargetIdx]))
             {
-                If (Board[(SourceIdx - 1)] == BlackPawn)
+                If (abs((IdxToFile[SourceIdx] - IdxToFile[TargetIdx])) == 1)
                 {
-                    If (IdxToFile[SourceIdx] > 1)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(-1)(Depth);
-                    }
-                }
-                If (Board[(SourceIdx + 1)] == BlackPawn)
-                {
-                    If (IdxToFile[SourceIdx] < 8)
-                    {
-                        Call AddPossibleEnPassantImpl(SourceIdx)(1)(Depth);
-                    }
+                    Call AddMoveImpl(SourceIdx)((TargetIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
                 }
             }
         }
@@ -5480,6 +5426,14 @@ Define InitAlphaBeta(string Depth)(string MaxDepth)(bool InitialDeepening) (warp
         {
             Call Profile_Reset;
         }
+        List.ReplaceItem(EnPassantTarget, Depth, "");
+        Call GetSubstringRight(GameMoves)(4);
+        SourceIdx = floor((SubstringRes / 100));
+        TargetIdx = floor((SubstringRes % 100));
+        If ((Board[TargetIdx] == WhitePawn) And ((IdxToRank[TargetIdx] == 5) And ((TargetIdx - SourceIdx) == -16)))
+        {
+            List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
+        }
         List.DeleteItem(MinMaxPly1EvalMoves, all);
         TTProbeCurrentAge += 1;
         Call CalcBoardStats;
@@ -5653,6 +5607,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardAttackedByWhitePieceSnapshot, all);
     List.DeleteItem(BoardAttackedByWhiteSnapshot, all);
     List.DeleteItem(Quiescence, all);
+    List.DeleteItem(EnPassantTarget, all);
     Repeat (30)
     {
         List.Add(Alphas, "");
@@ -5695,6 +5650,7 @@ Define InitBoard (warp=true)
         List.Add(BoardAttackedByWhitePieceSnapshot, "");
         List.Add(BoardAttackedByWhiteSnapshot, "");
         List.Add(Quiescence, "");
+        List.Add(EnPassantTarget, "");
     }
     List.DeleteItem(BlackPawnCount, all);
     List.DeleteItem(WhitePawnCount, all);
@@ -7851,6 +7807,7 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(AppliedMove, Depth, "");
     List.ReplaceItem(SourcePieces, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, "");
+    List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
 }
 
 Define RevertMoveLight(string Depth) (warp=true)
