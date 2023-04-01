@@ -90,7 +90,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 5.89 (01.04.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 5.90 (01.04.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -166,7 +166,7 @@ WhenBroadcastReceived(fromsquareselected)
     {
         BestMoveFromIdx = FromSquareIdx;
         List.DeleteAll(UserMoveTargets);
-        Call GenerateMoves(2);
+        Call GenerateMovesPublic(2);
         List.ReplaceItem(MovesIdx, 2, 1);
         Repeat (MovesCount[2])
         {
@@ -267,7 +267,7 @@ WhenBroadcastReceived(squareclicked)
                     {
                         If ((MoveToIdx == VirtualBoard[59]) And (Board[VirtualBoard[57]] == WhiteRook))
                         {
-                            Call GenerateMoves(2);
+                            Call GenerateMovesPublic(2);
                             If List.ContainsItem(Moves2, WhiteQueensideCastling)
                             {
                                 UserMove = WhiteQueensideCastling;
@@ -279,7 +279,7 @@ WhenBroadcastReceived(squareclicked)
                         }
                         If ((MoveToIdx == VirtualBoard[63]) And (Board[VirtualBoard[64]] == WhiteRook))
                         {
-                            Call GenerateMoves(2);
+                            Call GenerateMovesPublic(2);
                             If List.ContainsItem(Moves2, WhiteKingsideCastling)
                             {
                                 UserMove = WhiteKingsideCastling;
@@ -1117,6 +1117,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call GenerateMovesImplWrapper(1)((1 == 0))((1 == 0));
         Call GenerateMovesImplWrapper(2)((1 == 0))((1 == 0));
         List.ReplaceItem(WhiteMobBonus, 1, WhiteMobBonus[2]);
+        List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
     }
     Else
     {
@@ -1129,6 +1130,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(CheckedStateAttackLines, Depth, "");
         List.ReplaceItem(BlackMobBonus, Depth, BlackMobBonus[(Depth - 1)]);
         List.ReplaceItem(WhiteMobBonus, Depth, WhiteMobBonus[(Depth - 1)]);
+        List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
     }
     If Quiescence
     {
@@ -2408,7 +2410,7 @@ Define CalcBoardStats (warp=true)
 Define CalculateOpeningMoves (warp=true)
 {
     List.DeleteItem(MinMaxMovesRes, all);
-    Call GenerateMoves(1);
+    Call GenerateMovesPublic(1);
     Call CreateCurrentBoardHash;
     IdxOuter = 1;
     Repeat (List.Length(OpeningMovesMapHash))
@@ -3516,7 +3518,7 @@ Define ExecuteEngineMoveImpl (warp=false)
                 BestMove = MinMaxMovesRes[1];
                 If ((BestMove == "") Or (Operator.Random(1 / 100) > JuniorSearchQuota))
                 {
-                    Call GenerateMoves(1);
+                    Call GenerateMovesPublic(1);
                     List.ReplaceItem(MovesIdx, 1, Operator.Random(1 / ceiling((List.Length(Moves1) * (JuniorDistQuota / 100)))));
                     Call ApplyMove(1);
                     Call CalcBoardAttackedByMove(2);
@@ -3671,7 +3673,7 @@ Define ExecuteUserMoveImpl(string UserMove) (warp=false)
         ToSquareIdx = -1;
         Event.BroadcastAndWait("fromsquareselected");
         Event.BroadcastAndWait("tosquareselected");
-        Call GenerateMoves(2);
+        Call GenerateMovesPublic(2);
         If (Not (List.ContainsItem(Moves2, UserMove)))
         {
             Call Log("User Move: ")(UserMove)("")("")("")("")("")("");
@@ -3996,29 +3998,6 @@ Define FillBoard (warp=true)
     List.ReplaceItem(Board, VirtualBoard[62], WhiteBishop);
     List.ReplaceItem(Board, VirtualBoard[63], WhiteKnight);
     List.ReplaceItem(Board, VirtualBoard[64], WhiteRook);
-}
-
-Define GenerateMoves(string Depth) (warp=true)
-{
-    If ((Depth == 2) And (AppliedMove[1] == ""))
-    {
-        Call GetSubstringRight(GameMoves)(4);
-        SourceIdx = floor((SubstringRes / 100));
-        TargetIdx = floor((SubstringRes % 100));
-        If ((Board[TargetIdx] == BlackPawn) And ((IdxToRank[TargetIdx] == 4) And ((TargetIdx - SourceIdx) == 16)))
-        {
-            List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
-        }
-    }
-    Call CalcBoardAttackedByMove((Depth + 1));
-    Call StoreAttackInfo((Depth + 1))(Depth);
-    List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-    Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
-    List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
-    If ((Depth == 2) And (AppliedMove[1] == ""))
-    {
-        List.ReplaceItem(EnPassantTarget, Depth, "");
-    }
 }
 
 Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
@@ -4433,6 +4412,29 @@ Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool Capture
                 Call Profile_MethodExit((90 + Depth));
             }
         }
+    }
+}
+
+Define GenerateMovesPublic(string Depth) (warp=true)
+{
+    If (Depth == 2)
+    {
+        Call GetSubstringRight(GameMoves)(4);
+        SourceIdx = floor((SubstringRes / 100));
+        TargetIdx = floor((SubstringRes % 100));
+        If ((Board[TargetIdx] == BlackPawn) And ((IdxToRank[TargetIdx] == 4) And ((TargetIdx - SourceIdx) == 16)))
+        {
+            List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
+        }
+    }
+    Call CalcBoardAttackedByMove((Depth + 1));
+    Call StoreAttackInfo((Depth + 1))(Depth);
+    List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
+    Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
+    List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
+    If (Depth == 2)
+    {
+        List.ReplaceItem(EnPassantTarget, Depth, "");
     }
 }
 
@@ -6504,7 +6506,7 @@ Define IsBlackKingCheckMate (warp=true)
     If (IsBlackChecked == 1)
     {
         IsBlackKingCheckMateRes = 1;
-        Call GenerateMoves(1);
+        Call GenerateMovesPublic(1);
         List.ReplaceItem(MovesIdx, 1, 1);
         Repeat (MovesCount[1])
         {
@@ -6681,7 +6683,11 @@ Define IsDrawByStalemate(string Depth) (warp=true)
         Stop(this script);
     }
     IsDrawRes = 1;
-    Call GenerateMoves(Depth);
+    Call CalcBoardAttackedByMove((Depth + 1));
+    Call StoreAttackInfo((Depth + 1))(Depth);
+    List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
+    Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
+    List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
     List.ReplaceItem(MovesIdx, Depth, 1);
     Repeat (MovesCount[Depth])
     {
@@ -6701,7 +6707,7 @@ Define IsDrawByStalemate(string Depth) (warp=true)
 
 Define IsEngineValidMove(string Move) (warp=true)
 {
-    Call GenerateMoves(1);
+    Call GenerateMovesPublic(1);
     If List.ContainsItem(Moves1, Move)
     {
         ValidMoveRes = 1;
@@ -6817,7 +6823,7 @@ Define IsWhiteKingCheckMate (warp=true)
     If (IsWhiteChecked == 1)
     {
         IsWhiteKingCheckMateRes = 1;
-        Call GenerateMoves(2);
+        Call GenerateMovesPublic(2);
         List.ReplaceItem(MovesIdx, 2, 1);
         Repeat (MovesCount[2])
         {
