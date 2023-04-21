@@ -90,7 +90,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.003 (19.04.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.004 (21.04.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -373,13 +373,14 @@ WhenBroadcastReceived(undo)
 
 //----- Custom blocks -------------------------------------------------------------------------------------------------
 
-Define AddBoardToHistory (warp=true)
+Define AddBoardToHistory(string IsBlack) (warp=true)
 {
     Call GetBoardString;
     List.Add(BoardHistory, GetBoardStringRes);
     Call CreateCurrentBoardHash;
     List.Add(BoardHistoryHash, CurrentBoardHash);
     List.Add(BoardHistoryMetaState, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookQSMoved, HasBlackRookKSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookQSMoved, HasWhiteRookKSMoved))));
+    List.Add(BoardHistoryIsBlack, IsBlack);
 }
 
 Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool LineMoveTypeStraight) (warp=true)
@@ -1465,7 +1466,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     }
                     If ((Depth < 6) And (Not ((PlyExtension[(Depth - 2)] == 1))))
                     {
-                        CurrentValue = (CapturesDeltaSum[(Depth - 1)] + TargetPieces[Depth]);
+                        CurrentValue = (CapturesDeltaSum[(Depth - 2)] + TargetPieces[Depth]);
                         If List.ContainsItem(SpecialCaptureDeltaSum, abs(CurrentValue))
                         {
                             If (CurrentValue > 0)
@@ -2982,25 +2983,28 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
             {
                 KingProtection += PawnShelter[(((File - 1) * 8) + 1)];
             }
-            If ((WhitePawnForwardRank > 0) And (KingRank < WhitePawnForwardRank))
+            If (IdxToRank[WhiteKingIdx] > 1)
             {
-                CurrentValue = (0 - PawnStorm[(((File - 1) * 8) + WhitePawnForwardRank)]);
-                If ((BlackPawnBackwardRank > 0) And (BlackPawnBackwardRank < WhitePawnForwardRank))
+                If ((WhitePawnForwardRank > 0) And (KingRank < WhitePawnForwardRank))
                 {
-                    KingProtection += Operator.Round((CurrentValue * 0.5));
+                    CurrentValue = (0 - PawnStorm[(((File - 1) * 8) + WhitePawnForwardRank)]);
+                    If ((BlackPawnBackwardRank > 0) And (BlackPawnBackwardRank < WhitePawnForwardRank))
+                    {
+                        KingProtection += Operator.Round((CurrentValue * 0.5));
+                    }
+                    Else
+                    {
+                        KingProtection += CurrentValue;
+                    }
                 }
                 Else
                 {
-                    KingProtection += CurrentValue;
+                    KingProtection += (0 - PawnStorm[(((File - 1) * 8) + 1)]);
                 }
-            }
-            Else
-            {
-                KingProtection += (0 - PawnStorm[(((File - 1) * 8) + 1)]);
             }
             File += 1;
         }
-        EvalExtendedResult1 += Operator.Round((KingProtection * (0.2 + ((WhiteQueenCountLocal * 0.4) + ((1 - IsBlackCastlingPossible) * 0.4)))));
+        EvalExtendedResult1 += Operator.Round((KingProtection * (0.2 + ((WhiteQueenCountLocal * 0.6) + ((1 - IsBlackCastlingPossible) * 0.2)))));
     }
     If (IsEndgame == 0)
     {
@@ -3028,25 +3032,28 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
             {
                 KingProtection += PawnShelter[(((File - 1) * 8) + 1)];
             }
-            If ((BlackPawnForwardRank > 0) And (KingRank > BlackPawnForwardRank))
+            If (IdxToRank[BlackKingIdx] > 2)
             {
-                CurrentValue = (0 - PawnStorm[(((File - 1) * 8) + (9 - BlackPawnForwardRank))]);
-                If ((WhitePawnBackwardRank > 0) And (WhitePawnBackwardRank > BlackPawnForwardRank))
+                If ((BlackPawnForwardRank > 0) And (KingRank > BlackPawnForwardRank))
                 {
-                    KingProtection += Operator.Round((CurrentValue * 0.5));
+                    CurrentValue = (0 - PawnStorm[(((File - 1) * 8) + (9 - BlackPawnForwardRank))]);
+                    If ((WhitePawnBackwardRank > 0) And (WhitePawnBackwardRank > BlackPawnForwardRank))
+                    {
+                        KingProtection += Operator.Round((CurrentValue * 0.5));
+                    }
+                    Else
+                    {
+                        KingProtection += CurrentValue;
+                    }
                 }
                 Else
                 {
-                    KingProtection += CurrentValue;
+                    KingProtection += (0 - PawnStorm[(((File - 1) * 8) + 1)]);
                 }
-            }
-            Else
-            {
-                KingProtection += (0 - PawnStorm[(((File - 1) * 8) + 1)]);
             }
             File += 1;
         }
-        EvalExtendedResult1 += (0 - Operator.Round((KingProtection * (0.2 + ((BlackQueenCountLocal * 0.4) + ((1 - IsWhiteCastlingPossible) * 0.4))))));
+        EvalExtendedResult1 += (0 - Operator.Round((KingProtection * (0.2 + ((BlackQueenCountLocal * 0.6) + ((1 - IsWhiteCastlingPossible) * 0.2))))));
     }
     If ((IsEndgame == 1) And ((PawnPromotionFile[1] == "") And (PawnPromotionFile[2] == "")))
     {
@@ -3599,17 +3606,23 @@ Define ExecuteEngineMoveImpl (warp=false)
         }
         Event.BroadcastAndWait("movepiece");
         Event.Broadcast("SoundMove");
-        If (Variable.Length(BestMove) == 3)
-        {
-            GameMoves = Operator.Join(GameMoves, Operator.Join(0, BestMove));
-        }
         If (Variable.Length(BestMove) == 4)
         {
             GameMoves = Operator.Join(GameMoves, BestMove);
         }
-        If (Variable.Length(BestMove) == 6)
+        Else
         {
-            GameMoves = Operator.Join(GameMoves, floor(BestMove));
+            If (Variable.Length(BestMove) == 3)
+            {
+                GameMoves = Operator.Join(GameMoves, Operator.Join(0, BestMove));
+            }
+            Else
+            {
+                If (Variable.Length(BestMove) == 6)
+                {
+                    GameMoves = Operator.Join(GameMoves, floor(BestMove));
+                }
+            }
         }
         Call GetMoveNotation(BestMove);
         List.Add(GameMovesAN, MoveNotationRes);
@@ -3639,7 +3652,7 @@ Define ExecuteEngineMoveImpl (warp=false)
             HasBlackKingMoved = 1;
             HasBlackCastled = 1;
         }
-        Call AddBoardToHistory;
+        Call AddBoardToHistory(1);
         Call GetRepetitionCount;
         If (RepetitionCountRes > 2)
         {
@@ -3812,17 +3825,23 @@ Define ExecuteUserMoveImpl(string UserMove) (warp=false)
             Else
             {
                 List.Add(GameMovesAN, MoveNotationRes);
-                If (Variable.Length(UserMove) == 3)
-                {
-                    GameMoves = Operator.Join(GameMoves, Operator.Join(0, UserMove));
-                }
                 If (Variable.Length(UserMove) == 4)
                 {
                     GameMoves = Operator.Join(GameMoves, UserMove);
                 }
-                If (Variable.Length(UserMove) == 6)
+                Else
                 {
-                    GameMoves = Operator.Join(GameMoves, floor(UserMove));
+                    If (Variable.Length(UserMove) == 3)
+                    {
+                        GameMoves = Operator.Join(GameMoves, Operator.Join(0, UserMove));
+                    }
+                    Else
+                    {
+                        If (Variable.Length(UserMove) == 6)
+                        {
+                            GameMoves = Operator.Join(GameMoves, floor(UserMove));
+                        }
+                    }
                 }
                 Looks.Think("Thinking...");
                 Call DrawBoardAndWait;
@@ -3847,7 +3866,7 @@ Define ExecuteUserMoveImpl(string UserMove) (warp=false)
                     HasWhiteCastled = 1;
                     HasWhiteKingMoved = 1;
                 }
-                Call AddBoardToHistory;
+                Call AddBoardToHistory(0);
                 Call IsBlackKingCheckMate;
                 If (IsBlackKingCheckMateRes == 1)
                 {
@@ -5351,6 +5370,7 @@ Define ImportBoard(string ImpBoard) (warp=false)
         List.DeleteItem(BoardHistory, all);
         List.DeleteItem(BoardHistoryHash, all);
         List.DeleteItem(BoardHistoryMetaState, all);
+        List.DeleteItem(BoardHistoryIsBlack, all);
         List.DeleteItem(GameMovesAN, all);
         If (Not ((Board[VirtualBoard[1]] == BlackRook)))
         {
@@ -5376,7 +5396,7 @@ Define ImportBoard(string ImpBoard) (warp=false)
         {
             HasWhiteRookKSMoved = 1;
         }
-        Call AddBoardToHistory;
+        Call AddBoardToHistory("");
         Call DrawBoardAndWait;
         IsGameSuspended = 0;
         Call CalcBoardAttackedByMoveChecked(1);
@@ -5624,16 +5644,14 @@ Define InitBoard (warp=true)
     List.DeleteAll(SpecialCaptureDeltaSumPenalty);
     List.Add(SpecialCaptureDeltaSum, abs(((BlackPawn + BlackRook) + (WhiteBishop + WhiteKnight))));
     List.Add(SpecialCaptureDeltaSumPenalty, 75);
-    List.Add(SpecialCaptureDeltaSum, abs((((BlackPawn + BlackPawn) + BlackRook) + (WhiteBishop + WhiteKnight))));
-    List.Add(SpecialCaptureDeltaSumPenalty, 50);
     List.Add(SpecialCaptureDeltaSum, abs(((BlackPawn + BlackPawn) + WhiteBishop)));
     List.Add(SpecialCaptureDeltaSumPenalty, 75);
     List.Add(SpecialCaptureDeltaSum, abs(((BlackPawn + BlackPawn) + WhiteKnight)));
     List.Add(SpecialCaptureDeltaSumPenalty, 75);
     List.Add(SpecialCaptureDeltaSum, abs((BlackPawn + WhiteBishop)));
-    List.Add(SpecialCaptureDeltaSumPenalty, 50);
+    List.Add(SpecialCaptureDeltaSumPenalty, 0);
     List.Add(SpecialCaptureDeltaSum, abs((BlackPawn + WhiteKnight)));
-    List.Add(SpecialCaptureDeltaSumPenalty, 50);
+    List.Add(SpecialCaptureDeltaSumPenalty, 0);
     List.DeleteItem(PieceIdxLookup, all);
     Idx = 1;
     Repeat (20000)
@@ -5681,6 +5699,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardHistory, all);
     List.DeleteItem(BoardHistoryHash, all);
     List.DeleteItem(BoardHistoryMetaState, all);
+    List.DeleteItem(BoardHistoryIsBlack, all);
     List.DeleteItem(GameMovesAN, all);
     List.DeleteItem(BoardAttackedByWhite, all);
     List.DeleteItem(BoardAttackedByBlack, all);
@@ -5801,7 +5820,7 @@ Define InitBoardPhase2 (warp=true)
     Call InitMovePosLookup((1 == 1));
     Call InitOpeningBook;
     Call InitOpeningMovesMap;
-    Call AddBoardToHistory;
+    Call AddBoardToHistory("");
 }
 
 Define InitCoordLookup (warp=true)
@@ -9199,8 +9218,7 @@ Define UndoMove (warp=false)
         Else
         {
             Call UndoPrevMove;
-            Call GetSubstringRight(GameMoves)(4);
-            If ((Board[floor((SubstringRes % 100))] < 0) Or ((SubstringRes == WhiteQueensideCastling) Or (SubstringRes == WhiteKingsideCastling)))
+            If (BoardHistoryIsBlack[List.Length(BoardHistoryIsBlack)] == 0)
             {
                 Call UndoPrevMove;
             }
@@ -9218,6 +9236,7 @@ Define UndoPrevMove (warp=false)
         List.DeleteItem(BoardHistory, List.Length(BoardHistory));
         List.DeleteItem(BoardHistoryHash, List.Length(BoardHistoryHash));
         List.DeleteItem(BoardHistoryMetaState, List.Length(BoardHistoryMetaState));
+        List.DeleteItem(BoardHistoryIsBlack, List.Length(BoardHistoryIsBlack));
         List.DeleteItem(GameMovesAN, List.Length(GameMovesAN));
         Call ImportBoardImpl(BoardHistory[List.Length(BoardHistory)]);
         Call GetSubstringLeft(GameMoves)((Variable.Length(GameMoves) - 4));
