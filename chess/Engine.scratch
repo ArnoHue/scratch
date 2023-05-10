@@ -90,7 +90,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.109 (06.05.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.110 (08.05.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -418,7 +418,10 @@ Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool Ca
             {
                 If CapturesOnly
                 {
-                    Call AddPotentialQuiescenceMove(SourceIdx)(TargetIdxOuter)(SourcePieceOuter)(Depth);
+                    If ((IsQuiescentCheckInvariantRes == 1) Or (CheckedState[Depth] == 1))
+                    {
+                        Call AddPotentialQuiescenceMove(SourceIdx)(TargetIdxOuter)(SourcePieceOuter)(Depth);
+                    }
                 }
                 Else
                 {
@@ -676,17 +679,20 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
         }
     }
     List.Add(CalcMovesMoveList, CurrentMove);
-    If Operator.Contains(PickedMoves[Depth], CurrentMove)
+    If (Variable.Length(PickedMoves[Depth]) > 0)
     {
-        If ((Depth % 2) == 1)
+        If Operator.Contains(PickedMoves[Depth], CurrentMove)
         {
-            List.Add(CalcMovesScoreList, 999000);
+            If ((Depth % 2) == 1)
+            {
+                List.Add(CalcMovesScoreList, 999000);
+            }
+            Else
+            {
+                List.Add(CalcMovesScoreList, -999000);
+            }
+            Stop(this script);
         }
-        Else
-        {
-            List.Add(CalcMovesScoreList, -999000);
-        }
-        Stop(this script);
     }
     Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(CurrentMove)(Depth)(CapturesOnly);
     List.Add(CalcMovesScoreList, MoveScoreRes);
@@ -979,22 +985,23 @@ Define AddSpecialMove(string Move)(string Depth) (warp=true)
 {
     Call GetSpecialMoveScore(Move)(Depth);
     List.Add(CalcMovesMoveList, Move);
-    If Operator.Contains(PickedMoves[Depth], Move)
+    If (Variable.Length(PickedMoves[Depth]) > 0)
     {
-        If ((Depth % 2) == 1)
+        If Operator.Contains(PickedMoves[Depth], Move)
         {
-            List.Add(CalcMovesScoreList, 999000);
-        }
-        Else
-        {
-            List.Add(CalcMovesScoreList, -999000);
+            If ((Depth % 2) == 1)
+            {
+                List.Add(CalcMovesScoreList, 999000);
+            }
+            Else
+            {
+                List.Add(CalcMovesScoreList, -999000);
+            }
+            Stop(this script);
         }
     }
-    Else
-    {
-        Call GetSpecialMoveScore(Move)(Depth);
-        List.Add(CalcMovesScoreList, MoveScoreRes);
-    }
+    Call GetSpecialMoveScore(Move)(Depth);
+    List.Add(CalcMovesScoreList, MoveScoreRes);
 }
 
 Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool ShowProgress) (warp=true)
@@ -6049,6 +6056,34 @@ Define InitMoveLookup (warp=true)
     List.DeleteItem(MoveNotationLookup, all);
     List.DeleteItem(MovePathDelta, all);
     List.DeleteItem(MovePathStepInc, all);
+    List.DeleteItem(BoardAttackedByPieceMap, all);
+    Idx = 0;
+    Repeat (10000)
+    {
+        If (Idx < 10)
+        {
+            List.Add(BoardAttackedByPieceMap, Operator.Join(000, Idx));
+        }
+        Else
+        {
+            If (Idx < 100)
+            {
+                List.Add(BoardAttackedByPieceMap, Operator.Join(00, Idx));
+            }
+            Else
+            {
+                If (Idx < 1000)
+                {
+                    List.Add(BoardAttackedByPieceMap, Operator.Join(0, Idx));
+                }
+                Else
+                {
+                    List.Add(BoardAttackedByPieceMap, Idx);
+                }
+            }
+        }
+        Idx += 1;
+    }
     Idx = 1;
     Repeat (9999)
     {
@@ -7313,17 +7348,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
 {
     If (PickPhase[Depth] == 1)
     {
-        If (IsProfilerEnabled > 0)
-        {
-            If Quiescence
-            {
-                Call Profile_IncCounter((597 + (Depth * 4)));
-            }
-            Else
-            {
-                Call Profile_IncCounter((677 + (Depth * 4)));
-            }
-        }
         List.ReplaceItem(PickedMoves, Depth, "");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
         List.ReplaceItem(MovesCount, Depth, 0);
@@ -7690,19 +7714,25 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call GetCurrentMove(Depth);
-            Repeat Until ((Not (Operator.Contains(PickedMoves[Depth], CurrentMove))) Or (MovesIdx[Depth] > MovesCount[Depth]))
+            If (Variable.Length(PickedMoves[Depth]) > 0)
             {
-                List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
                 Call GetCurrentMove(Depth);
+                Repeat Until (Not (Operator.Contains(PickedMoves[Depth], CurrentMove)))
+                {
+                    List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
+                    If (MovesIdx[Depth] > MovesCount[Depth])
+                    {
+                        List.ReplaceItem(PickPhase, Depth, "*");
+                        List.ReplaceItem(PickMoveRes, Depth, 0);
+                        Stop(this script);
+                    }
+                    Call GetCurrentMove(Depth);
+                }
             }
-            If (Not ((MovesIdx[Depth] > MovesCount[Depth])))
-            {
-                Call ApplyMove(Depth);
-                List.ReplaceItem(PickMoveRes, Depth, 1);
-                List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                Stop(this script);
-            }
+            Call ApplyMove(Depth);
+            List.ReplaceItem(PickMoveRes, Depth, 1);
+            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+            Stop(this script);
         }
         List.ReplaceItem(PickPhase, Depth, "*");
         List.ReplaceItem(PickMoveRes, Depth, 0);
@@ -8130,6 +8160,7 @@ Define RUN_BEFORE_SAVING (warp=true)
         List.DeleteItem(MovePathStepInc, all);
         List.DeleteItem(OpeningMovesMapHash, all);
         List.DeleteItem(OpeningMovesMapMove, all);
+        List.DeleteItem(BoardAttackedByPieceMap, all);
     }
 }
 
@@ -8654,25 +8685,11 @@ Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
         CurrentValue = "";
         CurrentValue2 = "";
         Idx = 1;
-        Repeat (64)
+        Repeat (32)
         {
-            CurrentValue = Operator.Join(CurrentValue, BoardAttackedByBlack[Idx]);
-            If (Not ((BoardAttackedByBlackPiece[Idx] == 0)))
-            {
-                If (BoardAttackedByBlackPiece[Idx] < 10)
-                {
-                    CurrentValue2 = Operator.Join(CurrentValue2, Operator.Join(0, BoardAttackedByBlackPiece[Idx]));
-                }
-                Else
-                {
-                    CurrentValue2 = Operator.Join(CurrentValue2, BoardAttackedByBlackPiece[Idx]);
-                }
-            }
-            Else
-            {
-                CurrentValue2 = Operator.Join(CurrentValue2, 00);
-            }
-            Idx += 1;
+            CurrentValue = Operator.Join(CurrentValue, Operator.Join(BoardAttackedByBlack[Idx], BoardAttackedByBlack[(Idx + 1)]));
+            CurrentValue2 = Operator.Join(CurrentValue2, BoardAttackedByPieceMap[(((BoardAttackedByBlackPiece[Idx] * 100) + BoardAttackedByBlackPiece[(Idx + 1)]) + 1)]);
+            Idx += 2;
         }
         List.ReplaceItem(BoardAttackedByBlackSnapshot, StoreDepth, CurrentValue);
         List.ReplaceItem(BoardAttackedByBlackPieceSnapshot, StoreDepth, CurrentValue2);
@@ -8709,25 +8726,11 @@ Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
         CurrentValue = "";
         CurrentValue2 = "";
         Idx = 1;
-        Repeat (64)
+        Repeat (32)
         {
-            CurrentValue = Operator.Join(CurrentValue, BoardAttackedByWhite[Idx]);
-            If (Not ((BoardAttackedByWhitePiece[Idx] == 0)))
-            {
-                If (BoardAttackedByWhitePiece[Idx] < 10)
-                {
-                    CurrentValue2 = Operator.Join(CurrentValue2, Operator.Join(0, BoardAttackedByWhitePiece[Idx]));
-                }
-                Else
-                {
-                    CurrentValue2 = Operator.Join(CurrentValue2, BoardAttackedByWhitePiece[Idx]);
-                }
-            }
-            Else
-            {
-                CurrentValue2 = Operator.Join(CurrentValue2, 00);
-            }
-            Idx += 1;
+            CurrentValue = Operator.Join(CurrentValue, Operator.Join(BoardAttackedByWhite[Idx], BoardAttackedByWhite[(Idx + 1)]));
+            CurrentValue2 = Operator.Join(CurrentValue2, BoardAttackedByPieceMap[(((BoardAttackedByWhitePiece[Idx] * 100) + BoardAttackedByWhitePiece[(Idx + 1)]) + 1)]);
+            Idx += 2;
         }
         List.ReplaceItem(BoardAttackedByWhiteSnapshot, StoreDepth, CurrentValue);
         List.ReplaceItem(BoardAttackedByWhitePieceSnapshot, StoreDepth, CurrentValue2);
