@@ -90,7 +90,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.110 (08.05.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.111 (11.05.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -2748,6 +2748,62 @@ Define CreateCurrentBoardHash (warp=true)
     }
 }
 
+Define Deprecated_AspirationWindow (warp=false)
+{
+    If (IsScratch3 == 1)
+    {
+        If ((IdxDeepening % 2) == 0)
+        {
+            PruningAlphaWindow = 30;
+            PruningBetaWindow = 10;
+        }
+        Else
+        {
+            PruningAlphaWindow = 10;
+            PruningBetaWindow = 30;
+        }
+    }
+    Else
+    {
+        If ((IdxDeepening % 2) == 0)
+        {
+            PruningAlphaWindow = 30;
+            PruningBetaWindow = 10;
+        }
+        Else
+        {
+            PruningAlphaWindow = 10;
+            PruningBetaWindow = 30;
+        }
+    }
+    Repeat Until ((IsDone == 1) Or (IsMinMaxTimeout == 1))
+    {
+        PruningAlpha = (BestMinMaxRes - PruningAlphaWindow);
+        PruningBeta = (BestMinMaxRes + PruningBetaWindow);
+        List.DeleteItem(MinMaxMovesRes, all);
+        Call AlphaBetaMinMax(PruningAlpha)(PruningBeta)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
+        If (Not ((MinMaxResults[1] > PruningAlpha)))
+        {
+            TTProbeCurrentAge += -1;
+            PruningAlphaWindow = 100000;
+            PruningBetaWindow = 100000;
+        }
+        Else
+        {
+            If (Not ((MinMaxResults[1] < PruningBeta)))
+            {
+                TTProbeCurrentAge += -1;
+                PruningAlphaWindow = 100000;
+                PruningBetaWindow = 100000;
+            }
+            Else
+            {
+                IsDone = 1;
+            }
+        }
+    }
+}
+
 Define DrawBoard (warp=true)
 {
     ProgressValue = 0;
@@ -3396,300 +3452,124 @@ Define ExecuteEngineMove (warp=false)
 
 Define ExecuteEngineMoveImpl (warp=false)
 {
-    If (IsGameSuspended == 0)
+    If (IsGameSuspended == 1)
     {
-        Event.Broadcast("OpeningBookHide");
-        List.DeleteItem(MinMaxMovesRes, all);
-        BestMove = "";
+        Stop(this script);
+    }
+    Event.Broadcast("OpeningBookHide");
+    List.DeleteItem(MinMaxMovesRes, all);
+    BestMove = "";
+    If (Level > 2)
+    {
+        Call CalculateOpeningMoves;
+        If (List.Length(MinMaxMovesRes) > 0)
+        {
+            Event.Broadcast("OpeningBookShow");
+        }
+        BestMove = MinMaxMovesRes[Operator.Random(1 / List.Length(MinMaxMovesRes))];
+    }
+    Call IsEngineValidMove(BestMove);
+    If (ValidMoveRes == 0)
+    {
+        Looks.Think("Thinking...");
+        Control.Wait(0);
+        Call InitAlphaBeta(1)(1)((1 == 1));
         If (Level > 2)
         {
-            Call CalculateOpeningMoves;
-            If (List.Length(MinMaxMovesRes) > 0)
+            If (Level > 4)
             {
-                Event.Broadcast("OpeningBookShow");
-            }
-            BestMove = MinMaxMovesRes[Operator.Random(1 / List.Length(MinMaxMovesRes))];
-        }
-        Call IsEngineValidMove(BestMove);
-        If (ValidMoveRes == 0)
-        {
-            Looks.Think("Thinking...");
-            Control.Wait(0);
-            Call InitAlphaBeta(1)(1)((1 == 1));
-            If (Level > 2)
-            {
-                If ((Level == 3) Or (Level == 4))
-                {
-                    ThinkTimeLimit = ((Level - 2) * 2);
-                }
-                Else
-                {
-                    If (Level == 5)
-                    {
-                        ThinkTimeLimit = 10;
-                    }
-                    Else
-                    {
-                        If (IsModeCompetition == 0)
-                        {
-                            If (IsEndgame == 0)
-                            {
-                                ThinkTimeLimit = 20;
-                            }
-                            Else
-                            {
-                                ThinkTimeLimit = 15;
-                            }
-                        }
-                        Else
-                        {
-                            ThinkTimeLimit = 60;
-                        }
-                    }
-                }
-                ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
-                IsMinMaxTimeout = 0;
-                IsDeepeningDone = 0;
-                IdxDeepening = 1;
-                BestMove = "";
-                BestMinMaxRes = "";
-                If ((Level == 3) Or (Level == 4))
-                {
-                    ThinkTimeLimitMinMax = ThinkTimeLimit;
-                    Repeat (((Level - 1) * (2 - IsScratch3)))
-                    {
-                        If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (Not (((BestMinMaxRes > (BlackKing / 2)) Or (BestMinMaxRes < (WhiteKing / 2)))))))
-                        {
-                            List.DeleteItem(MinMaxMovesRes, all);
-                            Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(10)((1 == 1));
-                            If (List.Length(MinMaxMovesRes) > 0)
-                            {
-                                If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
-                                {
-                                    BestMove = MinMaxMovesRes[1];
-                                    BestMinMaxRes = MinMaxValuesRes[1];
-                                    Call OnEvaluationChanged(BestMinMaxRes);
-                                }
-                            }
-                        }
-                        IdxDeepening += 1;
-                    }
-                }
-                Else
-                {
-                    Repeat Until (IsDeepeningDone == 1)
-                    {
-                        IsDone = 0;
-                        If (IdxDeepening == 1)
-                        {
-                            QuiescenceDepth = 8;
-                        }
-                        Else
-                        {
-                            QuiescenceDepth = (23 - IdxDeepening);
-                        }
-                        If ((IdxDeepening < 5) And ((Level == 5) Or (Level == 6)))
-                        {
-                            ThinkTimeLimitMinMax = (ThinkTimeLimit * 2);
-                        }
-                        Else
-                        {
-                            ThinkTimeLimitMinMax = ThinkTimeLimit;
-                        }
-                        If (((IsScratch3 == 1) And (IdxDeepening > 99)) Or ((IsScratch3 == 0) And (IdxDeepening > 99)))
-                        {
-                            If (IsScratch3 == 1)
-                            {
-                                If ((IdxDeepening % 2) == 0)
-                                {
-                                    PruningAlphaWindow = 30;
-                                    PruningBetaWindow = 10;
-                                }
-                                Else
-                                {
-                                    PruningAlphaWindow = 10;
-                                    PruningBetaWindow = 30;
-                                }
-                            }
-                            Else
-                            {
-                                If ((IdxDeepening % 2) == 0)
-                                {
-                                    PruningAlphaWindow = 30;
-                                    PruningBetaWindow = 10;
-                                }
-                                Else
-                                {
-                                    PruningAlphaWindow = 10;
-                                    PruningBetaWindow = 30;
-                                }
-                            }
-                            Repeat Until ((IsDone == 1) Or (IsMinMaxTimeout == 1))
-                            {
-                                PruningAlpha = (BestMinMaxRes - PruningAlphaWindow);
-                                PruningBeta = (BestMinMaxRes + PruningBetaWindow);
-                                List.DeleteItem(MinMaxMovesRes, all);
-                                Call AlphaBetaMinMax(PruningAlpha)(PruningBeta)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
-                                If (Not ((MinMaxResults[1] > PruningAlpha)))
-                                {
-                                    TTProbeCurrentAge += -1;
-                                    PruningAlphaWindow = 100000;
-                                    PruningBetaWindow = 100000;
-                                }
-                                Else
-                                {
-                                    If (Not ((MinMaxResults[1] < PruningBeta)))
-                                    {
-                                        TTProbeCurrentAge += -1;
-                                        PruningAlphaWindow = 100000;
-                                        PruningBetaWindow = 100000;
-                                    }
-                                    Else
-                                    {
-                                        IsDone = 1;
-                                    }
-                                }
-                            }
-                        }
-                        Else
-                        {
-                            List.DeleteItem(MinMaxMovesRes, all);
-                            Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
-                            IsDone = 1;
-                        }
-                        If (IsDone == 1)
-                        {
-                            If ((List.Length(MinMaxMovesRes) > 0) And (Variable.Length(MinMaxMovesRes[1]) > 0))
-                            {
-                                If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
-                                {
-                                    BestMove = MinMaxMovesRes[1];
-                                    BestMinMaxRes = MinMaxValuesRes[1];
-                                    Call OnEvaluationChanged(BestMinMaxRes);
-                                }
-                            }
-                        }
-                        If (((IsMinMaxTimeout == 1) Or (IdxDeepening == 23)) Or (abs(BestMinMaxRes) > (BlackKing / 2)))
-                        {
-                            IsDeepeningDone = 1;
-                        }
-                        Else
-                        {
-                            IdxDeepening += 1;
-                        }
-                    }
-                }
+                Call GetBestMoveMedDiff;
             }
             Else
             {
-                List.DeleteItem(MinMaxMovesRes, all);
-                If (Level == 1)
-                {
-                    JuniorDistQuota = 50;
-                    JuniorSearchQuota = 50;
-                }
-                Else
-                {
-                    If (Level == 2)
-                    {
-                        JuniorDistQuota = 10;
-                        JuniorSearchQuota = 75;
-                    }
-                }
-                ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
-                ThinkTimeLimitMinMax = 10;
-                Call AlphaBetaMinMax(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
-                BestMove = MinMaxMovesRes[1];
-                If ((BestMove == "") Or (Operator.Random(1 / 100) > JuniorSearchQuota))
-                {
-                    Call GenerateMovesPublic(1);
-                    List.ReplaceItem(MovesIdx, 1, Operator.Random(1 / ceiling((List.Length(Moves1) * (JuniorDistQuota / 100)))));
-                    Call ApplyMove(1);
-                    Call CalcBoardAttackedByMove(2);
-                    Call RevertMove(1);
-                    Repeat Until (IsBlackChecked == 0)
-                    {
-                        List.ReplaceItem(MovesIdx, 1, Operator.Random(1 / List.Length(Moves1)));
-                        Call ApplyMove(1);
-                        Call CalcBoardAttackedByMove(2);
-                        Call RevertMove(1);
-                    }
-                    BestMove = Moves1[MovesIdx[1]];
-                }
+                Call GetBestMoveBlitz;
             }
-        }
-        Event.BroadcastAndWait("hidebestmove");
-        Call OnProgressChanged(100);
-        Control.Wait(0);
-        Call IsEngineValidMove(BestMove);
-        If (ValidMoveRes == 0)
-        {
-            Looks.Say(Operator.Join("Internal Error: No valid move found. Sorry, this should not happen. Maybe you cleared lookup lists in the editor? If you are running a normal game, please export board data and report bug via project comment", Operator.Join(" Move: ", BestMove)), 10);
-            IsGameSuspended = 1;
-            Stop(this script);
-        }
-        Looks.Think("");
-        MovePieceFromIdx = floor((BestMove / 100));
-        MovePieceToIdx = floor((BestMove % 100));
-        If (((BestMove == BlackQueensideCastling) Or (BestMove == BlackKingsideCastling)) Or ((BestMove == WhiteQueensideCastling) Or (BestMove == WhiteKingsideCastling)))
-        {
-            MovePieceSpecial = BestMove;
         }
         Else
         {
-            MovePieceSpecial = "";
+            Call GetBestMoveEasy;
         }
-        Event.BroadcastAndWait("movepiece");
-        Event.Broadcast("SoundMove");
-        If (Variable.Length(BestMove) == 4)
+    }
+    Event.BroadcastAndWait("hidebestmove");
+    Call OnProgressChanged(100);
+    Control.Wait(0);
+    Call IsEngineValidMove(BestMove);
+    If (ValidMoveRes == 0)
+    {
+        Looks.Say(Operator.Join("Internal Error: No valid move found. Sorry, this should not happen. Maybe you cleared lookup lists in the editor? If you are running a normal game, please export board data and report bug via project comment", Operator.Join(" Move: ", BestMove)), 10);
+        IsGameSuspended = 1;
+        Stop(this script);
+    }
+    Looks.Think("");
+    MovePieceFromIdx = floor((BestMove / 100));
+    MovePieceToIdx = floor((BestMove % 100));
+    If (((BestMove == BlackQueensideCastling) Or (BestMove == BlackKingsideCastling)) Or ((BestMove == WhiteQueensideCastling) Or (BestMove == WhiteKingsideCastling)))
+    {
+        MovePieceSpecial = BestMove;
+    }
+    Else
+    {
+        MovePieceSpecial = "";
+    }
+    Event.BroadcastAndWait("movepiece");
+    Event.Broadcast("SoundMove");
+    If (Variable.Length(BestMove) == 4)
+    {
+        GameMoves = Operator.Join(GameMoves, BestMove);
+    }
+    Else
+    {
+        If (Variable.Length(BestMove) == 3)
         {
-            GameMoves = Operator.Join(GameMoves, BestMove);
+            GameMoves = Operator.Join(GameMoves, Operator.Join(0, BestMove));
         }
         Else
         {
-            If (Variable.Length(BestMove) == 3)
+            If (Variable.Length(BestMove) == 6)
             {
-                GameMoves = Operator.Join(GameMoves, Operator.Join(0, BestMove));
-            }
-            Else
-            {
-                If (Variable.Length(BestMove) == 6)
-                {
-                    GameMoves = Operator.Join(GameMoves, floor(BestMove));
-                }
+                GameMoves = Operator.Join(GameMoves, floor(BestMove));
             }
         }
-        Call GetMoveNotation(BestMove);
-        List.Add(GameMovesAN, MoveNotationRes);
-        List.DeleteItem(Moves1, all);
-        List.Add(Moves1, BestMove);
-        List.ReplaceItem(MovesIdx, 1, 1);
-        List.ReplaceItem(MovesCount, 1, 1);
-        Call ApplyMove(1);
-        Call DrawBoardAndWait;
-        If (Board[(BestMove % 100)] == BlackKing)
+    }
+    Call GetMoveNotation(BestMove);
+    List.Add(GameMovesAN, MoveNotationRes);
+    Call ClearMoveList(1);
+    Call AddMoveToList(BestMove)(1);
+    List.ReplaceItem(MovesIdx, 1, 1);
+    Call ApplyMove(1);
+    Call DrawBoardAndWait;
+    If (Board[(BestMove % 100)] == BlackKing)
+    {
+        HasBlackKingMoved = 1;
+    }
+    If (Board[(BestMove % 100)] == BlackRook)
+    {
+        If (floor((BestMove / 100)) == VirtualBoard[1])
         {
-            HasBlackKingMoved = 1;
+            HasBlackRookQSMoved = 1;
         }
-        If (Board[(BestMove % 100)] == BlackRook)
+        If (floor((BestMove / 100)) == VirtualBoard[8])
         {
-            If (floor((BestMove / 100)) == VirtualBoard[1])
-            {
-                HasBlackRookQSMoved = 1;
-            }
-            If (floor((BestMove / 100)) == VirtualBoard[8])
-            {
-                HasBlackRookKSMoved = 1;
-            }
+            HasBlackRookKSMoved = 1;
         }
-        If ((BestMove == BlackQueensideCastling) Or (BestMove == BlackKingsideCastling))
-        {
-            HasBlackKingMoved = 1;
-            HasBlackCastled = 1;
-        }
-        Call AddBoardToHistory(1);
-        Call GetRepetitionCount;
-        If (RepetitionCountRes > 2)
+    }
+    If ((BestMove == BlackQueensideCastling) Or (BestMove == BlackKingsideCastling))
+    {
+        HasBlackKingMoved = 1;
+        HasBlackCastled = 1;
+    }
+    Call AddBoardToHistory(1);
+    Call GetRepetitionCount;
+    If (RepetitionCountRes > 2)
+    {
+        Looks.Say("Draw!");
+        Event.Broadcast("SoundDraw");
+        IsGameSuspended = 1;
+    }
+    Else
+    {
+        Call IsDrawByMaterial;
+        If (IsDrawRes == 1)
         {
             Looks.Say("Draw!");
             Event.Broadcast("SoundDraw");
@@ -3697,39 +3577,29 @@ Define ExecuteEngineMoveImpl (warp=false)
         }
         Else
         {
-            Call IsDrawByMaterial;
-            If (IsDrawRes == 1)
+            Call IsWhiteKingCheckMate;
+            If (IsWhiteKingCheckMateRes == 1)
             {
-                Looks.Say("Draw!");
-                Event.Broadcast("SoundDraw");
+                Looks.Say("Checkmate!");
+                Event.Broadcast("SoundCheckmate");
                 IsGameSuspended = 1;
             }
             Else
             {
-                Call IsWhiteKingCheckMate;
-                If (IsWhiteKingCheckMateRes == 1)
+                Call IsDrawByStalemate(2);
+                If (IsDrawRes == 1)
                 {
-                    Looks.Say("Checkmate!");
-                    Event.Broadcast("SoundCheckmate");
+                    Looks.Say("Draw!");
+                    Event.Broadcast("SoundDraw");
                     IsGameSuspended = 1;
                 }
                 Else
                 {
-                    Call IsDrawByStalemate(2);
-                    If (IsDrawRes == 1)
+                    Call CalcBoardAttackedByMove(1);
+                    If (IsWhiteChecked == 1)
                     {
-                        Looks.Say("Draw!");
-                        Event.Broadcast("SoundDraw");
-                        IsGameSuspended = 1;
-                    }
-                    Else
-                    {
-                        Call CalcBoardAttackedByMove(1);
-                        If (IsWhiteChecked == 1)
-                        {
-                            Call SayAsync("Check!")(2);
-                            Event.Broadcast("SoundCheck");
-                        }
+                        Call SayAsync("Check!")(2);
+                        Event.Broadcast("SoundCheck");
                     }
                 }
             }
@@ -3754,194 +3624,189 @@ Define ExecuteUserMove(string UserMove) (warp=false)
     Call ExitExecution;
 }
 
-Define ExecuteUserMoveImpl(string UserMove) (warp=false)
+Define ExecuteUserMoveImpl(string UserMoveParam) (warp=false)
 {
-    If (IsGameSuspended == 0)
+    If (IsGameSuspended == 1)
     {
-        MovePieceFromIdx = floor((UserMove / 100));
-        MovePieceToIdx = floor((UserMove % 100));
-        If (((UserMove == BlackQueensideCastling) Or (UserMove == BlackKingsideCastling)) Or ((UserMove == WhiteQueensideCastling) Or (UserMove == WhiteKingsideCastling)))
+        Stop(this script);
+    }
+    MovePieceFromIdx = floor((UserMoveParam / 100));
+    MovePieceToIdx = floor((UserMoveParam % 100));
+    If (((UserMoveParam == BlackQueensideCastling) Or (UserMoveParam == BlackKingsideCastling)) Or ((UserMoveParam == WhiteQueensideCastling) Or (UserMoveParam == WhiteKingsideCastling)))
+    {
+        MovePieceSpecial = UserMoveParam;
+    }
+    Else
+    {
+        MovePieceSpecial = "";
+    }
+    Event.BroadcastAndWait("movepiece");
+    Event.Broadcast("SoundMove");
+    FromSquareIdx = -1;
+    ToSquareIdx = -1;
+    Event.BroadcastAndWait("fromsquareselected");
+    Event.BroadcastAndWait("tosquareselected");
+    Call GenerateMovesPublic(2);
+    If (Not (List.ContainsItem(Moves2, UserMoveParam)))
+    {
+        Call Log("User Move: ")(UserMoveParam)("")("")("")("")("")("");
+        Call Log("Valid Moves: ")(Moves2)("")("")("")("")("")("");
+        Call ClearMoveList(2);
+        Call AddMoveToList(UserMoveParam)(2);
+        Call ApplyMove(2);
+        Call CalcBoardAttackedByMove(3);
+        If (IsWhiteChecked == 1)
         {
-            MovePieceSpecial = UserMove;
+            Call SayAsync("Invalid move - Check!")(2);
+            Event.Broadcast("SoundInvalidMoveCheck");
         }
         Else
         {
-            MovePieceSpecial = "";
+            Call SayAsync("Invalid move!")(2);
+            Event.Broadcast("SoundInvalidMove");
         }
-        Event.BroadcastAndWait("movepiece");
-        Event.Broadcast("SoundMove");
-        FromSquareIdx = -1;
-        ToSquareIdx = -1;
-        Event.BroadcastAndWait("fromsquareselected");
-        Event.BroadcastAndWait("tosquareselected");
-        Call GenerateMovesPublic(2);
-        If (Not (List.ContainsItem(Moves2, UserMove)))
+        Call RevertMove(2);
+        Call DrawBoardAndWait;
+        Stop(this script);
+    }
+    UserMove = UserMoveParam;
+    If (Variable.Length(UserMove) == 3)
+    {
+        UserMove = Operator.Join(0, UserMove);
+    }
+    If (Variable.Length(UserMove) == 6)
+    {
+        Looks.Say("Please select promotion piece");
+        Event.BroadcastAndWait("selectpromotionpiecewhite");
+        Looks.Say("");
+        If (SelectedPromotionPiece == WhiteQueen)
         {
-            Call Log("User Move: ")(UserMove)("")("")("")("")("")("");
-            Call Log("Valid Moves: ")(Moves2)("")("")("")("")("")("");
-            List.DeleteItem(Moves2, all);
-            List.Add(Moves2, UserMove);
-            List.ReplaceItem(MovesIdx, 2, 1);
-            List.ReplaceItem(MovesCount, 2, 1);
-            Call ApplyMove(2);
-            Call CalcBoardAttackedByMove(1);
-            If (IsWhiteChecked == 1)
-            {
-                Call SayAsync("Invalid move - Check!")(2);
-                Event.Broadcast("SoundInvalidMoveCheck");
-            }
-            Else
-            {
-                Call SayAsync("Invalid move!")(2);
-                Event.Broadcast("SoundInvalidMove");
-            }
-            Call RevertMove(2);
-            Call DrawBoardAndWait;
+            UserMove = Operator.Join(floor(UserMove), .1);
         }
         Else
         {
-            If (Variable.Length(UserMove) == 4)
+            If (SelectedPromotionPiece == WhiteRook)
             {
-                List.DeleteItem(Moves2, all);
-                List.Add(Moves2, UserMove);
-                Call GetMoveNotation(UserMove);
+                UserMove = Operator.Join(floor(UserMove), .2);
             }
             Else
             {
-                Looks.Say("Please select promotion piece");
-                Event.BroadcastAndWait("selectpromotionpiecewhite");
-                Looks.Say("");
-                UserMove = UserMove;
-                If (SelectedPromotionPiece == WhiteQueen)
+                If (SelectedPromotionPiece == WhiteBishop)
                 {
-                    UserMove = Operator.Join(floor(UserMove), .1);
+                    UserMove = Operator.Join(floor(UserMove), .3);
                 }
                 Else
                 {
-                    If (SelectedPromotionPiece == WhiteRook)
+                    If (SelectedPromotionPiece == WhiteKnight)
                     {
-                        UserMove = Operator.Join(floor(UserMove), .2);
-                    }
-                    Else
-                    {
-                        If (SelectedPromotionPiece == WhiteBishop)
-                        {
-                            UserMove = Operator.Join(floor(UserMove), .3);
-                        }
-                        Else
-                        {
-                            If (SelectedPromotionPiece == WhiteKnight)
-                            {
-                                UserMove = Operator.Join(floor(UserMove), .4);
-                            }
-                        }
+                        UserMove = Operator.Join(floor(UserMove), .4);
                     }
                 }
-                If (Variable.Length(UserMove) == 5)
-                {
-                    UserMove = Operator.Join(0, UserMove);
-                }
-                List.DeleteItem(Moves2, all);
-                List.Add(Moves2, UserMove);
-                Call GetMoveNotation(UserMove);
             }
-            List.ReplaceItem(MovesIdx, 2, 1);
-            List.ReplaceItem(MovesCount, 2, 1);
-            Call ApplyMove(2);
-            Call CalcBoardAttackedByMove(1);
-            If (IsWhiteChecked == 1)
+        }
+        If (Variable.Length(UserMove) == 5)
+        {
+            UserMove = Operator.Join(0, UserMove);
+        }
+    }
+    Call GetMoveNotation(UserMove);
+    Call ClearMoveList(2);
+    Call AddMoveToList(UserMove)(2);
+    List.ReplaceItem(MovesIdx, 2, 1);
+    Call ApplyMove(2);
+    Call DrawBoardAndWait;
+    Call CalcBoardAttackedByMove(1);
+    If (IsWhiteChecked == 1)
+    {
+        Call RevertMove(2);
+        Call DrawBoardAndWait;
+        Control.Wait(0);
+        Call SayAsync("Invalid move - Check!")(2);
+        Event.Broadcast("SoundInvalidMoveCheck");
+        Stop(this script);
+    }
+    List.Add(GameMovesAN, MoveNotationRes);
+    If (Variable.Length(UserMove) == 4)
+    {
+        GameMoves = Operator.Join(GameMoves, UserMove);
+    }
+    Else
+    {
+        If (Variable.Length(UserMove) == 3)
+        {
+            GameMoves = Operator.Join(GameMoves, Operator.Join(0, UserMove));
+        }
+        Else
+        {
+            If (Variable.Length(UserMove) == 6)
             {
-                Call RevertMove(2);
-                Call DrawBoardAndWait;
-                Control.Wait(0);
-                Call SayAsync("Invalid move - Check!")(2);
-                Event.Broadcast("SoundInvalidMoveCheck");
+                GameMoves = Operator.Join(GameMoves, floor(UserMove));
+            }
+        }
+    }
+    Looks.Think("Thinking...");
+    Call DrawBoardAndWait;
+    Control.Wait(0);
+    SourceIdx = floor((UserMove / 100));
+    TargetIdx = floor((UserMove % 100));
+    If (Board[TargetIdx] == WhiteKing)
+    {
+        HasWhiteKingMoved = 1;
+    }
+    If (Board[TargetIdx] == WhiteRook)
+    {
+        If (SourceIdx == VirtualBoard[57])
+        {
+            HasWhiteRookQSMoved = 1;
+        }
+        If (SourceIdx == VirtualBoard[64])
+        {
+            HasWhiteRookKSMoved = 1;
+        }
+    }
+    If ((UserMove == WhiteQueensideCastling) Or (UserMove == WhiteKingsideCastling))
+    {
+        HasWhiteCastled = 1;
+        HasWhiteKingMoved = 1;
+    }
+    Call AddBoardToHistory(0);
+    Call IsBlackKingCheckMate;
+    If (IsBlackKingCheckMateRes == 1)
+    {
+        Looks.Say("Checkmate!");
+        Event.Broadcast("SoundCheckmate");
+        IsGameSuspended = 1;
+    }
+    Else
+    {
+        Call IsDrawByStalemate(1);
+        If (IsDrawRes == 1)
+        {
+            Looks.Say("Draw!");
+            Event.Broadcast("SoundDraw");
+            IsGameSuspended = 1;
+        }
+        Else
+        {
+            Call GetRepetitionCount;
+            If (RepetitionCountRes > 2)
+            {
+                Looks.Say("Draw!");
+                Event.Broadcast("SoundDraw");
+                IsGameSuspended = 1;
             }
             Else
             {
-                List.Add(GameMovesAN, MoveNotationRes);
-                If (Variable.Length(UserMove) == 4)
+                Call IsDrawByMaterial;
+                If (IsDrawRes == 1)
                 {
-                    GameMoves = Operator.Join(GameMoves, UserMove);
-                }
-                Else
-                {
-                    If (Variable.Length(UserMove) == 3)
-                    {
-                        GameMoves = Operator.Join(GameMoves, Operator.Join(0, UserMove));
-                    }
-                    Else
-                    {
-                        If (Variable.Length(UserMove) == 6)
-                        {
-                            GameMoves = Operator.Join(GameMoves, floor(UserMove));
-                        }
-                    }
-                }
-                Looks.Think("Thinking...");
-                Call DrawBoardAndWait;
-                Control.Wait(0);
-                If (Board[(UserMove % 100)] == WhiteKing)
-                {
-                    HasWhiteKingMoved = 1;
-                }
-                If (Board[(UserMove % 100)] == WhiteRook)
-                {
-                    If (floor((UserMove / 100)) == VirtualBoard[57])
-                    {
-                        HasWhiteRookQSMoved = 1;
-                    }
-                    If (floor((UserMove / 100)) == VirtualBoard[64])
-                    {
-                        HasWhiteRookKSMoved = 1;
-                    }
-                }
-                If ((UserMove == WhiteQueensideCastling) Or (UserMove == WhiteKingsideCastling))
-                {
-                    HasWhiteCastled = 1;
-                    HasWhiteKingMoved = 1;
-                }
-                Call AddBoardToHistory(0);
-                Call IsBlackKingCheckMate;
-                If (IsBlackKingCheckMateRes == 1)
-                {
-                    Looks.Say("Checkmate!");
-                    Event.Broadcast("SoundCheckmate");
+                    Looks.Say("Draw!");
+                    Event.Broadcast("SoundDraw");
                     IsGameSuspended = 1;
                 }
                 Else
                 {
-                    Call IsDrawByStalemate(1);
-                    If (IsDrawRes == 1)
-                    {
-                        Looks.Say("Draw!");
-                        Event.Broadcast("SoundDraw");
-                        IsGameSuspended = 1;
-                    }
-                    Else
-                    {
-                        Call GetRepetitionCount;
-                        If (RepetitionCountRes > 2)
-                        {
-                            Looks.Say("Draw!");
-                            Event.Broadcast("SoundDraw");
-                            IsGameSuspended = 1;
-                        }
-                        Else
-                        {
-                            Call IsDrawByMaterial;
-                            If (IsDrawRes == 1)
-                            {
-                                Looks.Say("Draw!");
-                                Event.Broadcast("SoundDraw");
-                                IsGameSuspended = 1;
-                            }
-                            Else
-                            {
-                                Call ExecuteEngineMove;
-                            }
-                        }
-                    }
+                    Call ExecuteEngineMove;
                 }
             }
         }
@@ -4563,6 +4428,150 @@ Define GenerateMovesPublic(string Depth) (warp=true)
     If (Depth == 2)
     {
         List.ReplaceItem(EnPassantTarget, Depth, "");
+    }
+}
+
+Define GetBestMoveBlitz (warp=false)
+{
+    ThinkTimeLimit = ((Level - 2) * 2);
+    ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
+    IsMinMaxTimeout = 0;
+    IsDeepeningDone = 0;
+    IdxDeepening = 1;
+    BestMove = "";
+    BestMinMaxRes = "";
+    ThinkTimeLimitMinMax = ThinkTimeLimit;
+    Repeat (((Level - 1) * (2 - IsScratch3)))
+    {
+        If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (Not (((BestMinMaxRes > (BlackKing / 2)) Or (BestMinMaxRes < (WhiteKing / 2)))))))
+        {
+            List.DeleteItem(MinMaxMovesRes, all);
+            Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(10)((1 == 1));
+            If (List.Length(MinMaxMovesRes) > 0)
+            {
+                If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
+                {
+                    BestMove = MinMaxMovesRes[1];
+                    BestMinMaxRes = MinMaxValuesRes[1];
+                    Call OnEvaluationChanged(BestMinMaxRes);
+                }
+            }
+        }
+        IdxDeepening += 1;
+    }
+}
+
+Define GetBestMoveEasy (warp=false)
+{
+    ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
+    ThinkTimeLimitMinMax = 10;
+    BestMove = "";
+    List.DeleteItem(MinMaxMovesRes, all);
+    If (Level == 1)
+    {
+        JuniorDistQuota = 50;
+        JuniorSearchQuota = 50;
+    }
+    Else
+    {
+        If (Level == 2)
+        {
+            JuniorDistQuota = 10;
+            JuniorSearchQuota = 75;
+        }
+    }
+    Call AlphaBetaMinMax(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
+    BestMove = MinMaxMovesRes[1];
+    If ((BestMove == "") Or (Operator.Random(1 / 100) > JuniorSearchQuota))
+    {
+        Call GenerateMovesPublic(1);
+        List.ReplaceItem(MovesIdx, 1, Operator.Random(1 / ceiling((List.Length(Moves1) * (JuniorDistQuota / 100)))));
+        Call ApplyMove(1);
+        Call CalcBoardAttackedByMove(2);
+        Call RevertMove(1);
+        Repeat Until (IsBlackChecked == 0)
+        {
+            List.ReplaceItem(MovesIdx, 1, Operator.Random(1 / List.Length(Moves1)));
+            Call ApplyMove(1);
+            Call CalcBoardAttackedByMove(2);
+            Call RevertMove(1);
+        }
+        BestMove = Moves1[MovesIdx[1]];
+    }
+}
+
+Define GetBestMoveMedDiff (warp=false)
+{
+    If (Level == 5)
+    {
+        ThinkTimeLimit = 10;
+    }
+    Else
+    {
+        If (IsModeCompetition == 0)
+        {
+            If (IsEndgame == 0)
+            {
+                ThinkTimeLimit = 20;
+            }
+            Else
+            {
+                ThinkTimeLimit = 15;
+            }
+        }
+        Else
+        {
+            ThinkTimeLimit = 60;
+        }
+    }
+    ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
+    IsMinMaxTimeout = 0;
+    IsDeepeningDone = 0;
+    IdxDeepening = 1;
+    BestMove = "";
+    BestMinMaxRes = "";
+    Repeat Until (IsDeepeningDone == 1)
+    {
+        IsDone = 0;
+        If (IdxDeepening == 1)
+        {
+            QuiescenceDepth = 8;
+        }
+        Else
+        {
+            QuiescenceDepth = (23 - IdxDeepening);
+        }
+        If ((IdxDeepening < 5) And ((Level == 5) Or (Level == 6)))
+        {
+            ThinkTimeLimitMinMax = (ThinkTimeLimit * 2);
+        }
+        Else
+        {
+            ThinkTimeLimitMinMax = ThinkTimeLimit;
+        }
+        List.DeleteItem(MinMaxMovesRes, all);
+        Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
+        IsDone = 1;
+        If (IsDone == 1)
+        {
+            If ((List.Length(MinMaxMovesRes) > 0) And (Variable.Length(MinMaxMovesRes[1]) > 0))
+            {
+                If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
+                {
+                    BestMove = MinMaxMovesRes[1];
+                    BestMinMaxRes = MinMaxValuesRes[1];
+                    Call OnEvaluationChanged(BestMinMaxRes);
+                }
+            }
+        }
+        If (((IsMinMaxTimeout == 1) Or (IdxDeepening == 23)) Or (abs(BestMinMaxRes) > (BlackKing / 2)))
+        {
+            IsDeepeningDone = 1;
+        }
+        Else
+        {
+            IdxDeepening += 1;
+        }
     }
 }
 
