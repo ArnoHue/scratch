@@ -114,7 +114,7 @@ MoveNotationRes = e6xf7
 MoveScoreRes = 0
 MoveToIdx = -1
 MPS = 1241
-NodeCount = 35
+NodeCount = 37
 NPS = 436
 PiecePosHash = 
 PiecePosHash2 = 
@@ -148,7 +148,7 @@ TargetIdxOuter =
 TargetIdxOuter2 = 65
 TargetPiece = 0
 TargetPieceOuter = 
-ThinkTimeLimit = 4
+ThinkTimeLimit = 15
 ThinkTimeLimitMinMax = 10
 ThinkTimeStart = 737147108.884
 Tmp = 1510158.745
@@ -472,7 +472,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.134 (26.06.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.136 (30.06.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -2032,29 +2032,58 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 IsReductionAndDone = 0;
                 If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
                 {
-                    If ((((MaxDepth > 2) And (((WhiteMinorCountLocal + WhiteQueenCountLocal) > 0) And ((BlackMinorCountLocal + BlackQueenCountLocal) > 0))) And (((MaxDepth - Depth) > 1) Or (PlyExtension[Depth] == 1))) And (PickedMoveCount[Depth] > 1))
+                    If (((MaxDepth > 2) And (((WhiteMinorCountLocal + WhiteQueenCountLocal) > 0) And ((BlackMinorCountLocal + BlackQueenCountLocal) > 0))) And (((MaxDepth - Depth) > 1) Or (PlyExtension[Depth] == 1)))
                     {
+                        CurrentValue = (1 + floor(((log(Depth) * log(PickedMoveCount[Depth])) / 2)));
+                        If ((Betas[Depth] - Alphas[Depth]) == 1)
+                        {
+                            CurrentValue += 1;
+                        }
+                        Else
+                        {
+                            CurrentValue += -1;
+                        }
+                        If (CheckedState[Depth] == 1)
+                        {
+                            CurrentValue += -1;
+                        }
+                        If (PutsInCheck[Depth] == 1)
+                        {
+                            CurrentValue += -1;
+                        }
+                        Call PrepareCurrentKillerMoves(Depth);
+                        If List.ContainsItem(CurrentKillerMoves, AppliedMove[Depth])
+                        {
+                            CurrentValue += -1;
+                        }
+                        If (PlyExtension[Depth] == 1)
+                        {
+                            CurrentValue += 0;
+                        }
+                        If (PickedMoveCount[Depth] == 1)
+                        {
+                            CurrentValue = 0;
+                        }
+                        If ((Not ((TargetPieces[Depth] == 0))) Or (Not ((PromotionPieces[Depth] == 0))))
+                        {
+                            CurrentValue = 0;
+                        }
+                        If ((MaxDepth - Depth) < 3)
+                        {
+                            CurrentValue = 0;
+                        }
                         If ((Depth % 2) == 1)
                         {
                             Score = (Alphas[Depth] + 1);
-                            If (((MaxDepth - Depth) > 2) And (CheckedState[Depth] == 0))
+                            If (CurrentValue > 0)
                             {
-                                If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
-                                {
-                                    If ((PutsInCheck[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1))
-                                    {
-                                        If (((MaxDepth < 7) And ((PickPhase[Depth] == 7) And ((PickedMoveCount[Depth] / MovesCount[Depth]) > 0.3))) Or ((MaxDepth > 6) And (PickedMoveCount[Depth] > 2)))
-                                        {
-                                            List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                                            List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-                                            Call AlphaBetaMinMaxImpl((Depth + 1))(MinDepth)((MaxDepth - 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress);
-                                            Score = MinMaxResults[(Depth + 1)];
-                                            IsReductionAndDone = 1;
-                                        }
-                                    }
-                                }
+                                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+                                Call AlphaBetaMinMaxImpl((Depth + 1))(MinDepth)((MaxDepth - CurrentValue))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress);
+                                Score = MinMaxResults[(Depth + 1)];
+                                IsReductionAndDone = 1;
                             }
-                            If ((Score > Alphas[Depth]) And (IsMinMaxTimeout == 0))
+                            If ((((IsReductionAndDone == 1) And (Score > Alphas[Depth])) Or ((IsReductionAndDone == 0) And (((Betas[Depth] - Alphas[Depth]) == 1) Or (PickedMoveCount[Depth] > 1)))) And (IsMinMaxTimeout == 0))
                             {
                                 List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                                 List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
@@ -2070,24 +2099,15 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         Else
                         {
                             Score = (Betas[Depth] - 1);
-                            If (((MaxDepth - Depth) > 2) And (CheckedState[Depth] == 0))
+                            If (CurrentValue > 0)
                             {
-                                If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
-                                {
-                                    If ((PutsInCheck[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1))
-                                    {
-                                        If (((MaxDepth < 7) And ((PickPhase[Depth] == 7) And ((PickedMoveCount[Depth] / MovesCount[Depth]) > 0.3))) Or ((MaxDepth > 6) And (PickedMoveCount[Depth] > 2)))
-                                        {
-                                            List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                                            List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                                            Call AlphaBetaMinMaxImpl((Depth + 1))(MinDepth)((MaxDepth - 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress);
-                                            Score = MinMaxResults[(Depth + 1)];
-                                            IsReductionAndDone = 1;
-                                        }
-                                    }
-                                }
+                                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+                                Call AlphaBetaMinMaxImpl((Depth + 1))(MinDepth)((MaxDepth - CurrentValue))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress);
+                                Score = MinMaxResults[(Depth + 1)];
+                                IsReductionAndDone = 1;
                             }
-                            If ((Score < Betas[Depth]) And (IsMinMaxTimeout == 0))
+                            If ((((IsReductionAndDone == 1) And (Score < Betas[Depth])) Or ((IsReductionAndDone == 0) And (((Betas[Depth] - Alphas[Depth]) == 1) Or (PickedMoveCount[Depth] > 1)))) And (IsMinMaxTimeout == 0))
                             {
                                 List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                                 List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
