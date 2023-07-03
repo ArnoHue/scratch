@@ -136,6 +136,7 @@ SayAsyncDuration = 5
 SayAsyncText = 
 Score = 22
 ScoreCalcRes = 0
+ScoreCalcResIsDynamic = 0
 SourceIdx = 65
 SourceIdxOuter2 = 0
 SourcePiece = -500
@@ -257,6 +258,7 @@ MinMaxMovesRes = { }
 MinMaxPly1EvalMoves = { }
 MinMaxResults = { }
 MinMaxValuesRes = { }
+MinMaxResultsIsDynamic = { }
 MoveHashLookupBlack = { }
 MoveHashLookupWhite = { }
 MoveLookupCross = { }
@@ -471,7 +473,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.142 (02.07.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.143 (02.07.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1428,7 +1430,8 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
 Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress) (warp=true)
 {
     List.ReplaceItem(MinMaxResults, Depth, "");
-    List.ReplaceItem(ScoreTypes, Depth, "E");
+    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+    List.ReplaceItem(SourcePieces, Depth, "E");
     List.ReplaceItem(BestMoves, Depth, "");
     If (IsMinMaxTimeout == 1)
     {
@@ -1471,6 +1474,10 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     {
         Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
         List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
+        If (ScoreCalcResIsDynamic == 1)
+        {
+            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
+        }
         Stop(this script);
     }
     If Quiescence
@@ -2147,6 +2154,10 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     Score = MinMaxResults[(Depth + 1)];
                     IsReductionAndDone = 0;
                 }
+                If (MinMaxResultsIsDynamic[(Depth + 1)] == 1)
+                {
+                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
+                }
                 Call RevertMove(Depth);
                 If (IsMinMaxTimeout == 1)
                 {
@@ -2364,13 +2375,23 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             List.ReplaceItem(BestMoves, Depth, CurrentMove);
         }
     }
-    If Quiescence
+    If (IsMinMaxTimeout == 0)
     {
-        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("");
-    }
-    Else
-    {
-        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")((MaxDepth - Depth))("")("")("")("")("");
+        If Quiescence
+        {
+            If (MinMaxResultsIsDynamic[Depth] == 0)
+            {
+                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("");
+            }
+            Else
+            {
+                Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(-1)("")("")("")("")("");
+            }
+        }
+        Else
+        {
+            Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")((MaxDepth - Depth))("")("")("")("")("");
+        }
     }
 }
 
@@ -6175,13 +6196,13 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
 {
     IsInNullMove = 0;
     IsMinMaxTimeout = 0;
-    NodeCount = 0;
-    PrevNodeCount = 0;
-    MoveCount = 0;
-    PrevMoveCount = 0;
     If InitialDeepening
     {
         Call Profile_Reset;
+        NodeCount = 0;
+        PrevNodeCount = 0;
+        MoveCount = 0;
+        PrevMoveCount = 0;
     }
     List.ReplaceItem(EnPassantTarget, 1, "");
     Call GetSubstringRight(GameMoves)(4);
@@ -6350,6 +6371,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(AlphasOld, all);
     List.DeleteItem(BetasOld, all);
     List.DeleteItem(MinMaxResults, all);
+    List.DeleteItem(MinMaxResultsIsDynamic, all);
     List.DeleteItem(MovesCount, all);
     List.DeleteItem(MovesIdx, all);
     List.DeleteItem(TargetPieces, all);
@@ -6393,6 +6415,7 @@ Define InitBoard (warp=true)
         List.Add(AlphasOld, "");
         List.Add(BetasOld, "");
         List.Add(MinMaxResults, "");
+        List.Add(MinMaxResultsIsDynamic, "");
         List.Add(MovesCount, "");
         List.Add(MovesIdx, "");
         List.Add(TargetPieces, "");
@@ -7868,13 +7891,15 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 {
                     If (CurrentValue > 0)
                     {
-                        ScoreCalcRes += 75;
+                        ScoreCalcRes += 50;
+                        ScoreCalcResIsDynamic = 1;
                     }
                     Else
                     {
                         If (CurrentValue < 0)
                         {
-                            ScoreCalcRes += -75;
+                            ScoreCalcRes += -50;
+                            ScoreCalcResIsDynamic = 1;
                         }
                     }
                 }
@@ -7893,6 +7918,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                         If ((SpecialCaptureDeltaSumMeta[Idx] == 1) Or (List.IndexOf(SourcePieces, WhiteKing) > 0))
                         {
                             ScoreCalcRes += (0 - SpecialCaptureDeltaSumPenalty[Idx]);
+                            ScoreCalcResIsDynamic = 1;
                         }
                     }
                     Else
@@ -7900,6 +7926,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                         If ((SpecialCaptureDeltaSumMeta[Idx] == 1) Or (List.IndexOf(SourcePieces, BlackKing) > 0))
                         {
                             ScoreCalcRes += SpecialCaptureDeltaSumPenalty[Idx];
+                            ScoreCalcResIsDynamic = 1;
                         }
                     }
                 }
@@ -7912,6 +7939,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 If (Not (List.ContainsItem(TargetPieces, BlackBishop)))
                 {
                     ScoreCalcRes += (10 * ((IsEndgame * 4) + 1));
+                    ScoreCalcResIsDynamic = 1;
                 }
             }
             If (WhiteBishopCount == 2)
@@ -7919,6 +7947,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 If (Not (List.ContainsItem(TargetPieces, WhiteBishop)))
                 {
                     ScoreCalcRes += (-10 * ((IsEndgame * 4) + 1));
+                    ScoreCalcResIsDynamic = 1;
                 }
             }
         }
@@ -7929,19 +7958,13 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 If (Not ((Board[VirtualBoard[4]] == BlackQueen)))
                 {
                     ScoreCalcRes += Operator.Round((-60 * ((12 - (List.Length(GameMovesAN) + Depth)) / 12)));
+                    ScoreCalcResIsDynamic = 1;
                 }
                 If (Not ((Board[VirtualBoard[60]] == WhiteQueen)))
                 {
                     ScoreCalcRes += Operator.Round((60 * ((12 - (List.Length(GameMovesAN) + Depth)) / 12)));
+                    ScoreCalcResIsDynamic = 1;
                 }
-            }
-            If (AppliedMove[1] == BlackKingsideCastling)
-            {
-                ScoreCalcRes += 25;
-            }
-            If (AppliedMove[1] == BlackQueensideCastling)
-            {
-                ScoreCalcRes += 0;
             }
         }
         Call TTStoreBoard(CurrentBoardHash)("")("")("")(ScoreCalcRes);
@@ -8450,18 +8473,6 @@ Define Profile_IncCounter(num Id) (warp=true)
             List.Add(Profile_Data, 0);
         }
         List.ReplaceItem(Profile_Data, Id, (Profile_Data[Id] + 1));
-    }
-}
-
-Define Profile_IncCounterBy(string Id)(string Diff) (warp=true)
-{
-    If (IsProfilerEnabled == 1)
-    {
-        Repeat Until (Not ((List.Length(Profile_Data) < Id)))
-        {
-            List.Add(Profile_Data, 0);
-        }
-        List.ReplaceItem(Profile_Data, Id, (Profile_Data[Id] + Diff));
     }
 }
 
@@ -9830,3 +9841,4 @@ Define UpdateMoveHashPosScore(num Piece)(num SourceIdx)(num TargetIdx)(bool PosS
     Call GetPiecePosScore(Piece)(TargetIdx);
     List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + PosScoreRes));
 }
+
