@@ -473,7 +473,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.148 (19.07.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.149 (19.07.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -786,28 +786,8 @@ Define AddBoardToHistory(string WasEngineMove) (warp=true)
     List.Add(BoardHistoryWasEngineMove, WasEngineMove);
 }
 
-Define AddLineMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool LineMoveTypeStraight) (warp=true)
-{
-    If CalcAttackState
-    {
-        Call ALMAttack(SourceIdx)(Depth)(LineMoveTypeStraight);
-    }
-    Else
-    {
-        Call ALM(SourceIdx)(Depth)(CapturesOnly)(LineMoveTypeStraight);
-    }
-}
-
 Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool LookupMoveTypeKing) (warp=true)
 {
-    If ((IsQuiescentCheckInvariantRes == 1) Or (CheckedState[Depth] == 1))
-    {
-        IsALMQCheck = 1;
-    }
-    Else
-    {
-        IsALMQCheck = 0;
-    }
     SourcePieceOuter = Board[SourceIdx];
     IdxOuter = MoveLookupIndexOffset[SourceIdx];
     Count = 1;
@@ -833,11 +813,7 @@ Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool 
         {
             If (Board[TargetIdxOuter] == 0)
             {
-                If (Not (CapturesOnly))
-                {
-                    Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
-                }
-                Else
+                If CapturesOnly
                 {
                     If LookupMoveTypeKing
                     {
@@ -848,11 +824,15 @@ Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool 
                     }
                     Else
                     {
-                        If (IsALMQCheck == 1)
+                        If (IsPotentialNonCapQuiescMove == 1)
                         {
                             Call AddPotentialQuiescenceMove(SourceIdx)(TargetIdxOuter)(SourcePieceOuter)(Depth);
                         }
                     }
+                }
+                Else
+                {
+                    Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
                 }
             }
             Else
@@ -1267,6 +1247,18 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
 }
 
+Define AddSlidingMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool SlidingMoveTypeStraight) (warp=true)
+{
+    If CalcAttackState
+    {
+        Call ASMAttack(SourceIdx)(Depth)(SlidingMoveTypeStraight);
+    }
+    Else
+    {
+        Call ASM(SourceIdx)(Depth)(CapturesOnly)(SlidingMoveTypeStraight);
+    }
+}
+
 Define AddSpecialMove(string Move)(string Depth) (warp=true)
 {
     List.Add(CalcMovesMoveList, Move);
@@ -1287,187 +1279,6 @@ Define AddSpecialMove(string Move)(string Depth) (warp=true)
     }
     Call GetSpecialMoveScore(Move)(Depth);
     List.Add(CalcMovesScoreList, MoveScoreRes);
-}
-
-Define ALM(string SourceIdx)(string Depth)(bool CapturesOnly)(bool LineMoveTypeStraight) (warp=true)
-{
-    If ((IsQuiescentCheckInvariantRes == 1) Or (CheckedState[Depth] == 1))
-    {
-        IsALMQCheck = 1;
-    }
-    Else
-    {
-        IsALMQCheck = 0;
-    }
-    SourcePieceOuter = Board[SourceIdx];
-    IdxOuter = MoveLookupLineIndexOffset[SourceIdx];
-    Count = 1;
-    InvIdxOuter = 8;
-    Repeat Until (Count > 32)
-    {
-        If LineMoveTypeStraight
-        {
-            TargetIdxOuter = MoveLookupStraight[(IdxOuter + Count)];
-        }
-        Else
-        {
-            TargetIdxOuter = MoveLookupCross[(IdxOuter + Count)];
-        }
-        If (TargetIdxOuter == -1)
-        {
-            Count += InvIdxOuter;
-            InvIdxOuter = 8;
-        }
-        Else
-        {
-            If (Board[TargetIdxOuter] == 0)
-            {
-                If CapturesOnly
-                {
-                    If (IsALMQCheck == 1)
-                    {
-                        Call AddPotentialQuiescenceMove(SourceIdx)(TargetIdxOuter)(SourcePieceOuter)(Depth);
-                    }
-                }
-                Else
-                {
-                    Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 0))(CapturesOnly);
-                }
-                Count += 1;
-                InvIdxOuter += -1;
-            }
-            Else
-            {
-                If (SourcePieceOuter > 0)
-                {
-                    If (Board[TargetIdxOuter] < 0)
-                    {
-                        Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 0))(CapturesOnly);
-                    }
-                }
-                Else
-                {
-                    If (Board[TargetIdxOuter] > 0)
-                    {
-                        Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 0))(CapturesOnly);
-                    }
-                }
-                Count += InvIdxOuter;
-                InvIdxOuter = 8;
-            }
-        }
-    }
-}
-
-Define ALMAttack(string SourceIdx)(string Depth)(bool LineMoveTypeStraight) (warp=true)
-{
-    SourcePieceOuter = Board[SourceIdx];
-    IdxOuter = MoveLookupLineIndexOffset[SourceIdx];
-    Count = 1;
-    InvIdxOuter = 8;
-    List.DeleteAll(KingAttackLinesTemp);
-    Repeat Until (Count > 32)
-    {
-        If LineMoveTypeStraight
-        {
-            TargetIdxOuter = MoveLookupStraight[(IdxOuter + Count)];
-        }
-        Else
-        {
-            TargetIdxOuter = MoveLookupCross[(IdxOuter + Count)];
-        }
-        If (TargetIdxOuter == -1)
-        {
-            Count += InvIdxOuter;
-            InvIdxOuter = 8;
-            List.DeleteAll(KingAttackLinesTemp);
-        }
-        Else
-        {
-            If (Board[TargetIdxOuter] == 0)
-            {
-                Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 1))((1 == 0));
-                List.Add(KingAttackLinesTemp, TargetIdxOuter);
-                Count += 1;
-                InvIdxOuter += -1;
-            }
-            Else
-            {
-                Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 1))((1 == 0));
-                IsXRay = 0;
-                TargetPieceOuter = Board[TargetIdxOuter];
-                If (SourcePieceOuter > 0)
-                {
-                    If (TargetPieceOuter == WhiteKing)
-                    {
-                        Idx = 1;
-                        Repeat (List.Length(KingAttackLinesTemp))
-                        {
-                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
-                            Idx += 1;
-                        }
-                    }
-                    If (TargetPieceOuter > BlackKnight)
-                    {
-                        If LineMoveTypeStraight
-                        {
-                            If ((TargetPieceOuter == BlackQueen) Or (TargetPieceOuter == BlackRook))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                        Else
-                        {
-                            If ((TargetPieceOuter == BlackQueen) Or (TargetPieceOuter == BlackBishop))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                    }
-                }
-                Else
-                {
-                    If (TargetPieceOuter == BlackKing)
-                    {
-                        Idx = 1;
-                        Repeat (List.Length(KingAttackLinesTemp))
-                        {
-                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
-                            Idx += 1;
-                        }
-                    }
-                    If (TargetPieceOuter < WhiteKnight)
-                    {
-                        If LineMoveTypeStraight
-                        {
-                            If ((TargetPieceOuter == WhiteQueen) Or (TargetPieceOuter == WhiteRook))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                        Else
-                        {
-                            If ((TargetPieceOuter == WhiteQueen) Or (TargetPieceOuter == WhiteBishop))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                    }
-                }
-                If (IsXRay == 1)
-                {
-                    Count += 1;
-                    InvIdxOuter += -1;
-                }
-                Else
-                {
-                    Count += InvIdxOuter;
-                    InvIdxOuter = 8;
-                }
-                List.DeleteAll(KingAttackLinesTemp);
-            }
-        }
-    }
 }
 
 Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool ShowProgress) (warp=true)
@@ -2811,6 +2622,179 @@ Define ApplyMoveLight(string Depth) (warp=true)
                         Call UpdateMoveHashPosScore(BlackRook)(VirtualBoard[1])(VirtualBoard[4])((1 == 1));
                     }
                 }
+            }
+        }
+    }
+}
+
+Define ASM(string SourceIdx)(string Depth)(bool CapturesOnly)(bool SlidingMoveTypeStraight) (warp=true)
+{
+    SourcePieceOuter = Board[SourceIdx];
+    IdxOuter = MoveLookupLineIndexOffset[SourceIdx];
+    Count = 1;
+    InvIdxOuter = 8;
+    Repeat Until (Count > 32)
+    {
+        If SlidingMoveTypeStraight
+        {
+            TargetIdxOuter = MoveLookupStraight[(IdxOuter + Count)];
+        }
+        Else
+        {
+            TargetIdxOuter = MoveLookupCross[(IdxOuter + Count)];
+        }
+        If (TargetIdxOuter == -1)
+        {
+            Count += InvIdxOuter;
+            InvIdxOuter = 8;
+        }
+        Else
+        {
+            If (Board[TargetIdxOuter] == 0)
+            {
+                If CapturesOnly
+                {
+                    If (IsPotentialNonCapQuiescMove == 1)
+                    {
+                        Call AddPotentialQuiescenceMove(SourceIdx)(TargetIdxOuter)(SourcePieceOuter)(Depth);
+                    }
+                }
+                Else
+                {
+                    Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 0))(CapturesOnly);
+                }
+                Count += 1;
+                InvIdxOuter += -1;
+            }
+            Else
+            {
+                If (SourcePieceOuter > 0)
+                {
+                    If (Board[TargetIdxOuter] < 0)
+                    {
+                        Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 0))(CapturesOnly);
+                    }
+                }
+                Else
+                {
+                    If (Board[TargetIdxOuter] > 0)
+                    {
+                        Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 0))(CapturesOnly);
+                    }
+                }
+                Count += InvIdxOuter;
+                InvIdxOuter = 8;
+            }
+        }
+    }
+}
+
+Define ASMAttack(string SourceIdx)(string Depth)(bool SlidingMoveTypeStraight) (warp=true)
+{
+    SourcePieceOuter = Board[SourceIdx];
+    IdxOuter = MoveLookupLineIndexOffset[SourceIdx];
+    Count = 1;
+    InvIdxOuter = 8;
+    List.DeleteAll(KingAttackLinesTemp);
+    Repeat Until (Count > 32)
+    {
+        If SlidingMoveTypeStraight
+        {
+            TargetIdxOuter = MoveLookupStraight[(IdxOuter + Count)];
+        }
+        Else
+        {
+            TargetIdxOuter = MoveLookupCross[(IdxOuter + Count)];
+        }
+        If (TargetIdxOuter == -1)
+        {
+            Count += InvIdxOuter;
+            InvIdxOuter = 8;
+            List.DeleteAll(KingAttackLinesTemp);
+        }
+        Else
+        {
+            If (Board[TargetIdxOuter] == 0)
+            {
+                Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 1))((1 == 0));
+                List.Add(KingAttackLinesTemp, TargetIdxOuter);
+                Count += 1;
+                InvIdxOuter += -1;
+            }
+            Else
+            {
+                Call AddMoveImpl(SourceIdx)(TargetIdxOuter)(Depth)((1 == 1))((1 == 0));
+                IsXRay = 0;
+                TargetPieceOuter = Board[TargetIdxOuter];
+                If (SourcePieceOuter > 0)
+                {
+                    If (TargetPieceOuter == WhiteKing)
+                    {
+                        Idx = 1;
+                        Repeat (List.Length(KingAttackLinesTemp))
+                        {
+                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
+                            Idx += 1;
+                        }
+                    }
+                    If (TargetPieceOuter > BlackKnight)
+                    {
+                        If SlidingMoveTypeStraight
+                        {
+                            If ((TargetPieceOuter == BlackQueen) Or (TargetPieceOuter == BlackRook))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                        Else
+                        {
+                            If ((TargetPieceOuter == BlackQueen) Or (TargetPieceOuter == BlackBishop))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                    }
+                }
+                Else
+                {
+                    If (TargetPieceOuter == BlackKing)
+                    {
+                        Idx = 1;
+                        Repeat (List.Length(KingAttackLinesTemp))
+                        {
+                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
+                            Idx += 1;
+                        }
+                    }
+                    If (TargetPieceOuter < WhiteKnight)
+                    {
+                        If SlidingMoveTypeStraight
+                        {
+                            If ((TargetPieceOuter == WhiteQueen) Or (TargetPieceOuter == WhiteRook))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                        Else
+                        {
+                            If ((TargetPieceOuter == WhiteQueen) Or (TargetPieceOuter == WhiteBishop))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                    }
+                }
+                If (IsXRay == 1)
+                {
+                    Count += 1;
+                    InvIdxOuter += -1;
+                }
+                Else
+                {
+                    Count += InvIdxOuter;
+                    InvIdxOuter = 8;
+                }
+                List.DeleteAll(KingAttackLinesTemp);
             }
         }
     }
@@ -4615,6 +4599,14 @@ Define FillBoard (warp=true)
 
 Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
 {
+    If ((IsQuiescentCheckInvariantRes == 1) Or (CheckedState[Depth] == 1))
+    {
+        IsPotentialNonCapQuiescMove = 1;
+    }
+    Else
+    {
+        IsPotentialNonCapQuiescMove = 0;
+    }
     SourcePieceOuter2 = Board[SourceIdx];
     If (SourcePieceOuter2 == BlackPawn)
     {
@@ -4638,7 +4630,10 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
             {
                 If CapturesOnly
                 {
-                    Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx + 8))(BlackPawn)(Depth);
+                    If ((IsPotentialNonCapQuiescMove == 1) Or (IdxToRank[SourceIdx] == 7))
+                    {
+                        Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx + 8))(BlackPawn)(Depth);
+                    }
                 }
                 Else
                 {
@@ -4648,7 +4643,10 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                 {
                     If CapturesOnly
                     {
-                        Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx + 16))(BlackPawn)(Depth);
+                        If (IsPotentialNonCapQuiescMove == 1)
+                        {
+                            Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx + 16))(BlackPawn)(Depth);
+                        }
                     }
                     Else
                     {
@@ -4692,7 +4690,10 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
             {
                 If CapturesOnly
                 {
-                    Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx - 8))(WhitePawn)(Depth);
+                    If ((IsPotentialNonCapQuiescMove == 1) Or (IdxToRank[SourceIdx] == 2))
+                    {
+                        Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx - 8))(WhitePawn)(Depth);
+                    }
                 }
                 Else
                 {
@@ -4702,7 +4703,10 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                 {
                     If CapturesOnly
                     {
-                        Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx - 16))(WhitePawn)(Depth);
+                        If (IsPotentialNonCapQuiescMove == 1)
+                        {
+                            Call AddPotentialQuiescenceMove(SourceIdx)((SourceIdx - 16))(WhitePawn)(Depth);
+                        }
                     }
                     Else
                     {
@@ -4727,12 +4731,12 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
     SourcePieceOuter2 = abs(SourcePieceOuter2);
     If (SourcePieceOuter2 == BlackRook)
     {
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
+        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
         Stop(this script);
     }
     If (SourcePieceOuter2 == BlackBishop)
     {
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
         Stop(this script);
     }
     If (SourcePieceOuter2 == BlackKnight)
@@ -4747,8 +4751,8 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
     }
     If (SourcePieceOuter2 == BlackQueen)
     {
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
-        Call AddLineMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
+        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
         Stop(this script);
     }
 }
