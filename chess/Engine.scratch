@@ -29,8 +29,6 @@ CurrentMoveOuter =
 CurrentPiece = -100
 CurrentValue = -1
 CurrentValue2 = 
-CutoffCount = 13
-CutoffPos = 1
 Delta = 1
 Delta2 = 0
 Delta3 = 0
@@ -60,10 +58,9 @@ HasWhiteKingMoved = 0
 HasWhiteRookKSMoved = 0
 HasWhiteRookQSMoved = 0
 Idx = 0
-Idx = 0
 IdxDeepening = 4
 IdxInc = -9
-IdxOuter = 2
+IdxOuter = 
 IdxOuter2 = 16456
 IdxOuter3 = 1
 IdxString = 5
@@ -128,6 +125,8 @@ PrevMetaState = 1100111111
 PrevMoveCount = 0
 PrevNodeCount = 0
 PrevProgressUpdate = 0
+ProfBestMoveCount = 17
+ProfBestMoveIdxSum = 0
 ProfNPSMode = 1
 PromotionVal = 1
 QSLower = 16
@@ -191,6 +190,7 @@ WhiteRank = 8
 WhiteRookCount = 2
 X = 1
 Y = 0
+
 
 //----- Lists ---------------------------------------------------------------------------------------------------------
 
@@ -479,7 +479,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.155 (27.07.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.156 (28.07.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -519,7 +519,7 @@ WhenKeyPressed(n)
     {
         ProfNPSMode = 1;
     }
-    Call SayAsync(Operator.Join("MPS / NPS stats mode set to ", ProfNPSMode))(3);
+    Call SayAsync(Operator.Join("Profiler FS/QS stats mode set to ", ProfNPSMode))(3);
 }
 
 
@@ -1370,15 +1370,15 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Else
         {
             Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
+            If (ScoreCalcResIsDynamic == 1)
+            {
+                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
+            }
             Found = 0;
         }
         If (PutsInCheck[(Depth - 1)] == 0)
         {
             List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
-            If (ScoreCalcResIsDynamic == 1)
-            {
-                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
-            }
             If ((Depth % 2) == 1)
             {
                 If (Not ((ScoreCalcRes < Betas[Depth])))
@@ -1709,10 +1709,10 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     {
                         Call Log(Operator.Join("FS = ", (ProfNPSMode < 3)))(", ")(Operator.Join("QS = ", (Not ((ProfNPSMode == 2)))))("")("")("")("")("");
                         Call Log("MPS = ")(MPS)(", NPS = ")(NPS)("")("")("")("");
-                        Call Log("Avg. cutoff = ")((Operator.Round(((CutoffPos / CutoffCount) * 100)) / 100))("")("")("")("")("")("");
+                        Call Log("Avg. best move idx = ")((Operator.Round(((ProfBestMoveIdxSum / ProfBestMoveCount) * 100)) / 100))("")("")("")("")("")("");
                     }
-                    CutoffPos = 0;
-                    CutoffCount = 0;
+                    ProfBestMoveIdxSum = 0;
+                    ProfBestMoveCount = 0;
                 }
             }
             List.ReplaceItem(PutsInCheck, Depth, 0);
@@ -2047,6 +2047,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         {
                             Call GetCurrentMove(Depth);
                             List.ReplaceItem(BestMoves, Depth, CurrentMove);
+                            Call CollectMoveOrderingStats(Depth);
                             If Quiescence
                             {
                                 If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score < Betas[Depth]))
@@ -2055,7 +2056,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 }
                                 Else
                                 {
-                                    Call CollectCutoffStats(Depth);
                                     List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                     List.ReplaceItem(PickPhase, Depth, "*");
                                 }
@@ -2071,7 +2071,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                         {
                                             Call StoreKillerMove(Depth)(BestMoves[Depth]);
                                         }
-                                        Call CollectCutoffStats(Depth);
                                         List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                         List.ReplaceItem(PickPhase, Depth, "*");
                                     }
@@ -2131,6 +2130,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         {
                             Call GetCurrentMove(Depth);
                             List.ReplaceItem(BestMoves, Depth, CurrentMove);
+                            Call CollectMoveOrderingStats(Depth);
                             If Quiescence
                             {
                                 If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score > Alphas[Depth]))
@@ -2139,7 +2139,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 }
                                 Else
                                 {
-                                    Call CollectCutoffStats(Depth);
                                     List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                     List.ReplaceItem(PickPhase, Depth, "*");
                                 }
@@ -2153,7 +2152,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                     {
                                         Call StoreKillerMove(Depth)(BestMoves[Depth]);
                                     }
-                                    Call CollectCutoffStats(Depth);
                                     List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                     List.ReplaceItem(PickPhase, Depth, "*");
                                 }
@@ -3310,16 +3308,22 @@ Define ClearTTImpl(string Size) (warp=true)
     }
 }
 
-Define CollectCutoffStats(string Depth) (warp=true)
+Define CollectMoveOrderingStats(string Depth) (warp=true)
 {
     If ((IsProfilerEnabled == 1) And ((ProfNPSMode == 1) Or ((Quiescence[Depth] + 2) == ProfNPSMode)))
     {
-        CutoffCount += 1;
-        CutoffPos += MovesIdx[Depth];
-        If (MovesIdx[Depth] > 10)
+        IdxOuter = MovesIdx[Depth];
+        ProfBestMoveCount += 1;
+        ProfBestMoveIdxSum += IdxOuter;
+        ExportDataFEN = "";
+        If (IdxOuter > 10)
         {
             Call ExportBoardFEN;
-            Call Log(Operator.Join("Late cutoff: ", Depth))(" : ")(MovesIdx[Depth])(" : ")(BestMoves[Depth])(" : ")(ExportDataFEN)("");
+        }
+        If (IdxOuter > 5)
+        {
+            CurrentMove = BestMoves[Depth];
+            Call Log(Operator.Join("Move ordering indication: ", Depth))(" : ")(Operator.Join(IdxOuter, Operator.Join(" : ", PickPhase[Depth])))(" : ")(Operator.Join(Board[floor((CurrentMove / 100))], Operator.Join(" : ", CurrentMove)))(" : ")(ExportDataFEN)("");
         }
     }
 }
@@ -6252,8 +6256,8 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
         PrevNodeCount = 0;
         MoveCount = 0;
         PrevMoveCount = 0;
-        CutoffPos = 0;
-        CutoffCount = 0;
+        ProfBestMoveIdxSum = 0;
+        ProfBestMoveCount = 0;
         PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
     }
     List.ReplaceItem(EnPassantTarget, 1, "");
@@ -9855,4 +9859,3 @@ Define UpdateMoveHashPosScore(num Piece)(num SourceIdx)(num TargetIdx)(bool PosS
     Call GetPiecePosScore(Piece)(TargetIdx);
     List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + PosScoreRes));
 }
-
