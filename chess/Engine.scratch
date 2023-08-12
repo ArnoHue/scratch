@@ -1,4 +1,3 @@
-
 //----- Variables -----------------------------------------------------------------------------------------------------
 
 BestMinMaxRes = 21
@@ -481,7 +480,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.161 (03.08.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.163 (11.08.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -917,7 +916,10 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
                 {
                     If (Not ((abs(Board[TargetIdx]) == BlackKing)))
                     {
-                        Stop(this script);
+                        If (EnPassantTarget[Depth] == "")
+                        {
+                            Stop(this script);
+                        }
                     }
                 }
             }
@@ -1441,7 +1443,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call GenerateMovesImplWrapper(1)((1 == 0))((1 == 0));
         Call GenerateMovesImplWrapper(2)((1 == 0))((1 == 0));
         List.ReplaceItem(WhiteMobBonus, 1, WhiteMobBonus[2]);
-        List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
     }
     Else
     {
@@ -1454,7 +1455,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(CheckedStateAttackLines, Depth, "");
         List.ReplaceItem(BlackMobBonus, Depth, BlackMobBonus[(Depth - 1)]);
         List.ReplaceItem(WhiteMobBonus, Depth, WhiteMobBonus[(Depth - 1)]);
-        List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
     }
     If Quiescence
     {
@@ -1796,7 +1796,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
                 If ((Depth > 1) And ((MaxDepth - Depth) == 1))
                 {
-                    If ((Depth < 5) And (PlyExtension[(Depth - 1)] == 0))
+                    If ((Depth < 8) And (PlyExtension[(Depth - 1)] == 0))
                     {
                         CountOuter1 = 0;
                         CountOuter2 = 0;
@@ -1804,28 +1804,46 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         Idx = Depth;
                         Repeat Until (Idx < 1)
                         {
-                            If ((PutsInFork[Idx] == 1) And (Depth < 5))
+                            If (Depth < 5)
                             {
-                                CountOuter1 += 1;
-                            }
-                            If ((CheckedState[Idx] == 1) And (IsEndgame2 == 0))
-                            {
-                                If (Idx > 1)
+                                If (PutsInFork[Idx] == 1)
                                 {
-                                    TargetIdxOuter2 = floor((AppliedMove[(Idx - 1)] % 100));
-                                    If (((Idx - 1) % 2) == 1)
+                                    CountOuter1 += 1;
+                                }
+                            }
+                            If (Depth < 6)
+                            {
+                                If ((CheckedState[Idx] == 1) And (IsEndgame2 == 0))
+                                {
+                                    If (Idx > 1)
                                     {
-                                        If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[(Idx - 1)], TargetIdxOuter2) == 0)
+                                        TargetIdxOuter2 = floor((AppliedMove[(Idx - 1)] % 100));
+                                        If (((Idx - 1) % 2) == 1)
                                         {
-                                            CountOuter2 += 1;
+                                            If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[(Idx - 1)], TargetIdxOuter2) == 0)
+                                            {
+                                                CountOuter2 += 1;
+                                            }
+                                        }
+                                        Else
+                                        {
+                                            If (Operator.LetterOf(BoardAttackedByBlackSnapshot[(Idx - 1)], TargetIdxOuter2) == 0)
+                                            {
+                                                CountOuter2 += 1;
+                                            }
                                         }
                                     }
-                                    Else
+                                }
+                            }
+                            If (abs(Pieces[Idx]) == BlackPawn)
+                            {
+                                IdxSub = floor((AppliedMove[Idx] % 100));
+                                Rank = IdxToRank[IdxSub];
+                                If ((Rank == 2) Or (Rank == 7))
+                                {
+                                    If (abs(Board[IdxSub]) == BlackPawn)
                                     {
-                                        If (Operator.LetterOf(BoardAttackedByBlackSnapshot[(Idx - 1)], TargetIdxOuter2) == 0)
-                                        {
-                                            CountOuter2 += 1;
-                                        }
+                                        CountOuter1 += 1;
                                     }
                                 }
                             }
@@ -2287,6 +2305,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
 
 Define ApplyMove(num Depth) (warp=true)
 {
+    List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
     List.ReplaceItem(PreviousBoardHash, Depth, CurrentBoardHash);
     List.ReplaceItem(PreviousBoardHash2, Depth, CurrentBoardHash2);
     Call GetCurrentMove(Depth);
@@ -3092,11 +3111,6 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
     List.DeleteAll(KingAttackLines);
 }
 
-Define ClearLog (warp=true)
-{
-    List.DeleteItem(Logfile, all);
-}
-
 Define ClearMoveList(num Depth) (warp=true)
 {
     If (Depth < 6)
@@ -3435,7 +3449,7 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
                     }
                     If (Rank > 5)
                     {
-                        If ((IsEndgame == 0) And (Board[(Idx + 8)] == 0))
+                        If ((Board[(Idx + 8)] == 0) And (IsEndgame == 0))
                         {
                             If (Rank == 6)
                             {
@@ -3478,7 +3492,7 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
                 }
                 If (Rank < 4)
                 {
-                    If ((IsEndgame == 0) And (Board[(Idx - 8)] == 0))
+                    If ((Board[(Idx - 8)] == 0) And (IsEndgame == 0))
                     {
                         If (Rank == 3)
                         {
@@ -5022,25 +5036,13 @@ Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool Capture
 
 Define GenerateMovesPublic(string Depth) (warp=true)
 {
-    If (Depth == 2)
-    {
-        Call GetSubstringRight(GameMoves)(4);
-        SourceIdx = floor((SubstringRes / 100));
-        TargetIdx = floor((SubstringRes % 100));
-        If ((Board[TargetIdx] == BlackPawn) And ((IdxToRank[TargetIdx] == 4) And ((TargetIdx - SourceIdx) == 16)))
-        {
-            List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
-        }
-    }
     Call CalcBoardAttackedByMove((Depth + 1));
     Call StoreAttackInfo((Depth + 1))(Depth);
     List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
+    Call SetInitialEnPassantTarget(Depth);
     Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
+    List.ReplaceItem(EnPassantTarget, Depth, "");
     List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
-    If (Depth == 2)
-    {
-        List.ReplaceItem(EnPassantTarget, Depth, "");
-    }
 }
 
 Define GetBestMoveBlitz (warp=false)
@@ -5081,20 +5083,21 @@ Define GetBestMoveEasy (warp=false)
     List.DeleteItem(MinMaxMovesRes, all);
     If (Level == 1)
     {
-        JuniorDistQuota = 50;
-        JuniorSearchQuota = 50;
+        JuniorDistQuota = 30;
+        JuniorSearchQuota = 60;
     }
     Else
     {
         If (Level == 2)
         {
             JuniorDistQuota = 10;
-            JuniorSearchQuota = 75;
+            JuniorSearchQuota = 80;
         }
     }
-    Call AlphaBetaMinMax(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
+    Call AlphaBetaMinMax(-100000)(100000)(1)(3)((1 == 0))(1)((1 == 1));
     BestMove = MinMaxMovesRes[1];
-    If ((BestMove == "") Or (Operator.Random(1 , 100) > JuniorSearchQuota))
+    CurrentValue = Operator.Random(1 , 100);
+    If ((CurrentValue > ((JuniorSearchQuota + 100) / 2)) Or (((BoardAttackedByWhite[floor((BestMove / 100))] == 0) And (Board[floor((BestMove % 100))] == 0)) And (CurrentValue > JuniorSearchQuota)))
     {
         Call GenerateMovesPublic(1);
         List.ReplaceItem(MovesIdx, 1, Operator.Random(1 , ceiling((List.Length(Moves1) * (JuniorDistQuota / 100)))));
@@ -5420,6 +5423,7 @@ Define GetMoveNotation(num Move) (warp=true)
 
 Define GetMoveScore(string SourcePiece)(string TargetPiece)(string FromIdx)(string ToIdx)(string Move)(string Depth)(bool CapturesOnly) (warp=true)
 {
+    CurrentValue = (((SourcePiece > 0) * 2) - 1);
     If (CheckedState[Depth] == 1)
     {
         If (abs(SourcePiece) == BlackKing)
@@ -5429,14 +5433,7 @@ Define GetMoveScore(string SourcePiece)(string TargetPiece)(string FromIdx)(stri
         }
         If (Operator.LetterOf(CheckedStateAttackLines[Depth], ToIdx) == 1)
         {
-            If (SourcePiece > 0)
-            {
-                MoveScoreRes = ((BlackKing - TargetPiece) - SourcePiece);
-            }
-            Else
-            {
-                MoveScoreRes = ((WhiteKing - TargetPiece) - SourcePiece);
-            }
+            MoveScoreRes = (((BlackKing * CurrentValue) - TargetPiece) - SourcePiece);
             Stop(this script);
         }
     }
@@ -5445,27 +5442,28 @@ Define GetMoveScore(string SourcePiece)(string TargetPiece)(string FromIdx)(stri
         Idx = List.IndexOf(CurrentKillerMoves, Move);
         If (Idx > 0)
         {
-            If (SourcePiece > 0)
-            {
-                MoveScoreRes = (80 + Idx);
-                Stop(this script);
-            }
-            Else
-            {
-                MoveScoreRes = (-80 - Idx);
-                Stop(this script);
-            }
+            MoveScoreRes = ((80 + Idx) * CurrentValue);
+            Stop(this script);
         }
         MoveScoreRes = 0;
     }
     Else
     {
+        CurrentValue2 = (PieceIdxLookup[abs(TargetPiece)] * 10000);
+        If (TargetPiece > 0)
+        {
+            MoveScoreRes = MovePosLookupBlack[(CurrentValue2 + (ToIdx * 100))];
+        }
+        Else
+        {
+            MoveScoreRes = MovePosLookupWhite[(CurrentValue2 + (ToIdx * 100))];
+        }
         If (Not ((abs(TargetPiece) < abs(SourcePiece))))
         {
-            MoveScoreRes = ((0 - SourcePiece) - (10 * TargetPiece));
+            MoveScoreRes += ((0 - SourcePiece) - (10 * TargetPiece));
             Stop(this script);
         }
-        MoveScoreRes = (0 - TargetPiece);
+        MoveScoreRes += (0 - TargetPiece);
     }
     CurrentValue = (PieceIdxLookup[abs(SourcePiece)] * 10000);
     If (SourcePiece > 0)
@@ -6270,24 +6268,12 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
         ProfBestMoveCount = 0;
         PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
     }
-    List.ReplaceItem(EnPassantTarget, 1, "");
-    Call GetSubstringRight(GameMoves)(4);
-    SourceIdx = floor((SubstringRes / 100));
-    TargetIdx = floor((SubstringRes % 100));
-    If ((Board[TargetIdx] == WhitePawn) And ((IdxToRank[TargetIdx] == 5) And ((TargetIdx - SourceIdx) == -16)))
-    {
-        List.ReplaceItem(EnPassantTarget, 1, TargetIdx);
-    }
+    Call SetInitialEnPassantTarget(1);
     List.DeleteItem(MinMaxPly1EvalMoves, all);
     TTProbeCurrentAge += 1;
     Call CalcBoardStats;
     Call Log(MaxDepth)(" : ")("Search start, depth = ")(MaxDepth)("")("")("")("");
     Call InitMovePosLookup((1 == 0));
-    List.DeleteAll(StagedMoveGenStats);
-    Repeat (100)
-    {
-        List.Add(StagedMoveGenStats, 0);
-    }
 }
 
 Define InitBoard (warp=true)
@@ -8121,11 +8107,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     }
     If (PickPhase[Depth] == 2)
     {
-        If Quiescence
-        {
-            List.ReplaceItem(StagedMoveGenStats, Depth, (StagedMoveGenStats[Depth] + 1));
-        }
-        If (((IsEndgame == 1) Or (Depth < 3)) Or ((IsScratch3 == 0) And (Quiescence And ((StagedMoveGenStats[Depth] > 5000) And ((StagedMoveGenStats[(30 + Depth)] / StagedMoveGenStats[Depth]) > 0.7)))))
+        If ((IsEndgame == 1) Or (Depth < 3))
         {
             List.ReplaceItem(PickPhase, Depth, 4);
         }
@@ -8136,7 +8118,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.DeleteAll(TmpList2);
             List.DeleteAll(TmpList3);
             List.DeleteAll(TmpList4);
-            List.DeleteAll(TmpList5);
             Idx = (Depth - 2);
             Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
             {
@@ -8354,10 +8335,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     }
     If (PickPhase[Depth] == 6)
     {
-        If Quiescence
-        {
-            List.ReplaceItem(StagedMoveGenStats, (30 + Depth), (StagedMoveGenStats[(30 + Depth)] + 1));
-        }
         Call ClearMoveList(Depth);
         If (Depth == 1)
         {
@@ -8595,6 +8572,10 @@ Define RevertMove(num Depth) (warp=true)
     If (SourceIdx > 0)
     {
         TargetIdx = floor((CurrentMove % 100));
+        If (abs(Board[TargetIdx]) == BlackPawn)
+        {
+            List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
+        }
         List.ReplaceItem(Board, SourceIdx, Board[TargetIdx]);
         List.ReplaceItem(Board, TargetIdx, 0);
         List.ReplaceItem(Board, TargetPiecesIdx[Depth], TargetPieces[Depth]);
@@ -8696,7 +8677,6 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(AppliedMove, Depth, "");
     List.ReplaceItem(SourcePieces, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, "");
-    List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
 }
 
 Define RevertMoveLight(string Depth) (warp=true)
@@ -8758,6 +8738,18 @@ Define SayAsync(string Text)(num Duration) (warp=false)
     SayAsyncText = Text;
     SayAsyncDuration = Duration;
     Event.Broadcast("sayasyncmsg");
+}
+
+Define SetInitialEnPassantTarget(string Depth) (warp=true)
+{
+    List.ReplaceItem(EnPassantTarget, Depth, "");
+    Call GetSubstringRight(GameMoves)(4);
+    SourceIdx = floor((SubstringRes / 100));
+    TargetIdx = floor((SubstringRes % 100));
+    If ((abs(Board[TargetIdx]) == BlackPawn) And (abs((TargetIdx - SourceIdx)) == 16))
+    {
+        List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
+    }
 }
 
 Define SortList (warp=true)
