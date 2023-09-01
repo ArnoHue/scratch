@@ -37,6 +37,7 @@ EvalExtendedResult2 = 0
 EvalExtendedResult3 = 40
 EvalResult = 0
 EvalResultBase = 0
+EvalMaterialBase = 0
 ExecutionDepth = 0
 ExportDataFEN = 
 ExportDataFENLichess = 
@@ -70,7 +71,7 @@ IsAdvisorEnabled = 1
 IsBlackCastlingPossible = 1
 IsBlackChecked = 0
 IsBlackKingCheckMateRes = 0
-IsCheckingMoveRes = 0
+IsCheckingPieceRes = 0
 IsDeepeningDone = 0
 IsDone = 1
 IsDrawRes = 1
@@ -109,6 +110,8 @@ KingProtection = 0
 KingRank = 
 LeftOppPawnRank = 0
 MetaState = 1100111111
+MinMaxEvalRes = 0
+MinMaxMoveRes = 0
 MoveCount = 0
 MoveFromIdx = -1
 MoveNotationRes = e6xf7
@@ -259,11 +262,9 @@ KnightMoveOffsets = { }
 KnightPieceSquare = { }
 KnightPieceSquareEndgame = { }
 Logfile = { }
-MinMaxMovesRes = { }
 MinMaxPly1EvalMoves = { }
 MinMaxResults = { }
 MinMaxResultsIsDynamic = { }
-MinMaxValuesRes = { }
 MoveHashLookupBlack = { }
 MoveHashLookupWhite = { }
 MoveLookupCross = { }
@@ -306,7 +307,6 @@ Moves24 = { }
 Moves25 = { }
 MovesCount = { }
 MovesIdx = { }
-MovesIdxBestMove = { }
 OpeningMoves = { }
 OpeningMovesMapHash = { }
 OpeningMovesMapMove = { }
@@ -348,14 +348,12 @@ SourcePieces = { }
 SpecialCaptureDeltaSum = { }
 SpecialCaptureDeltaSumMeta = { }
 SpecialCaptureDeltaSumPenalty = { }
-StagedMoveGenStats = { }
 TargetPieces = { }
 TargetPiecesIdx = { }
 TmpList1 = { }
 TmpList2 = { }
 TmpList3 = { }
 TmpList4 = { }
-TmpList5 = { }
 TTBoardAge = { }
 TTBoardHash = { }
 TTBoardScore1 = { }
@@ -480,7 +478,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.174 (31.08.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.175 (01.09.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1303,6 +1301,8 @@ Define AddSpecialMove(string Move)(string Depth) (warp=true)
 
 Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool ShowProgress) (warp=true)
 {
+    MinMaxEvalRes = "";
+    MinMaxMoveRes = "";
     Call InitAlphaBeta((MaxDepth - 1))(InitialDeepening);
     Call OnScoreCalc(0)(MinDepth)((MaxDepth - 1))((1 == 0));
     List.ReplaceItem(Alphas, MinDepth, Alpha);
@@ -1722,8 +1722,8 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             List.ReplaceItem(PlyExtension, Depth, 0);
             SourceIdxOuter2 = floor((AppliedMove[Depth] / 100));
             TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
-            Call IsCheckingMove(SourceIdxOuter2)(TargetIdxOuter2)(Board[TargetIdxOuter2]);
-            If (IsCheckingMoveRes == 1)
+            Call IsCheckingPiece(Board[TargetIdxOuter2])(TargetIdxOuter2);
+            If (IsCheckingPieceRes == 1)
             {
                 List.ReplaceItem(PutsInCheck, Depth, 1);
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(-1)("")("")("")("")("");
@@ -2099,33 +2099,31 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                     If ((Depth == 1) And (IsMinMaxTimeout == 0))
                                     {
                                         Call OnEvaluationChanged(Score);
-                                        List.DeleteItem(MinMaxValuesRes, all);
-                                        List.Add(MinMaxValuesRes, Score);
                                         If (Score > -98000)
                                         {
+                                            MinMaxMoveRes = Moves1[MovesIdx[1]];
+                                            MinMaxEvalRes = Score;
                                             If (1 == 1)
                                             {
-                                                Call Log((MaxDepth - 1))(" : ")(Moves1[MovesIdx[1]])(" : ")(Score)("")("")("");
+                                                Call Log((MaxDepth - 1))(" : ")(MinMaxMoveRes)(" : ")(MinMaxEvalRes)("")("")("");
                                             }
-                                            List.DeleteItem(MinMaxMovesRes, all);
-                                            List.Add(MinMaxMovesRes, Moves1[MovesIdx[1]]);
                                             List.ReplaceItem(DeepeningScore, DeepeningScoreOrderMap[MovesIdx[1]], ((MaxDepth * 100000) + (10000 + Score)));
-                                            If (MinMaxMovesRes[1] == BlackKingsideCastling)
+                                            If (MinMaxMoveRes == BlackKingsideCastling)
                                             {
                                                 BestMoveFromIdx = VirtualBoard[5];
                                                 BestMoveToIdx = VirtualBoard[7];
                                             }
                                             Else
                                             {
-                                                If (MinMaxMovesRes[1] == BlackQueensideCastling)
+                                                If (MinMaxMoveRes == BlackQueensideCastling)
                                                 {
                                                     BestMoveFromIdx = VirtualBoard[5];
                                                     BestMoveToIdx = VirtualBoard[3];
                                                 }
                                                 Else
                                                 {
-                                                    BestMoveFromIdx = floor((MinMaxMovesRes[1] / 100));
-                                                    BestMoveToIdx = floor((MinMaxMovesRes[1] % 100));
+                                                    BestMoveFromIdx = floor((MinMaxMoveRes / 100));
+                                                    BestMoveToIdx = floor((MinMaxMoveRes % 100));
                                                 }
                                             }
                                             Event.Broadcast("showbestmove");
@@ -2331,7 +2329,7 @@ Define ApplyMove(num Depth) (warp=true)
                 CurrentBoardHash2 += MoveHashLookupBlack[IdxSub];
                 If (Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx])))
                 {
-                    If (TargetPieces[Depth] == Empty)
+                    If (TargetPieces[Depth] == 0)
                     {
                         List.ReplaceItem(TargetPiecesIdx, Depth, (TargetIdx - 8));
                         List.ReplaceItem(TargetPieces, Depth, Board[(TargetIdx - 8)]);
@@ -2397,7 +2395,7 @@ Define ApplyMove(num Depth) (warp=true)
                 CurrentBoardHash2 += MoveHashLookupWhite[IdxSub];
                 If (Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx])))
                 {
-                    If (TargetPieces[Depth] == Empty)
+                    If (TargetPieces[Depth] == 0)
                     {
                         List.ReplaceItem(TargetPiecesIdx, Depth, (TargetIdx + 8));
                         List.ReplaceItem(TargetPieces, Depth, Board[(TargetIdx + 8)]);
@@ -3062,25 +3060,6 @@ Define CalcBoardStats (warp=true)
     WhiteMinorCountLocal = WhiteMinorCount;
     BlackQueenCountLocal = BlackQueenCount;
     BlackMinorCountLocal = BlackMinorCount;
-}
-
-Define CalculateOpeningMoves (warp=true)
-{
-    List.DeleteItem(MinMaxMovesRes, all);
-    Call GenerateMovesPublic(1);
-    Call CreateCurrentBoardHash;
-    IdxOuter = 1;
-    Repeat (List.Length(OpeningMovesMapHash))
-    {
-        If (OpeningMovesMapHash[IdxOuter] == CurrentBoardHash)
-        {
-            If List.ContainsItem(Moves1, OpeningMovesMapMove[IdxOuter])
-            {
-                List.Add(MinMaxMovesRes, OpeningMovesMapMove[IdxOuter]);
-            }
-        }
-        IdxOuter += 1;
-    }
 }
 
 Define ClearBoardAttackedByMove(num Depth) (warp=true)
@@ -4103,16 +4082,15 @@ Define ExecuteEngineMoveImpl (warp=false)
         Stop(this script);
     }
     Event.Broadcast("OpeningBookHide");
-    List.DeleteItem(MinMaxMovesRes, all);
     BestMove = "";
     If (Level > 2)
     {
-        Call CalculateOpeningMoves;
-        If (List.Length(MinMaxMovesRes) > 0)
+        Call GetOpeningMoves;
+        If (List.Length(OpeningMovesRes) > 0)
         {
             Event.Broadcast("OpeningBookShow");
+            BestMove = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
         }
-        BestMove = MinMaxMovesRes[Operator.Random(1 , List.Length(MinMaxMovesRes))];
     }
     Call IsEngineValidMove(BestMove);
     If (ValidMoveRes == 0)
@@ -5068,14 +5046,13 @@ Define GetBestMoveBlitz (warp=false)
     {
         If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (Not (((BestMinMaxRes > (BlackKing / 2)) Or (BestMinMaxRes < (WhiteKing / 2)))))))
         {
-            List.DeleteItem(MinMaxMovesRes, all);
             Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(10)((1 == 1));
-            If (List.Length(MinMaxMovesRes) > 0)
+            If (Not ((MinMaxMoveRes == "")))
             {
                 If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
                 {
-                    BestMove = MinMaxMovesRes[1];
-                    BestMinMaxRes = MinMaxValuesRes[1];
+                    BestMove = MinMaxMoveRes;
+                    BestMinMaxRes = MinMaxEvalRes;
                     Call OnEvaluationChanged(BestMinMaxRes);
                 }
             }
@@ -5089,7 +5066,6 @@ Define GetBestMoveEasy (warp=false)
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeLimitMinMax = 10;
     BestMove = "";
-    List.DeleteItem(MinMaxMovesRes, all);
     If (Level == 1)
     {
         JuniorDistQuota = 40;
@@ -5104,7 +5080,7 @@ Define GetBestMoveEasy (warp=false)
         }
     }
     Call AlphaBetaMinMax(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
-    BestMove = MinMaxMovesRes[1];
+    BestMove = MinMaxMoveRes;
     CurrentValue = Operator.Random(1 , 100);
     If ((CurrentValue > ((JuniorSearchQuota + 100) / 2)) Or (((BoardAttackedByWhite[floor((BestMove / 100))] == 0) And (Board[floor((BestMove % 100))] == 0)) And (CurrentValue > JuniorSearchQuota)))
     {
@@ -5180,17 +5156,16 @@ Define GetBestMoveMedDiff (warp=false)
         {
             ThinkTimeLimitMinMax = ThinkTimeLimit;
         }
-        List.DeleteItem(MinMaxMovesRes, all);
         Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
         IsDone = 1;
         If (IsDone == 1)
         {
-            If ((List.Length(MinMaxMovesRes) > 0) And (Variable.Length(MinMaxMovesRes[1]) > 0))
+            If (Not ((MinMaxMoveRes == "")))
             {
                 If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
                 {
-                    BestMove = MinMaxMovesRes[1];
-                    BestMinMaxRes = MinMaxValuesRes[1];
+                    BestMove = MinMaxMoveRes;
+                    BestMinMaxRes = MinMaxEvalRes;
                     Call OnEvaluationChanged(BestMinMaxRes);
                 }
             }
@@ -5616,6 +5591,25 @@ Define GetMoveScore(string SourcePiece)(string TargetPiece)(string FromIdx)(stri
                 MoveScoreRes += (-25 * Delta);
             }
         }
+    }
+}
+
+Define GetOpeningMoves (warp=true)
+{
+    List.DeleteItem(OpeningMovesRes, all);
+    Call GenerateMovesPublic(1);
+    Call CreateCurrentBoardHash;
+    IdxOuter = 1;
+    Repeat (List.Length(OpeningMovesMapHash))
+    {
+        If (OpeningMovesMapHash[IdxOuter] == CurrentBoardHash)
+        {
+            If List.ContainsItem(Moves1, OpeningMovesMapMove[IdxOuter])
+            {
+                List.Add(OpeningMovesRes, OpeningMovesMapMove[IdxOuter]);
+            }
+        }
+        IdxOuter += 1;
     }
 }
 
@@ -7226,7 +7220,7 @@ Define InitOpeningMovesMap (warp=true)
 
 Define InitOpeningMovesMapImpl(string Depth)(string GameMovesLen)(string Move)(bool Init) (warp=true)
 {
-    List.DeleteAll(MinMaxMovesRes);
+    List.DeleteAll(OpeningMovesRes);
     Idx = 1;
     Repeat (List.Length(OpeningMovesMapStack))
     {
@@ -7253,7 +7247,7 @@ Define InitOpeningMovesMapImpl(string Depth)(string GameMovesLen)(string Move)(b
             CurrentMoveOuter = Operator.Join(Operator.Join(Operator.LetterOf(CurrentValue, (GameMovesLen + IdxString)), Operator.LetterOf(CurrentValue, ((GameMovesLen + IdxString) + 1))), Operator.Join(Operator.LetterOf(CurrentValue, ((GameMovesLen + IdxString) + 2)), Operator.LetterOf(CurrentValue, ((GameMovesLen + IdxString) + 3))));
             If (Not ((CurrentMoveOuter == "")))
             {
-                List.Add(MinMaxMovesRes, CurrentMoveOuter);
+                List.Add(OpeningMovesRes, CurrentMoveOuter);
             }
             List.ReplaceItem(OpeningMovesMapStack, Idx, ((OpeningMovesMapStack[Idx] * 2) + 1));
         }
@@ -7263,14 +7257,14 @@ Define InitOpeningMovesMapImpl(string Depth)(string GameMovesLen)(string Move)(b
         }
         Idx += 1;
     }
-    If (List.Length(MinMaxMovesRes) > 0)
+    If (List.Length(OpeningMovesRes) > 0)
     {
         List.DeleteAll(TmpList1);
         Call ClearMoveList(Depth);
         IdxOuter = 1;
-        Repeat (List.Length(MinMaxMovesRes))
+        Repeat (List.Length(OpeningMovesRes))
         {
-            CurrentMoveOuter = MinMaxMovesRes[IdxOuter];
+            CurrentMoveOuter = OpeningMovesRes[IdxOuter];
             List.Add(OpeningMovesMapHash, CurrentBoardHash);
             List.Add(OpeningMovesMapMove, CurrentMoveOuter);
             If (Not (List.ContainsItem(TmpList1, CurrentMoveOuter)))
@@ -7361,54 +7355,54 @@ Define IsBlackKingCheckMate (warp=true)
     }
 }
 
-Define IsCheckingMove(string SourceIdx)(string TargetIdx)(string Piece) (warp=true)
+Define IsCheckingPiece(string Piece)(string Idx) (warp=true)
 {
-    IsCheckingMoveRes = 0;
+    IsCheckingPieceRes = 0;
     If (Piece > 0)
     {
-        If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((TargetIdx * 100) + WhiteKingIdx))] == "")
+        If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == "")
         {
             Stop(this script);
         }
         If (Piece == BlackPawn)
         {
-            If (IdxToFile[TargetIdx] == IdxToFile[WhiteKingIdx])
+            If (IdxToFile[Idx] == IdxToFile[WhiteKingIdx])
             {
                 Stop(this script);
             }
-            IsCheckingMoveRes = 1;
+            IsCheckingPieceRes = 1;
             Stop(this script);
         }
         If (Piece == BlackKnight)
         {
-            IsCheckingMoveRes = 1;
+            IsCheckingPieceRes = 1;
             Stop(this script);
         }
-        CurrentMove = MoveNotationLookup[((TargetIdx * 100) + WhiteKingIdx)];
+        CurrentMove = MoveNotationLookup[((Idx * 100) + WhiteKingIdx)];
     }
     Else
     {
-        If (MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((TargetIdx * 100) + BlackKingIdx))] == "")
+        If (MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == "")
         {
             Stop(this script);
         }
         If (Piece == WhitePawn)
         {
-            If (IdxToFile[TargetIdx] == IdxToFile[BlackKingIdx])
+            If (IdxToFile[Idx] == IdxToFile[BlackKingIdx])
             {
                 Stop(this script);
             }
-            IsCheckingMoveRes = 1;
+            IsCheckingPieceRes = 1;
             Stop(this script);
         }
         If (Piece == WhiteKnight)
         {
-            IsCheckingMoveRes = 1;
+            IsCheckingPieceRes = 1;
             Stop(this script);
         }
-        CurrentMove = MoveNotationLookup[((TargetIdx * 100) + BlackKingIdx)];
+        CurrentMove = MoveNotationLookup[((Idx * 100) + BlackKingIdx)];
     }
-    SourceIdx = TargetIdx;
+    SourceIdx = Idx;
     IdxInc = MovePathStepInc[CurrentMove];
     Repeat ((MovePathDelta[CurrentMove] - 1))
     {
@@ -7418,7 +7412,7 @@ Define IsCheckingMove(string SourceIdx)(string TargetIdx)(string Piece) (warp=tr
             Stop(this script);
         }
     }
-    IsCheckingMoveRes = 1;
+    IsCheckingPieceRes = 1;
 }
 
 Define IsDrawByMaterial (warp=true)
@@ -7852,6 +7846,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     {
         Call EvaluateBoard;
         EvalResultBase = EvalResult;
+        EvalMaterialBase = Operator.Round((((((BlackQueenCount * 9) + (BlackRookCount * 5)) + (((BlackBishopCount * 3.3) + (((BlackMinorCount - BlackRookCount) - BlackBishopCount) * 3.1)) + BlackPawnCount)) - (((WhiteQueenCount * 9) + (WhiteRookCount * 5)) + (((WhiteBishopCount * 3.3) + (((WhiteMinorCount - WhiteRookCount) - WhiteBishopCount) * 3.1)) + WhitePawnCount))) * 10));
         Stop(this script);
     }
     If (IsProfilerEnabled == 1)
@@ -7861,10 +7856,10 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     If (Depth == 1)
     {
         List.ReplaceItem(PosScoreDeltaSum, Depth, PosScoreDelta[Depth]);
-        List.ReplaceItem(CapturesDeltaSum, Depth, (TargetPieces[Depth] - PromotionPieces[Depth]));
+        List.ReplaceItem(CapturesDeltaSum, Depth, TargetPieces[Depth]);
         If (Not ((PromotionPieces[Depth] == 0)))
         {
-            List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + SourcePieces[Depth]));
+            List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
         }
         Call EvaluateBoardExtended1(Depth);
         List.ReplaceItem(EvalExtended1, Depth, EvalExtendedResult1);
@@ -7877,10 +7872,10 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     {
         SourcePieceOuter = abs(SourcePieces[Depth]);
         List.ReplaceItem(PosScoreDeltaSum, Depth, (PosScoreDeltaSum[(Depth - 1)] + PosScoreDelta[Depth]));
-        List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[(Depth - 1)] + (TargetPieces[Depth] - PromotionPieces[Depth])));
+        List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[(Depth - 1)] + TargetPieces[Depth]));
         If (Not ((PromotionPieces[Depth] == 0)))
         {
-            List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + SourcePieces[Depth]));
+            List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
         }
         If (((SourcePieceOuter == BlackPawn) Or (SourcePieceOuter == BlackKing)) Or ((abs(TargetPieces[Depth]) == BlackPawn) Or (Not ((PromotionPieces[Depth] == 0)))))
         {
@@ -7891,19 +7886,33 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         {
             List.ReplaceItem(EvalExtended1, Depth, EvalExtended1[(Depth - 1)]);
         }
-        If ((Not (Quiescence)) And (((SourcePieceOuter == BlackKing) Or (SourcePieceOuter == BlackRook)) Or ((SourcePieceOuter == BlackPawn) Or (abs(TargetPieces[Depth]) == BlackPawn))))
+        If (Not (Quiescence))
         {
-            Call EvaluateBoardExtended2(Depth);
-            List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
+            If (((SourcePieceOuter == BlackKing) Or (SourcePieceOuter == BlackRook)) Or ((SourcePieceOuter == BlackPawn) Or (abs(TargetPieces[Depth]) == BlackPawn)))
+            {
+                Call EvaluateBoardExtended2(Depth);
+                List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
+            }
+            Else
+            {
+                List.ReplaceItem(EvalExtended2, Depth, EvalExtended2[(Depth - 1)]);
+            }
         }
         Else
         {
             List.ReplaceItem(EvalExtended2, Depth, EvalExtended2[(Depth - 1)]);
         }
-        If ((Not (Quiescence)) And ((BoardAttackedCalculated[Depth] == 1) Or (BoardAttackedCalculated[(Depth - 1)] == 1)))
+        If (Not (Quiescence))
         {
-            Call EvaluateBoardExtended3(Depth);
-            List.ReplaceItem(EvalExtended3, Depth, EvalExtendedResult3);
+            If ((BoardAttackedCalculated[Depth] == 1) Or (BoardAttackedCalculated[(Depth - 1)] == 1))
+            {
+                Call EvaluateBoardExtended3(Depth);
+                List.ReplaceItem(EvalExtended3, Depth, EvalExtendedResult3);
+            }
+            Else
+            {
+                List.ReplaceItem(EvalExtended3, Depth, EvalExtended3[(Depth - 1)]);
+            }
         }
         Else
         {
@@ -7915,10 +7924,6 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         If (abs(TargetPieces[Depth]) == BlackPawn)
         {
             List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + (TargetPieces[Depth] * 0.2)));
-        }
-        If (Not ((PromotionPieces[Depth] == 0)))
-        {
-            List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[Depth] + (SourcePieces[Depth] * 0.2)));
         }
     }
     If (Depth == MaxDepth)
@@ -7936,12 +7941,11 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (BlackMobBonus[Depth] - WhiteMobBonus[Depth])));
         If (CapturesDeltaSum[Depth] == 0)
         {
-            CurrentValue = Operator.Round((((((BlackQueenCount * 9) + (BlackRookCount * 5)) + (((BlackBishopCount * 3.3) + (((BlackMinorCount - BlackRookCount) - BlackBishopCount) * 3.1)) + BlackPawnCount)) - (((WhiteQueenCount * 9) + (WhiteRookCount * 5)) + (((WhiteBishopCount * 3.3) + (((WhiteMinorCount - WhiteRookCount) - WhiteBishopCount) * 3.1)) + WhitePawnCount))) * 10));
-            If (Not ((CurrentValue == 0)))
+            If (Not ((EvalMaterialBase == 0)))
             {
                 HasCaptures = 0;
                 Idx = Depth;
-                Repeat Until ((HasCaptures == 1) Or (Idx < 1))
+                Repeat Until ((HasCaptures == 1) Or (Idx == 0))
                 {
                     If (Not ((TargetPieces[Idx] == 0)))
                     {
@@ -7951,19 +7955,15 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 }
                 If (HasCaptures == 1)
                 {
-                    If (CurrentValue > 0)
+                    If (EvalMaterialBase > 0)
                     {
                         ScoreCalcRes += 50;
-                        ScoreCalcResIsDynamic = 1;
                     }
                     Else
                     {
-                        If (CurrentValue < 0)
-                        {
-                            ScoreCalcRes += -50;
-                            ScoreCalcResIsDynamic = 1;
-                        }
+                        ScoreCalcRes += -50;
                     }
+                    ScoreCalcResIsDynamic = 1;
                 }
             }
         }
