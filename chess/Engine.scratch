@@ -463,7 +463,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.265 (25.11.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.266 (26.11.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -2303,10 +2303,6 @@ Define ApplyMove(num Depth) (warp=true)
                 {
                     WhiteKingIdx = TargetIdx;
                     CurrentBoardHash2 += MoveHashLookupWhite[IdxSub];
-                    If (Not ((TargetPieces[Depth] == 0)))
-                    {
-                        List.ReplaceItem(PawnShelterCapture, Depth, 1);
-                    }
                 }
             }
         }
@@ -2321,7 +2317,7 @@ Define ApplyMove(num Depth) (warp=true)
                 {
                     CurrentBoardHash2 += MoveHashLookupBlack[IdxSub];
                     BlackPawnCountLocal += -1;
-                    If (((IdxToRank[BlackKingIdx] - IdxToRank[TargetIdx]) < 3) And (abs((IdxToFile[BlackKingIdx] - IdxToFile[TargetIdx])) < 3))
+                    If (((Not ((IdxToRank[BlackKingIdx] > IdxToRank[TargetIdx]))) And (abs((IdxToRank[BlackKingIdx] - IdxToRank[TargetIdx])) < 3)) And (abs((IdxToFile[BlackKingIdx] - IdxToFile[TargetIdx])) < 3))
                     {
                         List.ReplaceItem(PawnShelterCapture, Depth, 1);
                     }
@@ -2363,7 +2359,7 @@ Define ApplyMove(num Depth) (warp=true)
                     {
                         CurrentBoardHash2 += MoveHashLookupWhite[IdxSub];
                         WhitePawnCountLocal += -1;
-                        If (((IdxToRank[TargetIdx] - IdxToRank[WhiteKingIdx]) < 3) And (abs((IdxToFile[WhiteKingIdx] - IdxToFile[TargetIdx])) < 3))
+                        If (((Not ((IdxToRank[TargetIdx] > IdxToRank[WhiteKingIdx]))) And (abs((IdxToRank[TargetIdx] - IdxToRank[WhiteKingIdx])) < 3)) And (abs((IdxToFile[WhiteKingIdx] - IdxToFile[TargetIdx])) < 3))
                         {
                             List.ReplaceItem(PawnShelterCapture, Depth, 1);
                         }
@@ -3498,17 +3494,34 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
 Define EvaluateBoardExtended2(string Depth) (warp=true)
 {
     EvalExtendedResult2 = 0;
-    If ((HasBlackCastled == 1) And (HasWhiteCastled == 1))
+    If (IsEndgame2 == 1)
     {
         Stop(this script);
     }
-    Call TTProbeBoard(CurrentBoardHash);
+    CurrentValue2 = CurrentBoardHash2;
+    Idx = 1;
+    Repeat (64)
+    {
+        If (abs(Board[Idx]) == BlackRook)
+        {
+            If (Board[Idx] > 0)
+            {
+                CurrentValue2 += MoveHashLookupBlack[((PieceIdxLookup[BlackRook] * 10000) + Idx)];
+            }
+            Else
+            {
+                CurrentValue2 += MoveHashLookupWhite[((PieceIdxLookup[BlackRook] * 10000) + Idx)];
+            }
+        }
+        Idx += 1;
+    }
+    Call TTProbeBoard(CurrentValue2);
     If ((TTProbeRes == 1) And ((Not ((TTProbeBoardScore2Res == ""))) And ((TTCurrentAge - TTProbeBoardAgeRes) < 25)))
     {
         EvalExtendedResult2 = TTProbeBoardScore2Res;
         Stop(this script);
     }
-    If ((HasBlackCastled == 0) And ((IsEndgame == 0) Or ((BlackMinorCount > 1) Or (BlackQueenCount > 0))))
+    If ((HasBlackCastled == 0) And (IsEndgame == 0))
     {
         If (IsBlackCastlingPossible == 0)
         {
@@ -3633,18 +3646,21 @@ Define EvaluateBoardExtended2(string Depth) (warp=true)
             }
         }
         EvalExtendedResult2 += Operator.Round(((KingProtection * 25) * (0.2 + (WhiteQueenCountLocal * 0.5))));
-        Call IsTrappedRook(BlackRook)(BlackKing)(BlackKnight)(Board[1])(Board[2])(Board[3])(Board[4]);
-        If (IsTrapped == 1)
+        If (BlackRookCountLocal > 0)
         {
-            EvalExtendedResult2 += (-8 * (4 - KingProtection));
-        }
-        Call IsTrappedRook(BlackRook)(BlackKing)(BlackKnight)(Board[8])(Board[7])(Board[6])(Board[5]);
-        If (IsTrapped == 1)
-        {
-            EvalExtendedResult2 += (-8 * (4 - KingProtection));
+            Call IsTrappedRook(BlackRook)(BlackKing)(BlackKnight)(Board[1])(Board[2])(Board[3])(Board[4]);
+            If (IsTrapped == 1)
+            {
+                EvalExtendedResult2 += (-8 * (4 - KingProtection));
+            }
+            Call IsTrappedRook(BlackRook)(BlackKing)(BlackKnight)(Board[8])(Board[7])(Board[6])(Board[5]);
+            If (IsTrapped == 1)
+            {
+                EvalExtendedResult2 += (-8 * (4 - KingProtection));
+            }
         }
     }
-    If ((HasWhiteCastled == 0) And ((IsEndgame == 0) Or ((WhiteMinorCount > 1) Or (WhiteQueenCount > 0))))
+    If ((HasWhiteCastled == 0) And (IsEndgame == 0))
     {
         If (IsWhiteCastlingPossible == 0)
         {
@@ -3769,18 +3785,79 @@ Define EvaluateBoardExtended2(string Depth) (warp=true)
             }
         }
         EvalExtendedResult2 += (0 - Operator.Round(((KingProtection * 25) * (0.2 + (BlackQueenCountLocal * 0.5)))));
-        Call IsTrappedRook(WhiteRook)(WhiteKing)(WhiteKnight)(Board[57])(Board[58])(Board[59])(Board[60]);
-        If (IsTrapped == 1)
+        If (WhiteRookCountLocal > 0)
         {
-            EvalExtendedResult2 += (8 * (4 - KingProtection));
-        }
-        Call IsTrappedRook(WhiteRook)(WhiteKing)(WhiteKnight)(Board[64])(Board[63])(Board[62])(Board[61]);
-        If (IsTrapped == 1)
-        {
-            EvalExtendedResult2 += (8 * (4 - KingProtection));
+            Call IsTrappedRook(WhiteRook)(WhiteKing)(WhiteKnight)(Board[57])(Board[58])(Board[59])(Board[60]);
+            If (IsTrapped == 1)
+            {
+                EvalExtendedResult2 += (8 * (4 - KingProtection));
+            }
+            Call IsTrappedRook(WhiteRook)(WhiteKing)(WhiteKnight)(Board[64])(Board[63])(Board[62])(Board[61]);
+            If (IsTrapped == 1)
+            {
+                EvalExtendedResult2 += (8 * (4 - KingProtection));
+            }
         }
     }
-    Call TTStoreBoard(CurrentBoardHash)("")(EvalExtendedResult2)("")("")("");
+    If ((IsEndgame2 == 0) And ((BlackRookCountLocal > 0) Or (WhiteRookCountLocal > 0)))
+    {
+        List.DeleteItem(BlackPawnCount, all);
+        List.DeleteItem(WhitePawnCount, all);
+        Repeat (8)
+        {
+            List.Add(BlackPawnCount, 0);
+            List.Add(WhitePawnCount, 0);
+        }
+        Idx = 1;
+        Repeat (64)
+        {
+            If (abs(Board[Idx]) == BlackPawn)
+            {
+                File = IdxToFile[Idx];
+                If (Board[Idx] > 0)
+                {
+                    List.ReplaceItem(BlackPawnCount, File, (BlackPawnCount[File] + 1));
+                }
+                Else
+                {
+                    List.ReplaceItem(WhitePawnCount, File, (WhitePawnCount[File] + 1));
+                }
+            }
+            Idx += 1;
+        }
+        Idx = 1;
+        Repeat (64)
+        {
+            If (abs(Board[Idx]) == BlackRook)
+            {
+                File = IdxToFile[Idx];
+                If (Board[Idx] > 0)
+                {
+                    If (BlackPawnCount[File] == 0)
+                    {
+                        EvalExtendedResult2 += 10;
+                        If (WhitePawnCount[File] == 0)
+                        {
+                            EvalExtendedResult2 += 15;
+                        }
+                    }
+                }
+                Else
+                {
+                    If (WhitePawnCount[File] == 0)
+                    {
+                        EvalExtendedResult2 += -10;
+                        If (BlackPawnCount[File] == 0)
+                        {
+                            EvalExtendedResult2 += -15;
+                        }
+                    }
+                }
+            }
+            Idx += 1;
+        }
+    }
+    Call TTStoreBoard(CurrentValue2)("")(EvalExtendedResult2)("")("")("");
 }
 
 Define EvaluateBoardExtended3(string Depth) (warp=true)
@@ -6017,7 +6094,7 @@ Define InitBoard (warp=true)
         List.Add(SpecialCaptureDeltaSumPenalty, 75);
         List.Add(SpecialCaptureDeltaSumMeta, 0);
         List.Add(SpecialCaptureDeltaSum, abs(((BlackPawn + BlackPawn) + WhiteBishop)));
-        List.Add(SpecialCaptureDeltaSumPenalty, 50);
+        List.Add(SpecialCaptureDeltaSumPenalty, 75);
         List.Add(SpecialCaptureDeltaSumMeta, 0);
         List.Add(SpecialCaptureDeltaSum, abs(((BlackPawn + BlackPawn) + WhiteKnight)));
         List.Add(SpecialCaptureDeltaSumPenalty, 75);
@@ -6026,7 +6103,7 @@ Define InitBoard (warp=true)
         List.Add(SpecialCaptureDeltaSumPenalty, 50);
         List.Add(SpecialCaptureDeltaSumMeta, 0);
         List.Add(SpecialCaptureDeltaSum, abs((BlackPawn + WhiteKnight)));
-        List.Add(SpecialCaptureDeltaSumPenalty, 75);
+        List.Add(SpecialCaptureDeltaSumPenalty, 50);
         List.Add(SpecialCaptureDeltaSumMeta, 0);
         List.Add(SpecialCaptureDeltaSum, abs(((BlackPawn + (BlackKnight + BlackBishop)) + WhiteQueen)));
         List.Add(SpecialCaptureDeltaSumPenalty, 50);
@@ -7579,7 +7656,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         }
         If (Not (Quiescence))
         {
-            If ((SourcePieceOuter == BlackKing) Or (SourcePieceOuter == BlackRook))
+            If ((SourcePieceOuter == BlackKing) Or (((SourcePieceOuter == BlackRook) Or (abs(TargetPieces[Depth]) == BlackRook)) Or (((SourcePieceOuter == BlackPawn) And (Not ((TargetPieces[Depth] == 0)))) Or (abs(TargetPieces[Depth]) == BlackPawn))))
             {
                 Call EvaluateBoardExtended2(Depth);
                 List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
