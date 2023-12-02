@@ -109,6 +109,7 @@ KingFile =
 KingProtection = 0
 KingRank = 
 LeftOppPawnRank = 0
+MaxSearchDepth = 
 MetaState = 1100111111
 MinMaxEvalRes = 0
 MinMaxMoveRes = 0
@@ -463,7 +464,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.273 (30.11.2023) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.273 (02.12.2023) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1342,7 +1343,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         }
         If (Count > 2)
         {
-            List.ReplaceItem(MinMaxResults, Depth, 0);
+            List.ReplaceItem(MinMaxResults, Depth, 0.1);
             Stop(this script);
         }
         If (IsEndgame == 1)
@@ -1415,7 +1416,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call TTProbeNode(CurrentBoardHash)(Depth);
         If (TTProbeRes == 1)
         {
-            If ((((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeNodeScoreRes == 0)))) And (Not ((abs(TTProbeNodeScoreRes) > (BlackKing / 2))))) And ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (IdxDeepening - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1))))
+            If ((Not ((TTProbeNodeScoreRes == ""))) And ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (IdxDeepening - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1))))
             {
                 If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
                 {
@@ -1791,7 +1792,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             {
                                 If (CurrentValue > 2)
                                 {
-                                    CurrentValue = 2;
+                                    CurrentValue = 1;
                                 }
                             }
                             If (CurrentValue < 0)
@@ -2102,20 +2103,23 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If ((IsMinMaxTimeout == 0) And (Depth > 1))
     {
-        If Quiescence
+        If (Not ((MinMaxResults[Depth] == 0.1)))
         {
-            If (((Not ((MinMaxResults[Depth] == 0))) And (Not ((abs(MinMaxResults[Depth]) > (BlackKing / 2))))) And (Not (InitialDeepening)))
+            If Quiescence
             {
-                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
+                If (Not (InitialDeepening))
+                {
+                    Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
+                }
+                Else
+                {
+                    Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(-1)("")("")("")("")("")("");
+                }
             }
             Else
             {
-                Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(-1)("")("")("")("")("")("");
+                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")((IdxDeepening - Depth))("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
             }
-        }
-        Else
-        {
-            Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")((IdxDeepening - Depth))("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
         }
         If ((IsProfilerEnabled == 1) And (MovesIdxBestMove[Depth] > 0))
         {
@@ -4919,6 +4923,7 @@ Define GenerateMovesPublic(string Depth) (warp=true)
 
 Define GetBestMoveBlitz (warp=false)
 {
+    MaxSearchDepth = 20;
     ThinkTimeLimit = ((Level - 2) * 2);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsMinMaxTimeout = 0;
@@ -4931,7 +4936,7 @@ Define GetBestMoveBlitz (warp=false)
     {
         If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (Not (((BestMinMaxRes > (BlackKing / 2)) Or (BestMinMaxRes < (WhiteKing / 2)))))))
         {
-            Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))((23 - IdxDeepening))((1 == 1));
+            Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))((MaxSearchDepth - IdxDeepening))((1 == 1));
             If (Not ((MinMaxMoveRes == "")))
             {
                 If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
@@ -4987,6 +4992,7 @@ Define GetBestMoveEasy (warp=false)
 
 Define GetBestMoveMedDiff (warp=false)
 {
+    MaxSearchDepth = 30;
     If (Level == 5)
     {
         ThinkTimeLimit = 10;
@@ -5031,7 +5037,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         Else
         {
-            QuiescenceDepth = (23 - IdxDeepening);
+            QuiescenceDepth = (MaxSearchDepth - IdxDeepening);
         }
         If ((IsEndgame2 == 0) And ((IdxDeepening + (IsEndgame * 2)) < Level))
         {
@@ -5051,7 +5057,7 @@ Define GetBestMoveMedDiff (warp=false)
                 Call OnEvaluationChanged(BestMinMaxRes);
             }
         }
-        If (((IsMinMaxTimeout == 1) Or (IdxDeepening == 23)) Or (abs(BestMinMaxRes) > (BlackKing / 2)))
+        If (((IsMinMaxTimeout == 1) Or (IdxDeepening == MaxSearchDepth)) Or (abs(BestMinMaxRes) > (BlackKing / 2)))
         {
             IsDeepeningDone = 1;
         }
@@ -7288,10 +7294,15 @@ Define IsPlyExtension(string Depth) (warp=true)
     {
         If (1 == 0)
         {
-            If (PlyExtensionTagged[Depth] == 1)
+            Idx = 2;
+            Repeat ((Depth - 1))
             {
-                IsPlyExtensionRes = 1;
-                Stop(this script);
+                If (CheckedState[Idx] == 1)
+                {
+                    IsPlyExtensionRes = 1;
+                    Stop(this script);
+                }
+                Idx += 1;
             }
         }
     }
