@@ -472,7 +472,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.359 (08.02.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.360 (09.02.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1166,9 +1166,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If (Depth > 1)
     {
         Call TTProbeNode(CurrentBoardHash)(Depth);
-        If (TTProbeRes == 1)
+        If ((TTProbeRes == 1) And (Not ((TTProbeNodeScoreRes == ""))))
         {
-            If ((Not ((TTProbeNodeScoreRes == ""))) And (((((Not (Quiescence)) And (Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash)))) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1))))
+            If ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1)))
             {
                 If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
                 {
@@ -1176,9 +1176,12 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     {
                         If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > (BlackKing / 2)))))
                         {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
-                            Stop(this script);
+                            If (Quiescence Or (Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))))
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
+                                Stop(this script);
+                            }
                         }
                     }
                 }
@@ -5299,15 +5302,35 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             MoveScoreRes += (0 - TargetPieceParam);
         }
     }
+    If (Depth == 1)
+    {
+        List.ReplaceItem(BoardAttackedByBlackPieceSnapshot, (Depth + 1), BoardAttackedByBlackPieceSnapshot[Depth]);
+        List.ReplaceItem(BoardAttackedByBlackSnapshot, (Depth + 1), BoardAttackedByBlackSnapshot[Depth]);
+        List.ReplaceItem(BoardAttackedByWhitePieceSnapshot, (Depth + 1), BoardAttackedByWhitePieceSnapshot[Depth]);
+        List.ReplaceItem(BoardAttackedByWhiteSnapshot, (Depth + 1), BoardAttackedByWhiteSnapshot[Depth]);
+    }
     Found = 0;
     Call IsSquareAttackedViaFixup(Depth)(FromIdx)(-1);
     If (IsSquareAttackedRes == 1)
     {
-        SourcePiece = Board[IsSquareAttackedIdxRes];
-        Call IsSquareAttackedViaFixup((Depth - 1))(FromIdx)(-1);
-        If ((IsSquareAttackedRes == 0) Or (abs(SourcePieceParam) > abs(SourcePiece)))
+        If (abs(SourcePieceParam) > abs(Board[IsSquareAttackedIdxRes]))
         {
             Found = 1;
+        }
+        Else
+        {
+            If (Depth == 1)
+            {
+                Call IsSquareAttackedViaFixup((Depth + 1))(FromIdx)(-1);
+            }
+            Else
+            {
+                Call IsSquareAttackedViaFixup((Depth - 1))(FromIdx)(-1);
+            }
+            If (IsSquareAttackedRes == 0)
+            {
+                Found = 1;
+            }
         }
     }
     If (Found == 1)
@@ -5323,11 +5346,62 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Call IsSquareAttackedViaFixup(Depth)(ToIdx)(-1);
         If (IsSquareAttackedRes == 1)
         {
-            SourcePiece = Board[IsSquareAttackedIdxRes];
-            Call IsSquareAttackedViaFixup((Depth - 1))(ToIdx)(FromIdx);
-            If ((IsSquareAttackedRes == 0) Or (abs(SourcePieceParam) > abs(SourcePiece)))
+            If (abs(SourcePieceParam) > abs(Board[IsSquareAttackedIdxRes]))
             {
                 MoveScoreRes += (0 - SourcePieceParam);
+            }
+            Else
+            {
+                If (Depth == 1)
+                {
+                    Call IsSquareAttackedViaFixup((Depth + 1))(ToIdx)(FromIdx);
+                }
+                Else
+                {
+                    Call IsSquareAttackedViaFixup((Depth - 1))(ToIdx)(FromIdx);
+                }
+                If (IsSquareAttackedRes == 0)
+                {
+                    MoveScoreRes += (0 - SourcePieceParam);
+                }
+                Else
+                {
+                    If (Depth == 1)
+                    {
+                        Call IsSquareAttackedViaFixup((Depth + 1))(FromIdx)(-1);
+                    }
+                    Else
+                    {
+                        Call IsSquareAttackedViaFixup((Depth - 1))(FromIdx)(-1);
+                    }
+                    If ((IsSquareAttackedRes == 1) And (abs(Board[IsSquareAttackedIdxRes]) > BlackKnight))
+                    {
+                        If ((IdxToFile[FromIdx] == IdxToFile[ToIdx]) And (IdxToFile[FromIdx] == IdxToFile[IsSquareAttackedIdxRes]))
+                        {
+                            MoveScoreRes += (0 - SourcePieceParam);
+                        }
+                        Else
+                        {
+                            If ((IdxToRank[FromIdx] == IdxToRank[ToIdx]) And (IdxToRank[FromIdx] == IdxToRank[IsSquareAttackedIdxRes]))
+                            {
+                                MoveScoreRes += (0 - SourcePieceParam);
+                            }
+                            Else
+                            {
+                                If (abs((IdxToFile[FromIdx] - IdxToFile[ToIdx])) == abs((IdxToRank[FromIdx] - IdxToRank[ToIdx])))
+                                {
+                                    If (abs((IdxToFile[FromIdx] - IdxToFile[IsSquareAttackedIdxRes])) == abs((IdxToRank[FromIdx] - IdxToRank[IsSquareAttackedIdxRes])))
+                                    {
+                                        If (abs((IdxToFile[IsSquareAttackedIdxRes] - IdxToFile[ToIdx])) == abs((IdxToRank[IsSquareAttackedIdxRes] - IdxToRank[ToIdx])))
+                                        {
+                                            MoveScoreRes += (0 - SourcePieceParam);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
