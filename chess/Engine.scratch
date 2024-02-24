@@ -1,5 +1,7 @@
 //----- Variables -----------------------------------------------------------------------------------------------------
 
+AbsMaxCheckmateEval =
+AbsMinCheckmateEval =
 BestMinMaxRes = 21
 BestMove = 
 BlackBishopCount = 2
@@ -110,6 +112,7 @@ KingFile =
 KingProtection = 0
 KingRank = 
 LeftOppPawnRank = 0
+MaxPly1DeepeningScore =
 MaxSearchDepth = 
 MetaState = 1100111111
 MinMaxEvalRes = 0
@@ -472,7 +475,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.372 (24.02.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.373 (24.02.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1159,7 +1162,7 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
 
 Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress) (warp=true)
 {
-    Call //("Main search (minimax / alpha-beta pruning based)");
+    Call //("Search function (minimax / alpha-beta pruning)");
     List.ReplaceItem(MinMaxResults, Depth, "");
     List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
     List.ReplaceItem(ScoreTypes, Depth, "E");
@@ -1170,7 +1173,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If (Depth > 1)
     {
-        Call //("Probe transposition table for cached node evaluations we can re-apply");
+        Call //("Probe transposition table for cached node evaluations");
         Call TTProbeNode(CurrentBoardHash)(Depth);
         If ((TTProbeRes == 1) And (Not ((TTProbeNodeScoreRes == ""))))
         {
@@ -1180,7 +1183,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     If ((TTProbeNodeScoreIsDynamicRes == 0) Or ((TTCurrentAge - TTProbeNodeAgeRes) < 50))
                     {
-                        If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > (BlackKing / 2)))))
+                        If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
                         {
                             If ((((Depth > 1) And ((abs(SourcePieces[(Depth - 1)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 1)] == 0))))) Or ((Depth > 2) And ((abs(SourcePieces[(Depth - 2)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 2)] == 0)))))) Or ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash)))))
                             {
@@ -1196,7 +1199,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If (Depth > 1)
     {
-        Call //(""Virtual" king captures on previous ply => depth-corrected checkmate evaluation");
+        Call //("Virtual king captures on previous ply => depth-corrected checkmate evaluation");
         If (TargetPieces[(Depth - 1)] == WhiteKing)
         {
             List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth - 1) * 1000)));
@@ -1209,7 +1212,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("E")("")(99)("")("")("")("")("")(0);
             Stop(this script);
         }
-        Call //("Early checkmate evaluation on previous checks. Since special check evasion search has been introduced, this is mainly for security.");
+        Call //("Early checkmate evaluation on previous checks when not evaded. As we now have special check evasion search, this is mainly for safety");
         If ((Depth == 2) Or (CheckedState[(Depth - 1)] == 1))
         {
             Call CalcBoardAttackedByMoveChecked(Depth);
@@ -1235,7 +1238,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If ((Depth > 1) And (IsInNullMove == 0))
     {
-        Call //("Draw-by-stalemate verification. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
+        Call //("Draw-by-stalemate detection. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
         If ((Depth < 3) Or ((Depth < 4) And (IsEndgame2 == 1)))
         {
             Call IsDrawByStalemate((Depth + 2));
@@ -1259,7 +1262,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
             }
         }
-        Call //("Draw-by-repetition verification. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash, followed by counting occurences for same side.");
+        Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
         If ((Depth < 2) Or ((Not ((abs(SourcePieces[(Depth - 1)]) == BlackPawn))) And (TargetPieces[(Depth - 1)] == 0)))
         {
             If ((Depth < 3) Or ((Not ((abs(SourcePieces[(Depth - 2)]) == BlackPawn))) And (TargetPieces[(Depth - 2)] == 0)))
@@ -1301,7 +1304,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
         }
     }
-    Call //("Special K-KP endgame draw verification, depending on pawn and king position. Detects draws otherwise not visible within search horizon");
+    Call //("Special K-KP endgame draw detection, according to pawn and king position. Finds draws otherwise not visible within search horizon");
     If (IsEndgame == 1)
     {
         If (Not (PrevQuiescence))
@@ -1388,7 +1391,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
         }
     }
-    Call //("Search leaf reached => evaluate board and return result");
+    Call //("Search tree leaf reached => evaluate board and return result");
     If (Depth == MaxDepth)
     {
         Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
@@ -1458,7 +1461,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     Else
     {
-        Call //("Full search, only invoke board evaluation to calculate intermediate results if required");
+        Call //("Full search => invoke board evaluation to calculate intermediate results if required");
         Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
     }
     Call //("Initialize local variables or forward state from previous ply");
@@ -1584,7 +1587,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     List.ReplaceItem(PickPhase, Depth, 1);
     List.ReplaceItem(PickMoveRes, Depth, 1);
-    Call //("Main loop for move generation / application and recursive search invocation");
+    Call //("Move generation and application via PickMove(), followed by recursive search invocation");
     Repeat Until (PickMoveRes[Depth] == 0)
     {
         If ((Depth < 6) Or ((Depth < 9) And (Not (Quiescence))))
@@ -1605,7 +1608,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         {
             Call Profile_MethodEnter((150 + Depth));
         }
-        Call //("Invoke move generator and apply next move from move list");
+        Call //("Invoke move generator and apply next move from list");
         Call PickMove(Depth)(Quiescence);
         If (IsProfilerEnabled == 1)
         {
@@ -1646,7 +1649,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             List.ReplaceItem(PutsInCheck, Depth, 0);
             List.ReplaceItem(PlyExtensionTagged, Depth, 0);
             List.ReplaceItem(PlyExtension, Depth, 0);
-            Call //("Fast check detection, does not cover disovered checks");
+            Call //("Fast check detection for current move (does not return discovered checks)");
             SourceIdxOuter2 = floor((AppliedMove[Depth] / 100));
             TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
             Call IsCheckingPiece(Board[TargetIdxOuter2])(TargetIdxOuter2);
@@ -1655,7 +1658,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 List.ReplaceItem(PutsInCheck, Depth, 1);
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(0)("")("")("")("")("")("");
             }
-            Call //("Fork detection for Scratch 3 runtime, will lead to search extension");
+            Call //("Fork detection for Scratch 3 runtime. Forks at low search depth will trigger search extension");
             If ((Not (Quiescence)) And ((Level > 4) Or (IsScratch3 == 0)))
             {
                 SourceIdxOuter2 = floor((AppliedMove[Depth] % 100));
@@ -1722,7 +1725,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         }
                     }
                 }
-                Call //("Search extension on Scratch 3 runtime when in check and attacking piece is not counter-attacked");
+                Call //("Search extensions for Scratch 3 runtime when in check and attacking piece is not counter-attacked");
                 If ((IsScratch3 == 1) And (Depth < 5))
                 {
                     If ((Depth > 1) And (CheckedState[Depth] == 1))
@@ -1906,7 +1909,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         }
                     }
                 }
-                Call //("Move was not pruned upfront, enter normal search");
+                Call //("Move was not pruned upfront, enter normal search recursion");
                 If ((IsReductionAndDone == 0) And (IsMinMaxTimeout == 0))
                 {
                     List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
@@ -1926,12 +1929,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
                 }
-                Call //("Bring board back to previous state");
+                Call //("Revert board back to previous state");
                 Call RevertMove(Depth);
                 If (IsMinMaxTimeout == 1)
                 {
                     Stop(this script);
                 }
+                Call //("Compare node evaluation with search window, adapt results and alpha/beta accordingly");
                 If ((Depth % 2) == 1)
                 {
                     If (Depth == 1)
@@ -1980,7 +1984,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                     If ((Depth == 1) And (IsMinMaxTimeout == 0))
                                     {
                                         Call OnEvaluationChanged(Score);
-                                        If (Score > -98000)
+                                        If (Not ((Score < (0 - AbsMaxCheckmateEval))))
                                         {
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
                                             MinMaxMoveRes = Moves1[MovesIdx[1]];
@@ -1989,13 +1993,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                             {
                                                 Call Log((MaxDepth - 1))(" : ")(MinMaxMoveRes)(" : ")(MinMaxEvalRes)("")("")("");
                                             }
-                                            Idx = 899996;
+                                            Idx = (MaxPly1DeepeningScore - 4);
                                             Repeat (5)
                                             {
                                                 List.ReplaceItem(DeepeningScore, List.IndexOf(DeepeningScore, Idx), (Idx - 1));
                                                 Idx += 1;
                                             }
-                                            List.ReplaceItem(DeepeningScore, DeepeningScoreOrderMap[MovesIdx[1]], 900000);
+                                            List.ReplaceItem(DeepeningScore, DeepeningScoreOrderMap[MovesIdx[1]], MaxPly1DeepeningScore);
                                             If (MinMaxMoveRes == BlackKingsideCastling)
                                             {
                                                 BestMoveFromIdx = VirtualBoard[5];
@@ -2181,7 +2185,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
         If Quiescence
         {
-            If ((Not (InitialDeepening)) And (Not ((abs(MinMaxResults[Depth]) > (BlackKing / 2)))))
+            If ((Not (InitialDeepening)) And (Not ((abs(MinMaxResults[Depth]) > AbsMinCheckmateEval))))
             {
                 Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
             }
@@ -5067,7 +5071,7 @@ Define GetBestMoveBlitz (warp=false)
     ThinkTimeLimitMinMax = ThinkTimeLimit;
     Repeat ((((Level - 2) * 2) * (2 - IsScratch3)))
     {
-        If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (Not (((BestMinMaxRes > (BlackKing / 2)) Or (BestMinMaxRes < (WhiteKing / 2)))))))
+        If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(8)((1 == 1));
             If (Not ((MinMaxMoveRes == "")))
@@ -5192,7 +5196,7 @@ Define GetBestMoveMedDiff (warp=false)
         {
             If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
             {
-                If ((BestMinMaxRes == "") Or (Not (((BestMinMaxRes > BlackKing) And (MinMaxEvalRes < BlackKing)))))
+                If ((BestMinMaxRes == "") Or (Not (((BestMinMaxRes > AbsMinCheckmateEval) And (MinMaxEvalRes < AbsMinCheckmateEval)))))
                 {
                     BestMove = MinMaxMoveRes;
                     BestMinMaxRes = MinMaxEvalRes;
@@ -6274,7 +6278,10 @@ Define InitBoard (warp=true)
     BlackBishop = 330;
     BlackKnight = 310;
     BlackPawn = 100;
-    AbsCheckmateEval = (BlackKing / 2);
+    AbsMinCheckmateEval = (BlackKing / 2);
+    AbsMaxCheckmateEval = 97000;
+    AbsMaxCheckmateEval = 97000;
+    MaxPly1DeepeningScore = 900000;
     Call InitCoordLookup;
     Call FillBoard;
     List.DeleteAll(PieceIdxLookup);
@@ -8163,7 +8170,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
 
 Define PickMove(string Depth)(bool Quiescence) (warp=true)
 {
-    Call //("Main staged move-generator implementation");
+    Call //("Staged move-generator implementation");
     Call //("Phase 1: Look up hash-move from transposition table");
     If (PickPhase[Depth] == 1)
     {
@@ -8243,7 +8250,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         List.ReplaceItem(PickPhase, Depth, 2);
     }
-    Call //("Phase 2: Search for MVV-LVA captures via attack tables (and recently moved pieces when attack tables not up-to-date)");
+    Call //("Phase 2: Search for MVV-LVA captures via attack tables (and from recently moved pieces when attack tables not up-to-date)");
     If (PickPhase[Depth] == 2)
     {
         If ((IsEndgame2 == 1) Or (Depth < 4))
