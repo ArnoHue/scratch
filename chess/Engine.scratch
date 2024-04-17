@@ -30,6 +30,7 @@ CurrentMoveOuter =
 CurrentPiece = -100
 CurrentValue = -1
 CurrentValue2 = 
+DebugMode = 0
 Delta = 1
 Delta2 = 0
 Delta3 = 0
@@ -76,6 +77,7 @@ IsBlackCastlingPossible = 1
 IsBlackCastlingPossibleLocal = 1
 IsBlackChecked = 0
 IsBlackKingCheckMateRes = 0
+IsBlockProfilerEnabled  = 1
 IsCheckingPieceRes = 0
 IsDeepeningDone = 0
 IsDone = 1
@@ -93,10 +95,7 @@ IsInUndo = 0
 IsLegalMove = 0
 IsLowerCaseRes = 0
 IsMinMaxTimeout = 0
-IsModeDebug = 0
-IsModeProfiler = 0
 IsPotentialNonCapQuiescMove = 0
-IsProfilerEnabled = 1
 IsQuiescentCheckInvariantRes = 0
 IsQuiescentCheckRes = 0
 IsReductionAndDone = 0
@@ -121,13 +120,16 @@ MaxSearchDepth =
 MetaState = 1100111111
 MinMaxEvalRes = 0
 MinMaxMoveRes = 0
+MinMaxTimer = 0
 MoveCount = 0
+MoveCountQ = 0
 MoveFromIdx = -1
 MoveNotationRes = e6xf7
 MoveScoreRes = 0
 MoveToIdx = -1
 MPS = 1241
 NodeCount = 50
+NodeCountQ = 50
 NPS = 436
 PiecePosHash = -241122464931274
 PiecePosHash2 = 194782401744768
@@ -139,7 +141,10 @@ PrevMoveCount = 0
 PrevNodeCount = 0
 PrevProgressUpdate = 0
 ProfBestMoveCount = 17
+ProfBestMoveCountQ = 17
 ProfBestMoveIdxSum = 0
+ProfBestMoveIdxSumQ = 0
+ProfilerMode = 0
 ProfNPSMode = 1
 PromotionVal = 1
 QSLower = 16
@@ -377,21 +382,7 @@ WhenGreenFlagClicked()
     {
         IsScratch3 = 1;
     }
-    List.DeleteAll(Logfile);
-    List.Hide(BoardHistory);
-    List.Hide(GameMovesAN);
-    List.Hide(ExportData);
-    List.Hide(ExportMoves);
-    List.Hide(Logfile);
-    List.Hide(Profile_Data);
-    Variable.Hide(IdxDeepening);
-    Variable.Hide(BestMinMaxRes);
-    Variable.Hide(BestMove);
-    Variable.Hide(NPS);
-    Variable.Hide(MPS);
-    IsModeProfiler = -1;
-    IsModeDebug = -1;
-    ProfNPSMode = 1;
+    Call OnRestart;
 }
 
 
@@ -399,7 +390,7 @@ WhenGreenFlagClicked()
 
 WhenKeyPressed(l)
 {
-    If (IsModeDebug == -1)
+    If (DebugMode == -1)
     {
         Stop(this script);
     }
@@ -408,31 +399,45 @@ WhenKeyPressed(l)
 
 WhenKeyPressed(p)
 {
-    If (IsModeProfiler == -1)
+    If (ProfilerMode == -1)
     {
         Stop(this script);
     }
-    If (IsProfilerEnabled == 0)
+    If ((ProfilerMode % 10) == 0)
     {
-        IsProfilerEnabled = 1;
-        Call SayAsync("Profiling enabled. Press 'l' / 'r' to view data.")(2);
+        ProfilerMode += 1;
+        IsBlockProfilerEnabled = 0;
+        Call SayAsync("Statistical profiling enabled. Press 'l' to view data.")(2);
     }
     Else
     {
-        IsProfilerEnabled = 0;
-        Call SayAsync("Profiling disabled.")(2);
+        If ((ProfilerMode % 10) == 1)
+        {
+            ProfilerMode += 1;
+            IsBlockProfilerEnabled = 1;
+            Call SayAsync("Full profiling enabled. Press 'l' / 'r' to view data.")(2);
+        }
+        Else
+        {
+            If ((ProfilerMode % 10) == 2)
+            {
+                ProfilerMode += -2;
+                IsBlockProfilerEnabled = 0;
+                Call SayAsync("Profiling disabled.")(2);
+            }
+        }
     }
 }
 
 WhenKeyPressed(d)
 {
-    If (IsModeDebug == -1)
+    If (DebugMode == -1)
     {
         Stop(this script);
     }
-    If (IsModeDebug == 0)
+    If (DebugMode == 0)
     {
-        IsModeDebug = 1;
+        DebugMode = 1;
         Variable.Show(IdxDeepening);
         Variable.Show(BestMinMaxRes);
         Variable.Show(BestMove);
@@ -441,7 +446,7 @@ WhenKeyPressed(d)
     }
     Else
     {
-        IsModeDebug = 0;
+        DebugMode = 0;
         Variable.Hide(IdxDeepening);
         Variable.Hide(BestMinMaxRes);
         Variable.Hide(BestMove);
@@ -482,7 +487,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.500 (14.04.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.501 (16.04.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -499,30 +504,20 @@ WhenKeyPressed(t)
 
 WhenKeyPressed(r)
 {
-    If (IsModeProfiler == -1)
+    If (ProfilerMode == -1)
     {
         Stop(this script);
     }
-    If (IsModeProfiler == 0)
+    If (ProfilerMode < 10)
     {
-        IsModeProfiler = 1;
+        ProfilerMode += 10;
         List.Show(Profile_Data);
     }
     Else
     {
-        IsModeProfiler = 0;
+        ProfilerMode += -10;
         List.Hide(Profile_Data);
     }
-}
-
-WhenKeyPressed(n)
-{
-    ProfNPSMode += 1;
-    If (ProfNPSMode > 3)
-    {
-        ProfNPSMode = 1;
-    }
-    Call SayAsync(Operator.Join("Profiler FS/QS stats mode set to ", ProfNPSMode))(3);
 }
 
 
@@ -735,7 +730,11 @@ WhenBroadcastReceived(stageclicked)
     List.Hide(ExportData);
     List.Hide(ExportMoves);
     List.Hide(Logfile);
-    List.Hide(Profile_Data);
+    If (Not ((ProfilerMode < 10)))
+    {
+        ProfilerMode += -10;
+        List.Hide(Profile_Data);
+    }
     If (IsExecutionRunning == 0)
     {
         Looks.Say("");
@@ -760,26 +759,7 @@ WhenBroadcastReceived(startgame)
 
 WhenBroadcastReceived(triggerrestart)
 {
-    Looks.Say("");
-    List.Hide(BoardHistory);
-    List.Hide(GameMovesAN);
-    List.Hide(ExportData);
-    List.Hide(ExportMoves);
-}
-
-WhenBroadcastReceived(triggerrestart)
-{
-    List.Hide(BoardHistory);
-    List.Hide(GameMovesAN);
-    List.Hide(ExportData);
-    List.Hide(ExportMoves);
-    List.Hide(Logfile);
-    List.Hide(Profile_Data);
-    Variable.Hide(IdxDeepening);
-    Variable.Hide(BestMinMaxRes);
-    Variable.Hide(BestMove);
-    Variable.Hide(NPS);
-    Variable.Hide(MPS);
+    Call OnRestart;
 }
 
 WhenBroadcastReceived(undo)
@@ -805,7 +785,7 @@ Define AddBoardToHistory(string WasEngineMove) (warp=true)
     List.Add(BoardHistory, GetBoardStringRes);
     Call CreateCurrentBoardHash;
     List.Add(BoardHistoryHash, CurrentBoardHash);
-    List.Add(BoardHistoryMetaState, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookQSMoved, HasBlackRookKSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookQSMoved, HasWhiteRookKSMoved))));
+    List.Add(BoardHistoryMetaState, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
     List.Add(BoardHistoryWasEngineMove, WasEngineMove);
 }
 
@@ -1163,7 +1143,35 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
     Call OnScoreCalc(0)(MinDepth)((MaxDepth - 1))((1 == 0));
     List.ReplaceItem(Alphas, MinDepth, Alpha);
     List.ReplaceItem(Betas, MinDepth, Beta);
+    MoveCount = 0;
+    MoveCountQ = 0;
+    NodeCount = 0;
+    NodeCountQ = 0;
+    ProfBestMoveCount = 0;
+    ProfBestMoveIdxSum = 0;
+    ProfBestMoveCountQ = 0;
+    ProfBestMoveIdxSumQ = 0;
+    MinMaxTimer = (Sensing.DaysSince2000() * 86400);
     Call AlphaBetaMinMaxImpl(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress);
+    MinMaxTimer = ((Sensing.DaysSince2000() * 86400) - MinMaxTimer);
+    If ((ProfilerMode % 10) > 0)
+    {
+        Call Log("========================================")("")("")("")("")("")("")("");
+        Call Log("SEARCH STATS")("")("")("")("")("")("")("");
+        Call Log("========================================")("")("")("")("")("")("")("");
+        Call Log("Depth = ")((MaxDepth - 1))(", Time = ")((Operator.Round((MinMaxTimer * 100)) / 100))("")("")("")("");
+        Call Log((Operator.Round(((MoveCount / MinMaxTimer) / 100)) / 10))("k MPS (full)")("")("")("")("")("")("");
+        Call Log((Operator.Round(((NodeCount / MinMaxTimer) / 100)) / 10))("k NPS (full)")("")("")("")("")("")("");
+        Call Log((Operator.Round(((MoveCountQ / MinMaxTimer) / 100)) / 10))("k MPS (q)")("")("")("")("")("")("");
+        Call Log((Operator.Round(((NodeCountQ / MinMaxTimer) / 100)) / 10))("k NPS (q)")("")("")("")("")("")("");
+        Call Log((Operator.Round((((MoveCount + MoveCountQ) / MinMaxTimer) / 100)) / 10))("k MPS")("")("")("")("")("")("");
+        Call Log((Operator.Round((((NodeCount + NodeCountQ) / MinMaxTimer) / 100)) / 10))("k NPS")("")("")("")("")("")("");
+        Call Log("Avg. best move idx (full) = ")((Operator.Round(((ProfBestMoveIdxSum / ProfBestMoveCount) * 100)) / 100))("")("")("")("")("")("");
+        Call Log("Avg. best move idx (q) = ")((Operator.Round(((ProfBestMoveIdxSumQ / ProfBestMoveCountQ) * 100)) / 100))("")("")("")("")("")("");
+        Call Log("========================================")("")("")("")("")("")("")("");
+        MPS = Operator.Round(((MoveCount + MoveCountQ) / MinMaxTimer));
+        NPS = Operator.Round(((NodeCount + NodeCountQ) / MinMaxTimer));
+    }
 }
 
 Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress) (warp=true)
@@ -1173,6 +1181,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
     List.ReplaceItem(ScoreTypes, Depth, "E");
     List.ReplaceItem(BestMoves, Depth, "");
+    If Quiescence
+    {
+        List.ReplaceItem(Quiescence, Depth, 1);
+    }
+    Else
+    {
+        List.ReplaceItem(Quiescence, Depth, 0);
+    }
     If (IsMinMaxTimeout == 1)
     {
         Stop(this script);
@@ -1452,14 +1468,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(WhiteMobBonus, Depth, WhiteMobBonus[(Depth - 1)]);
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
     }
-    If Quiescence
-    {
-        List.ReplaceItem(Quiescence, Depth, 1);
-    }
-    Else
-    {
-        List.ReplaceItem(Quiescence, Depth, 0);
-    }
     List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
     List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
     List.ReplaceItem(PutsInCheck, Depth, 0);
@@ -1633,15 +1641,23 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         }
         If (IsMinMaxTimeout == 1)
         {
+            If (Quiescence[Depth] == 0)
+            {
+                MoveCount += MovesCount[Depth];
+            }
+            Else
+            {
+                MoveCountQ += MovesCount[Depth];
+            }
             Stop(this script);
         }
-        If (IsProfilerEnabled == 1)
+        If (IsBlockProfilerEnabled == 1)
         {
             Call Profile_MethodEnter((150 + Depth));
         }
         Call //("Invoke move generator and apply next move from list");
         Call PickMove(Depth)(Quiescence);
-        If (IsProfilerEnabled == 1)
+        If (IsBlockProfilerEnabled == 1)
         {
             Call Profile_MethodExit((150 + Depth));
         }
@@ -1654,27 +1670,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 If (CurrentValue > (PrevProgressUpdate + 1))
                 {
                     Call OnProgressChanged((((CurrentValue - ThinkTimeStart) / ThinkTimeLimitMinMax) * 100));
-                    CurrentValue2 = Operator.Round(((NodeCount - PrevNodeCount) / (CurrentValue - PrevProgressUpdate)));
-                    If (CurrentValue2 > 0)
-                    {
-                        NPS = CurrentValue2;
-                        PrevNodeCount = NodeCount;
-                    }
-                    CurrentValue2 = Operator.Round(((MoveCount - PrevMoveCount) / (CurrentValue - PrevProgressUpdate)));
-                    If (CurrentValue2 > 0)
-                    {
-                        MPS = CurrentValue2;
-                        PrevMoveCount = MoveCount;
-                    }
-                    PrevProgressUpdate = CurrentValue;
-                    If (IsProfilerEnabled == 1)
-                    {
-                        Call Log(Operator.Join("FS = ", (ProfNPSMode < 3)))(", ")(Operator.Join("QS = ", (Not ((ProfNPSMode == 2)))))("")("")("")("")("");
-                        Call Log("MPS = ")(MPS)(", NPS = ")(NPS)("")("")("")("");
-                        Call Log("Avg. best move idx = ")((Operator.Round(((ProfBestMoveIdxSum / ProfBestMoveCount) * 100)) / 100))("")("")("")("")("")("");
-                    }
-                    ProfBestMoveIdxSum = 0;
-                    ProfBestMoveCount = 0;
                 }
             }
             List.ReplaceItem(PutsInCheck, Depth, 0);
@@ -1975,6 +1970,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 Call RevertMove(Depth);
                 If (IsMinMaxTimeout == 1)
                 {
+                    If (Quiescence[Depth] == 0)
+                    {
+                        MoveCount += MovesCount[Depth];
+                    }
+                    Else
+                    {
+                        MoveCountQ += MovesCount[Depth];
+                    }
                     Stop(this script);
                 }
                 Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
@@ -2117,9 +2120,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
         }
     }
-    If ((ProfNPSMode == 1) Or ((Quiescence[Depth] + 2) == ProfNPSMode))
+    If (Quiescence[Depth] == 0)
     {
         MoveCount += MovesCount[Depth];
+    }
+    Else
+    {
+        MoveCountQ += MovesCount[Depth];
     }
     Call //("Evaluation alpha-bound, beta-bound or exact?");
     If ((Depth % 2) == 1)
@@ -2244,23 +2251,28 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         {
             Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")((MaxDepth - Depth))("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
         }
-        Call //("Collect statistics");
-        If (MovesIdxBestMove[Depth] > 0)
+    }
+    Call //("Collect statistics");
+    If (MovesIdxBestMove[Depth] > 0)
+    {
+        If Quiescence
         {
-            If (1 == 1)
+            ProfBestMoveCountQ += 1;
+            ProfBestMoveIdxSumQ += MovesIdxBestMove[Depth];
+        }
+        Else
+        {
+            ProfBestMoveCount += 1;
+            ProfBestMoveIdxSum += MovesIdxBestMove[Depth];
+        }
+        If (1 == 0)
+        {
+            If (IsBlockProfilerEnabled == 1)
             {
-                ProfBestMoveCount += 1;
-                ProfBestMoveIdxSum += MovesIdxBestMove[Depth];
-                If (1 == 0)
+                If (MovesIdxBestMove[Depth] > (3 - (Quiescence[Depth] * 2)))
                 {
-                    If ((IsProfilerEnabled == 1) And ((ProfNPSMode == 1) Or ((Quiescence[Depth] + 2) == ProfNPSMode)))
-                    {
-                        If (MovesIdxBestMove[Depth] > (3 - (Quiescence[Depth] * 2)))
-                        {
-                            Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
-                            Call Log("Move ordering indication")(Operator.Join(Operator.Join(":", Depth), Operator.Join(":", MovesIdxBestMove[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] / 100))]), Operator.Join(":", BestMoves[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] % 100))]), Operator.Join(":", Quiescence[Depth])))(":")(ExportDataFEN)("")("");
-                        }
-                    }
+                    Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
+                    Call Log("Move ordering indication")(Operator.Join(Operator.Join(":", Depth), Operator.Join(":", MovesIdxBestMove[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] / 100))]), Operator.Join(":", BestMoves[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] % 100))]), Operator.Join(":", Quiescence[Depth])))(":")(ExportDataFEN)("")("");
                 }
             }
         }
@@ -2274,14 +2286,6 @@ Define ApplyMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
-    If (Depth < 3)
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, 0);
-    }
-    Else
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, PawnShelterCapture[(Depth - 2)]);
-    }
     If (Depth > 1)
     {
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
@@ -2486,10 +2490,6 @@ Define ApplyMove(num Depth) (warp=true)
                 {
                     CurrentBoardHash2 += MoveHashLookupBlack[IdxSub];
                     BlackPawnCountLocal += -1;
-                    If ((IdxToRank[BlackKingIdx] < IdxToRank[TargetIdx]) And ((abs((IdxToRank[BlackKingIdx] - IdxToRank[TargetIdx])) + abs((IdxToFile[BlackKingIdx] - IdxToFile[TargetIdx]))) < 4))
-                    {
-                        List.ReplaceItem(PawnShelterCapture, Depth, (PawnShelterCapture[Depth] + 1));
-                    }
                 }
                 Else
                 {
@@ -2528,10 +2528,6 @@ Define ApplyMove(num Depth) (warp=true)
                     {
                         CurrentBoardHash2 += MoveHashLookupWhite[IdxSub];
                         WhitePawnCountLocal += -1;
-                        If ((IdxToRank[TargetIdx] < IdxToRank[WhiteKingIdx]) And ((abs((IdxToRank[TargetIdx] - IdxToRank[WhiteKingIdx])) + abs((IdxToFile[WhiteKingIdx] - IdxToFile[TargetIdx]))) < 4))
-                        {
-                            List.ReplaceItem(PawnShelterCapture, Depth, (PawnShelterCapture[Depth] + 1));
-                        }
                     }
                     Else
                     {
@@ -2619,11 +2615,18 @@ Define ApplyMove(num Depth) (warp=true)
             }
         }
     }
-    If ((ProfNPSMode == 1) Or ((Quiescence[Depth] + 2) == ProfNPSMode))
+    If (Not ((AppliedMove[Depth] == 0000)))
     {
-        If (Not ((AppliedMove[Depth] == 0000)))
+        If (Quiescence[Depth] == 0)
         {
             NodeCount += 1;
+        }
+        Else
+        {
+            If (Quiescence[Depth] == 1)
+            {
+                NodeCountQ += 1;
+            }
         }
     }
 }
@@ -4781,7 +4784,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
 
 Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
 {
-    If (IsProfilerEnabled == 1)
+    If (IsBlockProfilerEnabled == 1)
     {
         Call Profile_MethodEnter((((90 - (30 * CapturesOnly)) - (60 * CalcAttackState)) + Depth));
     }
@@ -4789,7 +4792,7 @@ Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool Capture
     IsQuiescentCheckInvariantRes = IsQuiescentCheckRes;
     GenerateMovesRequiresAttackRecalc = 0;
     Call GenerateMovesImpl(Depth)(CalcAttackState)(CapturesOnly)(((Depth % 2) == 1));
-    If (IsProfilerEnabled == 1)
+    If (IsBlockProfilerEnabled == 1)
     {
         Call Profile_MethodExit((((90 - (30 * CapturesOnly)) - (60 * CalcAttackState)) + Depth));
     }
@@ -6052,12 +6055,6 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
     If InitialDeepening
     {
         Call Profile_Reset;
-        NodeCount = 0;
-        PrevNodeCount = 0;
-        MoveCount = 0;
-        PrevMoveCount = 0;
-        ProfBestMoveIdxSum = 0;
-        ProfBestMoveCount = 0;
         PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
         TTCurrentAge = ((floor((TTCurrentAge / 100)) + 1) * 100);
         IdxOuter = 1;
@@ -6108,8 +6105,8 @@ Define InitBoard (warp=true)
 {
     FromSquareIdx = -1;
     ToSquareIdx = -1;
-    IsModeProfiler = 0;
-    IsModeDebug = 0;
+    ProfilerMode = 0;
+    DebugMode = 0;
     PlayingMode = 0;
     MoveFromIdx = -1;
     MoveToIdx = -1;
@@ -6117,7 +6114,7 @@ Define InitBoard (warp=true)
     EvaluationValue = 0;
     IsAdvisorEnabled = 1;
     IsInUndo = 0;
-    IsProfilerEnabled = 0;
+    IsBlockProfilerEnabled = 0;
     IsEndgame = 0;
     IsEndgame2 = 0;
     IsImportedBoard = 0;
@@ -6253,7 +6250,6 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardAttackedByWhiteSnapshot, all);
     List.DeleteItem(Quiescence, all);
     List.DeleteItem(EnPassantTarget, all);
-    List.DeleteItem(PawnShelterCapture, all);
     List.DeleteItem(PassedWhitePawnOnEndgame, all);
     List.DeleteItem(CastlingState, all);
     Repeat (30)
@@ -6300,7 +6296,6 @@ Define InitBoard (warp=true)
         List.Add(BoardAttackedByWhiteSnapshot, "");
         List.Add(Quiescence, "");
         List.Add(EnPassantTarget, "");
-        List.Add(PawnShelterCapture, 0);
         List.Add(PassedWhitePawnOnEndgame, 0);
         List.Add(CastlingState, 0);
     }
@@ -7294,12 +7289,13 @@ Define IsDrawByStalemate(string Depth) (warp=true)
         Stop(this script);
     }
     IsDrawRes = 1;
+    List.ReplaceItem(Quiescence, Depth, 0);
     Call CalcBoardAttackedByMove((Depth + 1));
     Call StoreAttackInfo((Depth + 1))(Depth);
     List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
     Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
     List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
-    MoveCount += MovesCount[Depth];
+    List.ReplaceItem(Quiescence, Depth, "");
     List.ReplaceItem(MovesIdx, Depth, 1);
     Repeat (MovesCount[Depth])
     {
@@ -7704,6 +7700,25 @@ Define OnProgressChanged(num Progress) (warp=true)
     Control.Wait(0);
 }
 
+Define OnRestart (warp=true)
+{
+    Looks.Say("");
+    List.DeleteAll(Logfile);
+    List.Hide(BoardHistory);
+    List.Hide(GameMovesAN);
+    List.Hide(ExportData);
+    List.Hide(ExportMoves);
+    List.Hide(Logfile);
+    List.Hide(Profile_Data);
+    Variable.Hide(IdxDeepening);
+    Variable.Hide(BestMinMaxRes);
+    Variable.Hide(BestMove);
+    Variable.Hide(NPS);
+    Variable.Hide(MPS);
+    ProfilerMode = -1;
+    DebugMode = -1;
+}
+
 Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescence) (warp=true)
 {
     ScoreCalcRes = "";
@@ -7723,7 +7738,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         EvalMaterialBase = Operator.Round((((((BlackQueenCount * 9) + (BlackRookCount * 5)) + (((BlackBishopCount * 3.3) + (((BlackMinorCount - BlackRookCount) - BlackBishopCount) * 3.1)) + BlackPawnCount)) - (((WhiteQueenCount * 9) + (WhiteRookCount * 5)) + (((WhiteBishopCount * 3.3) + (((WhiteMinorCount - WhiteRookCount) - WhiteBishopCount) * 3.1)) + WhitePawnCount))) * 10));
         Stop(this script);
     }
-    If (IsProfilerEnabled == 1)
+    If (IsBlockProfilerEnabled == 1)
     {
         Call Profile_MethodEnter(Depth);
     }
@@ -7805,7 +7820,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                     {
                         ScoreCalcRes += 15;
                     }
-                    If (IsProfilerEnabled == 1)
+                    If (IsBlockProfilerEnabled == 1)
                     {
                         Call Profile_MethodExit(Depth);
                     }
@@ -7981,7 +7996,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     {
         ScoreCalcRes += 15;
     }
-    If (IsProfilerEnabled == 1)
+    If (IsBlockProfilerEnabled == 1)
     {
         Call Profile_MethodExit(Depth);
     }
@@ -8629,14 +8644,6 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
-    If (Depth < 3)
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, 0);
-    }
-    Else
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, PawnShelterCapture[(Depth - 2)]);
-    }
     If (Depth == 1)
     {
         List.ReplaceItem(CastlingState, Depth, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
@@ -9372,12 +9379,12 @@ Define UndoPrevMove (warp=false)
         GameMoves = SubstringRes;
         HasBlackCastled = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 1);
         HasBlackKingMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 2);
-        HasBlackRookQSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 3);
-        HasBlackRookKSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 4);
+        HasBlackRookKSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 3);
+        HasBlackRookQSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 4);
         HasWhiteCastled = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 5);
         HasWhiteKingMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 6);
-        HasWhiteRookQSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 7);
-        HasWhiteRookKSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 8);
+        HasWhiteRookKSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 7);
+        HasWhiteRookQSMoved = Operator.LetterOf(BoardHistoryMetaState[List.Length(BoardHistoryMetaState)], 8);
         Call CalcBoardStats;
     }
 }
