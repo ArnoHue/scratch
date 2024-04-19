@@ -310,6 +310,7 @@ PawnPieceSquareEndgame = { }
 PawnPieceSquarePreCastling = { }
 PawnPromotionFile = { }
 PawnShelter = { }
+PawnShelterCapture = { }
 PawnStorm = { }
 PickedMoveCount = { }
 PickedMoves = { }
@@ -487,7 +488,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.503 (18.04.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.504 (18.04.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -2286,6 +2287,14 @@ Define ApplyMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
+    If (Depth < 3)
+    {
+        List.ReplaceItem(PawnShelterCapture, Depth, 0);
+    }
+    Else
+    {
+        List.ReplaceItem(PawnShelterCapture, Depth, PawnShelterCapture[(Depth - 2)]);
+    }
     If (Depth > 1)
     {
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
@@ -2490,6 +2499,10 @@ Define ApplyMove(num Depth) (warp=true)
                 {
                     CurrentBoardHash2 += MoveHashLookupBlack[IdxSub];
                     BlackPawnCountLocal += -1;
+                    If ((IdxToRank[BlackKingIdx] < IdxToRank[TargetIdx]) And ((abs((IdxToRank[BlackKingIdx] - IdxToRank[TargetIdx])) + abs((IdxToFile[BlackKingIdx] - IdxToFile[TargetIdx]))) < 4))
+                    {
+                        List.ReplaceItem(PawnShelterCapture, Depth, (PawnShelterCapture[Depth] + 1));
+                    }
                 }
                 Else
                 {
@@ -2528,6 +2541,10 @@ Define ApplyMove(num Depth) (warp=true)
                     {
                         CurrentBoardHash2 += MoveHashLookupWhite[IdxSub];
                         WhitePawnCountLocal += -1;
+                        If ((IdxToRank[TargetIdx] < IdxToRank[WhiteKingIdx]) And ((abs((IdxToRank[TargetIdx] - IdxToRank[WhiteKingIdx])) + abs((IdxToFile[WhiteKingIdx] - IdxToFile[TargetIdx]))) < 4))
+                        {
+                            List.ReplaceItem(PawnShelterCapture, Depth, (PawnShelterCapture[Depth] + 1));
+                        }
                     }
                     Else
                     {
@@ -2623,10 +2640,7 @@ Define ApplyMove(num Depth) (warp=true)
         }
         Else
         {
-            If (Quiescence[Depth] == 1)
-            {
-                NodeCountQ += 1;
-            }
+            NodeCountQ += 1;
         }
     }
 }
@@ -6251,6 +6265,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(EnPassantTarget, all);
     List.DeleteItem(PassedWhitePawnOnEndgame, all);
     List.DeleteItem(CastlingState, all);
+    List.DeleteItem(PawnShelterCapture, all);
     Repeat (30)
     {
         List.Add(Alphas, "");
@@ -6297,6 +6312,7 @@ Define InitBoard (warp=true)
         List.Add(EnPassantTarget, "");
         List.Add(PassedWhitePawnOnEndgame, 0);
         List.Add(CastlingState, 0);
+        List.Add(PawnShelterCapture, 0);
     }
     List.DeleteItem(CastlingStateLookup, all);
     Idx = 0;
@@ -7892,27 +7908,38 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         }
         Else
         {
-            If ((IsEndgame == 0) And ((abs(CapturesDeltaSum[Depth]) > (BlackBishop - BlackKnight)) And (abs(CapturesDeltaSum[Depth]) < BlackKnight)))
+            If (IsEndgame == 0)
             {
-                CurrentValue = ((BlackKnight - abs(CapturesDeltaSum[Depth])) / BlackKnight);
-                CurrentValue2 = 0;
-                If (1 == 1)
+                If (CapturesDeltaSum[Depth] > 0)
                 {
-                    CurrentValue2 += (0 - PosScoreDeltaSum[Depth]);
-                    CurrentValue2 += (EvalResultBaseExtended - ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth]));
-                    CurrentValue2 += ((BlackMobBonus[1] - WhiteMobBonus[1]) - (BlackMobBonus[Depth] - WhiteMobBonus[Depth]));
-                    If (CapturesDeltaSum[Depth] > 0)
+                    If (PawnShelterCapture[((Depth + (Depth % 2)) - 1)] > 0)
                     {
-                        CurrentValue2 += -50;
-                    }
-                    Else
-                    {
-                        CurrentValue2 += 50;
+                        ScoreCalcRes += -80;
+                        If ((IsWhiteCastlingPossible == 1) And List.ContainsItem(SourcePieces, WhiteKing))
+                        {
+                            If ((Not (List.ContainsItem(AppliedMove, WhiteKingsideCastling))) And (Not (List.ContainsItem(AppliedMove, WhiteQueensideCastling))))
+                            {
+                                ScoreCalcRes += -70;
+                            }
+                        }
+                        ScoreCalcResIsDynamic = 1;
                     }
                 }
-                CurrentValue2 = Operator.Round((CurrentValue2 * CurrentValue));
-                ScoreCalcRes += CurrentValue2;
-                ScoreCalcResIsDynamic = 1;
+                Else
+                {
+                    If (PawnShelterCapture[(Depth - (Depth % 2))] > 0)
+                    {
+                        ScoreCalcRes += 80;
+                        If ((IsBlackCastlingPossible == 1) And List.ContainsItem(SourcePieces, BlackKing))
+                        {
+                            If ((Not (List.ContainsItem(AppliedMove, BlackKingsideCastling))) And (Not (List.ContainsItem(AppliedMove, BlackQueensideCastling))))
+                            {
+                                ScoreCalcRes += 70;
+                            }
+                        }
+                        ScoreCalcResIsDynamic = 1;
+                    }
+                }
             }
         }
         If (BlackBishopCountLocal > 1)
@@ -8683,6 +8710,14 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
+    If (Depth < 3)
+    {
+        List.ReplaceItem(PawnShelterCapture, Depth, 0);
+    }
+    Else
+    {
+        List.ReplaceItem(PawnShelterCapture, Depth, PawnShelterCapture[(Depth - 2)]);
+    }
     If (Depth == 1)
     {
         List.ReplaceItem(CastlingState, Depth, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
