@@ -491,7 +491,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.530 (04.05.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.531 (09.05.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1048,6 +1048,17 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     {
         Stop(this script);
     }
+    TargetPiece = Board[TargetIdx];
+    List.ReplaceItem(Board, TargetIdx, Board[SourceIdx]);
+    List.ReplaceItem(Board, SourceIdx, 0);
+    Call IsCheckingPieceDiscovery(SourceIdx)(TargetIdx)(Depth);
+    List.ReplaceItem(Board, SourceIdx, Board[TargetIdx]);
+    List.ReplaceItem(Board, TargetIdx, TargetPiece);
+    If (IsCheckingPieceRes == 1)
+    {
+        Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
+        Stop(this script);
+    }
     If (Piece > 0)
     {
         If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((TargetIdx * 100) + WhiteKingIdx))] == "")
@@ -1487,7 +1498,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call //("Quiescence search standing pat handling (unless in check and must evade)");
         Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
         Call OnScoreCalcPostProcess((Depth - 1));
-
         If (CheckedState[Depth] == 0)
         {
             List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
@@ -1679,10 +1689,17 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             List.ReplaceItem(PutsInCheck, Depth, 0);
             List.ReplaceItem(PlyExtensionTagged, Depth, 0);
             List.ReplaceItem(PlyExtension, Depth, 0);
-            Call //("Fast check detection for current move (does not return discovered checks)");
             SourceIdxOuter2 = floor((AppliedMove[Depth] / 100));
             TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
-            Call IsCheckingPiece(Board[TargetIdxOuter2])(TargetIdxOuter2);
+            Call //("Fast check detection for current move");
+            Call IsCheckingPiece(TargetIdxOuter2);
+            If (IsCheckingPieceRes == 1)
+            {
+                List.ReplaceItem(PutsInCheck, Depth, 1);
+                Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(0)("")("")("")("")("")("");
+            }
+            Call //("Fast discovered check detection for current move");
+            Call IsCheckingPieceDiscovery(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
             If (IsCheckingPieceRes == 1)
             {
                 List.ReplaceItem(PutsInCheck, Depth, 1);
@@ -2952,7 +2969,7 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
         {
             If (Board[IdxOuter2] > 0)
             {
-                Call IsCheckingPiece(Board[IdxOuter2])(IdxOuter2);
+                Call IsCheckingPiece(IdxOuter2);
                 If (IsCheckingPieceRes == 1)
                 {
                     IsWhiteChecked = 1;
@@ -2970,7 +2987,7 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
         {
             If (Board[IdxOuter2] < 0)
             {
-                Call IsCheckingPiece(Board[IdxOuter2])(IdxOuter2);
+                Call IsCheckingPiece(IdxOuter2);
                 If (IsCheckingPieceRes == 1)
                 {
                     IsBlackChecked = 1;
@@ -2986,7 +3003,7 @@ Define CalcBoardAttackedIfRequiredForDepth(string Depth)(bool Quiescence)(bool F
 {
     If (BoardAttackedCalculated[Depth] == 0)
     {
-        If (((CheckedState[Depth] == 1) And ForceOnCheck) Or ((Not (Quiescence)) And (Depth < (MinDepth + 1))))
+        If ((ForceOnCheck And (CheckedState[Depth] == 1)) Or ((Not (Quiescence)) And (Depth < (MinDepth + 1))))
         {
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
@@ -7329,20 +7346,21 @@ Define IsBlackKingCheckMate (warp=true)
     }
 }
 
-Define IsCheckingPiece(string Piece)(string Idx) (warp=true)
+Define IsCheckingPiece(string Idx) (warp=true)
 {
     IsCheckingPieceRes = 0;
-    If (abs(Piece) == BlackKing)
+    CurrentPiece = Board[Idx];
+    If (abs(CurrentPiece) == BlackKing)
     {
         Stop(this script);
     }
-    If (Piece > 0)
+    If (CurrentPiece > 0)
     {
-        If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == "")
+        If (MovePosLookupBlack[((PieceIdxLookup[CurrentPiece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == "")
         {
             Stop(this script);
         }
-        If (Piece == BlackPawn)
+        If (CurrentPiece == BlackPawn)
         {
             If (IdxToFile[Idx] == IdxToFile[WhiteKingIdx])
             {
@@ -7351,7 +7369,7 @@ Define IsCheckingPiece(string Piece)(string Idx) (warp=true)
             IsCheckingPieceRes = 1;
             Stop(this script);
         }
-        If (Piece == BlackKnight)
+        If (CurrentPiece == BlackKnight)
         {
             IsCheckingPieceRes = 1;
             Stop(this script);
@@ -7360,11 +7378,11 @@ Define IsCheckingPiece(string Piece)(string Idx) (warp=true)
     }
     Else
     {
-        If (MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == "")
+        If (MovePosLookupWhite[((PieceIdxLookup[(0 - CurrentPiece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == "")
         {
             Stop(this script);
         }
-        If (Piece == WhitePawn)
+        If (CurrentPiece == WhitePawn)
         {
             If (IdxToFile[Idx] == IdxToFile[BlackKingIdx])
             {
@@ -7373,7 +7391,7 @@ Define IsCheckingPiece(string Piece)(string Idx) (warp=true)
             IsCheckingPieceRes = 1;
             Stop(this script);
         }
-        If (Piece == WhiteKnight)
+        If (CurrentPiece == WhiteKnight)
         {
             IsCheckingPieceRes = 1;
             Stop(this script);
@@ -7391,6 +7409,33 @@ Define IsCheckingPiece(string Piece)(string Idx) (warp=true)
         }
     }
     IsCheckingPieceRes = 1;
+}
+
+Define IsCheckingPieceDiscovery(string SourceIdx)(string TargetIdx)(string Depth) (warp=true)
+{
+    IsCheckingPieceRes = 0;
+    If ((Depth % 2) == 1)
+    {
+        If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], SourceIdx) > 0)
+        {
+            SourceIdx = Operator.Join(Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], ((SourceIdx * 2) - 1)), Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], (SourceIdx * 2)));
+            If (Board[SourceIdx] > BlackKnight)
+            {
+                Call IsCheckingPiece(SourceIdx);
+            }
+        }
+    }
+    Else
+    {
+        If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], SourceIdx) > 0)
+        {
+            SourceIdx = Operator.Join(Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], ((SourceIdx * 2) - 1)), Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], (SourceIdx * 2)));
+            If (Board[SourceIdx] < WhiteKnight)
+            {
+                Call IsCheckingPiece(SourceIdx);
+            }
+        }
+    }
 }
 
 Define IsDrawByMaterial (warp=true)
@@ -7590,13 +7635,27 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     IsQuiescentCheckRes = 1;
     If ((Level > 4) And (((IsScratch3 == 0) Or (IsEndgame == 1)) Or (((IsWhiteCastlingPossible == 0) And ((Depth % 2) == 1)) Or ((IsBlackCastlingPossible == 0) And ((Depth % 2) == 0)))))
     {
-        If ((Quiescence[2] == 1) And ((CheckedState[(Depth - 1)] == 1) And (Depth < 6)))
+        If (IsScratch3 == 0)
         {
-            Stop(this script);
+            If ((Depth < 14) And (((Depth < 3) Or (CheckedState[(Depth - 1)] == 1)) And (((Depth < 7) Or (Not ((TargetPieces[(Depth - 2)] == 0)))) Or ((Not ((TargetPieces[(Depth - 4)] == 0))) Or (Not ((TargetPieces[(Depth - 6)] == 0)))))))
+            {
+                Stop(this script);
+            }
+            If ((Depth < 10) And ((Quiescence[2] == 1) And (CheckedState[(Depth - 1)] == 1)))
+            {
+                Stop(this script);
+            }
+        }
+        Else
+        {
+            If ((Depth < 6) And ((Quiescence[2] == 1) And (CheckedState[(Depth - 1)] == 1)))
+            {
+                Stop(this script);
+            }
         }
         If (Quiescence[(Depth - 1)] == 0)
         {
-            If ((Depth < 6) Or ((((IsScratch3 == 0) And (IsEndgame == 1)) Or (IsEndgame2 == 1)) Or (CheckedState[(Depth - 1)] == 1)))
+            If ((Depth < 6) Or (CheckedState[(Depth - 1)] == 1))
             {
                 Stop(this script);
             }
@@ -7605,7 +7664,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
         {
             If (Quiescence[(Depth - 2)] == 0)
             {
-                If ((((IsScratch3 == 0) And (IsEndgame == 1)) Or (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
+                If (((IsScratch3 == 0) Or (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
                 {
                     Stop(this script);
                 }
