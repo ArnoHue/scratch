@@ -491,7 +491,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.534 (10.05.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.537 (12.05.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -828,6 +828,13 @@ Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool 
                         {
                             Call AddMoveImplLookup(SourceIdx)(TargetIdxOuter)(Depth)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
                         }
+                        Else
+                        {
+                            If (IsPotentialNonCapQuiescMove == 1)
+                            {
+                                Call AddPotentialQuiescenceMove(SourceIdx)(TargetIdxOuter)(SourcePieceOuter)(Depth);
+                            }
+                        }
                     }
                     Else
                     {
@@ -1023,6 +1030,7 @@ Define AddMoveToList(string Move)(string Depth) (warp=true)
 
 Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Piece)(string Depth) (warp=true)
 {
+    Call //("Include move in quiescence search if it's a check or check evasion");
     If (Operator.LetterOf(CheckedStateAttackLines[Depth], TargetIdx) == 1)
     {
         Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
@@ -1196,6 +1204,18 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
     List.ReplaceItem(ScoreTypes, Depth, "E");
     List.ReplaceItem(BestMoves, Depth, "");
+    If (IsMinMaxTimeout == 1)
+    {
+        Stop(this script);
+    }
+    If (Depth > 1)
+    {
+        List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
+    }
+    Else
+    {
+        List.ReplaceItem(CheckedState, Depth, "");
+    }
     If Quiescence
     {
         List.ReplaceItem(Quiescence, Depth, 1);
@@ -1204,17 +1224,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     {
         List.ReplaceItem(Quiescence, Depth, 0);
     }
-    If (IsMinMaxTimeout == 1)
-    {
-        Stop(this script);
-    }
     If (Depth > 1)
     {
         Call //("Probe transposition table for cached node evaluations");
         Call TTProbeNode(CurrentBoardHash)(Depth);
         If ((TTProbeRes == 1) And (Not ((TTProbeNodeScoreRes == ""))))
         {
-            If ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1)))
+            If ((((Not (Quiescence)) And (Not ((TTProbeNodeAgeRes == -1)))) And (Not ((TTProbeHorizonRes < (MaxDepth - Depth))))) Or (Quiescence And (TTProbeHorizonRes == -1)))
             {
                 If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
                 {
@@ -1222,9 +1238,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     {
                         If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
                         {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
-                            Stop(this script);
+                            Call //("Quiescent nodes might had different evals due to check/evasion extensions during initial plies (hence search depth matters); onyl apply TT evals when not affected");
+                            If (((Not (Quiescence)) Or (Not (InitialDeepening))) Or ((Not ((CheckedState[(Depth - 1)] == 1))) Or (TTCurrentAge == TTProbeNodeAgeRes)))
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
+                                Stop(this script);
+                            }
                         }
                     }
                 }
@@ -2247,14 +2267,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If ((IsMinMaxTimeout == 0) And (Depth > 1))
     {
         Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
-        If ((Quiescence And ((Quiescence[2] == 1) Or ((Depth > 2) And (Quiescence[3] == 1)))) And (abs(MinMaxResults[Depth]) < AbsMinCheckmateEval))
-        {
-            Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(-1)("")("")("")("")("")("");
-        }
-        Else
-        {
-            Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")((MaxDepth - Depth))("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
-        }
+        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")((MaxDepth - Depth))("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
     }
     Call //("Collect statistics");
     If (MovesIdxBestMove[Depth] > 0)
@@ -3323,6 +3336,7 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
     }
     Else
     {
+        Call //("Tapered evaluation, interpolating between midgame and game");
         CountOuter1 = ((WhiteQueenCountLocal * 9) + (WhiteMinorCountLocal * 4));
         CountOuter2 = ((BlackQueenCountLocal * 9) + (BlackMinorCountLocal * 4));
         If (CountOuter1 > CountOuter2)
@@ -3480,13 +3494,13 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
                             {
                                 If (WhitePawnForwardRank == 3)
                                 {
-                                    EvalExtendedResult1 += -30;
+                                    EvalExtendedResult1 += -40;
                                 }
                                 Else
                                 {
                                     If (WhitePawnForwardRank == 2)
                                     {
-                                        EvalExtendedResult1 += -60;
+                                        EvalExtendedResult1 += -80;
                                     }
                                 }
                                 If ((BlackKingEndgameTargetIdx == 0) Or (WhitePawnForwardRank < WhiteRank))
@@ -3519,13 +3533,13 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
                             {
                                 If (BlackPawnForwardRank == 6)
                                 {
-                                    EvalExtendedResult1 += 30;
+                                    EvalExtendedResult1 += 40;
                                 }
                                 Else
                                 {
                                     If (BlackPawnForwardRank == 7)
                                     {
-                                        EvalExtendedResult1 += 60;
+                                        EvalExtendedResult1 += 80;
                                     }
                                 }
                                 If ((WhiteKingEndgameTargetIdx == 0) Or (BlackPawnForwardRank > BlackRank))
@@ -3681,6 +3695,7 @@ Define EvaluateBoardExtended2(string Depth) (warp=true)
     }
     Else
     {
+        Call //("Tapered evaluation, interpolating between midgame and game");
         If ((((WhiteQueenCountLocal * 9) + (WhiteMinorCountLocal * 4)) < 10) Or (((BlackQueenCountLocal * 9) + (BlackMinorCountLocal * 4)) < 10))
         {
             IsEndgame = 1;
@@ -3832,6 +3847,7 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
     }
     Else
     {
+        Call //("Tapered evaluation, interpolating between midgame and game");
         CountOuter1 = ((WhiteQueenCountLocal * 9) + (WhiteMinorCountLocal * 4));
         CountOuter2 = ((BlackQueenCountLocal * 9) + (BlackMinorCountLocal * 4));
         If (CountOuter1 > CountOuter2)
@@ -5089,7 +5105,7 @@ Define GetBestMoveMedDiff (warp=false)
         IsDone = 0;
         If (IdxDeepening == 1)
         {
-            QuiescenceDepth = 8;
+            QuiescenceDepth = (MaxSearchDepth - IdxDeepening);
         }
         Else
         {
@@ -7329,7 +7345,70 @@ Define IsBlackKingCheckMate (warp=true)
 
 Define IsCheckingPiece(string Idx) (warp=true)
 {
-    Call IsCheckingPieceImpl(Idx)(Board[Idx]);
+    IsCheckingPieceRes = 0;
+    CurrentPiece = Board[Idx];
+    If (abs(CurrentPiece) == BlackKing)
+    {
+        Stop(this script);
+    }
+    If (CurrentPiece > 0)
+    {
+        If (MovePosLookupBlack[((PieceIdxLookup[CurrentPiece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == "")
+        {
+            Stop(this script);
+        }
+        If (CurrentPiece == BlackPawn)
+        {
+            If (IdxToFile[Idx] == IdxToFile[WhiteKingIdx])
+            {
+                Stop(this script);
+            }
+            IsCheckingPieceRes = 1;
+            Stop(this script);
+        }
+        If (CurrentPiece == BlackKnight)
+        {
+            IsCheckingPieceRes = 1;
+            Stop(this script);
+        }
+        CurrentMove = MoveNotationLookup[((Idx * 100) + WhiteKingIdx)];
+    }
+    Else
+    {
+        If (CurrentPiece < 0)
+        {
+            If (MovePosLookupWhite[((PieceIdxLookup[(0 - CurrentPiece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == "")
+            {
+                Stop(this script);
+            }
+            If (CurrentPiece == WhitePawn)
+            {
+                If (IdxToFile[Idx] == IdxToFile[BlackKingIdx])
+                {
+                    Stop(this script);
+                }
+                IsCheckingPieceRes = 1;
+                Stop(this script);
+            }
+            If (CurrentPiece == WhiteKnight)
+            {
+                IsCheckingPieceRes = 1;
+                Stop(this script);
+            }
+            CurrentMove = MoveNotationLookup[((Idx * 100) + BlackKingIdx)];
+        }
+    }
+    SourceIdx = Idx;
+    IdxInc = MovePathStepInc[CurrentMove];
+    Repeat ((MovePathDelta[CurrentMove] - 1))
+    {
+        SourceIdx += IdxInc;
+        If (Not ((Board[SourceIdx] == 0)))
+        {
+            Stop(this script);
+        }
+    }
+    IsCheckingPieceRes = 1;
 }
 
 Define IsCheckingPieceDiscovery(string SourceIdx)(string TargetIdx)(string Depth) (warp=true)
@@ -7357,77 +7436,6 @@ Define IsCheckingPieceDiscovery(string SourceIdx)(string TargetIdx)(string Depth
             }
         }
     }
-}
-
-Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
-{
-    IsCheckingPieceRes = 0;
-    If (Piece == 0)
-    {
-        Stop(this script);
-    }
-    If (abs(Piece) == BlackKing)
-    {
-        Stop(this script);
-    }
-    If (Piece > 0)
-    {
-        If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == "")
-        {
-            Stop(this script);
-        }
-        If (Piece == BlackPawn)
-        {
-            If (IdxToFile[Idx] == IdxToFile[WhiteKingIdx])
-            {
-                Stop(this script);
-            }
-            IsCheckingPieceRes = 1;
-            Stop(this script);
-        }
-        If (Piece == BlackKnight)
-        {
-            IsCheckingPieceRes = 1;
-            Stop(this script);
-        }
-        CurrentMove = MoveNotationLookup[((Idx * 100) + WhiteKingIdx)];
-    }
-    Else
-    {
-        If (Piece < 0)
-        {
-            If (MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == "")
-            {
-                Stop(this script);
-            }
-            If (Piece == WhitePawn)
-            {
-                If (IdxToFile[Idx] == IdxToFile[BlackKingIdx])
-                {
-                    Stop(this script);
-                }
-                IsCheckingPieceRes = 1;
-                Stop(this script);
-            }
-            If (Piece == WhiteKnight)
-            {
-                IsCheckingPieceRes = 1;
-                Stop(this script);
-            }
-            CurrentMove = MoveNotationLookup[((Idx * 100) + BlackKingIdx)];
-        }
-    }
-    SourceIdx = Idx;
-    IdxInc = MovePathStepInc[CurrentMove];
-    Repeat ((MovePathDelta[CurrentMove] - 1))
-    {
-        SourceIdx += IdxInc;
-        If (Not ((Board[SourceIdx] == 0)))
-        {
-            Stop(this script);
-        }
-    }
-    IsCheckingPieceRes = 1;
 }
 
 Define IsDrawByMaterial (warp=true)
@@ -7624,39 +7632,40 @@ Define IsPlyExtension(string Depth) (warp=true)
 
 Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
+    Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 1;
     If (Level > 4)
     {
         If (IsScratch3 == 0)
         {
-            If ((Depth < 14) And (((Quiescence[2] == 1) Or ((Quiescence[3] == 1) And (Depth > 2))) And (((Depth < 3) Or (CheckedState[(Depth - 1)] == 1)) And (((Depth < 7) Or (Not ((TargetPieces[(Depth - 2)] == 0)))) Or ((Not ((TargetPieces[(Depth - 4)] == 0))) Or (Not ((TargetPieces[(Depth - 6)] == 0))))))))
+            If ((Depth < 16) And ((Quiescence[2] == 1) And ((Depth < 3) Or (CheckedState[(Depth - 1)] == 1))))
             {
-                Stop(this script);
-            }
-            If ((Depth < 10) And (((Quiescence[2] == 1) Or ((Quiescence[3] == 1) And (Depth > 2))) And (CheckedState[(Depth - 1)] == 1)))
-            {
-                Stop(this script);
+                If ((Depth < 7) Or (((abs(SourcePieces[(Depth - 2)]) < BlackRook) Or (abs(SourcePieces[(Depth - 4)]) < BlackRook)) Or (abs(SourcePieces[(Depth - 6)]) < BlackRook)))
+                {
+                    Stop(this script);
+                }
+                If ((Depth < 7) Or (((Not ((TargetPieces[(Depth - 2)] == 0))) Or (Not ((TargetPieces[(Depth - 4)] == 0)))) Or (Not ((TargetPieces[(Depth - 6)] == 0)))))
+                {
+                    Stop(this script);
+                }
             }
         }
         Else
         {
-            If ((Depth < 6) And (((Quiescence[2] == 1) Or ((Quiescence[3] == 1) And (Depth > 2))) And (CheckedState[(Depth - 1)] == 1)))
+            If ((Depth < 6) And ((Quiescence[2] == 1) And (CheckedState[(Depth - 1)] == 1)))
             {
                 Stop(this script);
             }
         }
         If (Quiescence[(Depth - 1)] == 0)
         {
-            If (CheckedState[(Depth - 1)] == 1)
-            {
-                Stop(this script);
-            }
+            Stop(this script);
         }
         Else
         {
             If (Quiescence[(Depth - 2)] == 0)
             {
-                If (((IsScratch3 == 0) Or (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
+                If (((IsScratch3 == 0) Or (IsEndgame2 == 1)) Or (CheckedState[(Depth - 1)] == 1))
                 {
                     Stop(this script);
                 }
@@ -8263,7 +8272,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
             {
                 If (CapturesDeltaSum[Depth] > 0)
                 {
-                    CurrentValue = -70;
+                    CurrentValue = -60;
                     If ((IsEndgame == 0) And (PawnShelterCapture[((Depth + (Depth % 2)) - 1)] > 0))
                     {
                         CurrentValue += -50;
@@ -8282,7 +8291,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 {
                     If (CapturesDeltaSum[Depth] < 0)
                     {
-                        CurrentValue = 70;
+                        CurrentValue = 60;
                         If ((IsEndgame == 0) And (PawnShelterCapture[(Depth - (Depth % 2))] > 0))
                         {
                             CurrentValue += 50;
@@ -8608,7 +8617,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     {
                         If (Not (((abs(Board[SourceIdx]) == BlackPawn) And ((Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx]))) And (Board[TargetIdx] == 0)))))
                         {
-                            Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 0))(99);
+                            Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(6);
                             Call AddMoveToList(TTProbeBestMoveRes)(Depth);
                             List.ReplaceItem(MovesIdx, Depth, 1);
                             Call ApplyMove(Depth);
@@ -9833,7 +9842,8 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
             {
                 List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
             }
-            If ((Not ((Score == ""))) And (TTNodeScore[HashBucket] == ""))
+            Call //("First iterative deepening iteration evals may override previous evals at same horizon (due to quiescence check/evasion extensions)");
+            If ((Not ((Score == ""))) And ((TTNodeScore[HashBucket] == "") Or ((TTCurrentAge % 100) == 0)))
             {
                 List.ReplaceItem(TTNodeType, HashBucket, Type);
                 List.ReplaceItem(TTNodeScore, HashBucket, Score);
