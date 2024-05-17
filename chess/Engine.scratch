@@ -491,7 +491,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.544 (16.05.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.545 (17.05.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1230,7 +1230,51 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     {
         List.ReplaceItem(Quiescence, Depth, 0);
     }
-    If (Depth > 1)
+    If ((Depth > 1) And (IsInNullMove == 0))
+    {
+        Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
+        If ((Depth < 2) Or ((Not ((abs(SourcePieces[(Depth - 1)]) == BlackPawn))) And (TargetPieces[(Depth - 1)] == 0)))
+        {
+            If ((Depth < 3) Or ((Not ((abs(SourcePieces[(Depth - 2)]) == BlackPawn))) And (TargetPieces[(Depth - 2)] == 0)))
+            {
+                If ((Depth < 4) Or ((Not ((abs(SourcePieces[(Depth - 3)]) == BlackPawn))) And (TargetPieces[(Depth - 3)] == 0)))
+                {
+                    If ((Depth < 5) Or ((Not ((abs(SourcePieces[(Depth - 4)]) == BlackPawn))) And (TargetPieces[(Depth - 4)] == 0)))
+                    {
+                        If (List.ContainsItem(BoardHistoryHash, CurrentBoardHash) Or List.ContainsItem(PreviousBoardHash, CurrentBoardHash))
+                        {
+                            Count = 1;
+                            Idx = (Depth - 2);
+                            Repeat Until (Idx < 1)
+                            {
+                                If (CurrentBoardHash == PreviousBoardHash[Idx])
+                                {
+                                    Count += 1;
+                                }
+                                Idx += -2;
+                            }
+                            Idx = ((List.Length(BoardHistoryHash) - 1) - (Depth % 2));
+                            Repeat Until ((Idx < 1) Or (Idx < (List.Length(BoardHistoryHash) - 32)))
+                            {
+                                If (CurrentBoardHash == BoardHistoryHash[Idx])
+                                {
+                                    Count += 1;
+                                }
+                                Idx += -2;
+                            }
+                            If (Count > 1)
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, DrawByRepetitionEval);
+                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
+                                Stop(this script);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    If ((Depth > 1) And (Not (InitialDeepening)))
     {
         Call //("Probe transposition table for cached node evaluations");
         Call TTProbeNode(CurrentBoardHash)(Depth);
@@ -1242,7 +1286,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     If ((TTProbeNodeScoreIsDynamicRes == 0) Or (floor((TTCurrentAge / 100)) == floor((TTProbeNodeAgeRes / 100))))
                     {
-                        If (((Depth > 2) And (Not ((floor((TTCurrentAge / 100)) == floor((TTProbeNodeAgeRes / 100)))))) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
+                        If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
                         {
                             List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
                             List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
@@ -1321,47 +1365,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
                     Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("E")("")(99)("")("")("")("")("")(0);
                     Stop(this script);
-                }
-            }
-        }
-        Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
-        If ((Depth < 2) Or ((Not ((abs(SourcePieces[(Depth - 1)]) == BlackPawn))) And (TargetPieces[(Depth - 1)] == 0)))
-        {
-            If ((Depth < 3) Or ((Not ((abs(SourcePieces[(Depth - 2)]) == BlackPawn))) And (TargetPieces[(Depth - 2)] == 0)))
-            {
-                If ((Depth < 4) Or ((Not ((abs(SourcePieces[(Depth - 3)]) == BlackPawn))) And (TargetPieces[(Depth - 3)] == 0)))
-                {
-                    If ((Depth < 5) Or ((Not ((abs(SourcePieces[(Depth - 4)]) == BlackPawn))) And (TargetPieces[(Depth - 4)] == 0)))
-                    {
-                        If (List.ContainsItem(BoardHistoryHash, CurrentBoardHash) Or List.ContainsItem(PreviousBoardHash, CurrentBoardHash))
-                        {
-                            Count = 1;
-                            Idx = (Depth - 2);
-                            Repeat Until (Idx < 1)
-                            {
-                                If (CurrentBoardHash == PreviousBoardHash[Idx])
-                                {
-                                    Count += 1;
-                                }
-                                Idx += -2;
-                            }
-                            Idx = ((List.Length(BoardHistoryHash) - 1) - (Depth % 2));
-                            Repeat Until ((Idx < 1) Or (Idx < (List.Length(BoardHistoryHash) - 32)))
-                            {
-                                If (CurrentBoardHash == BoardHistoryHash[Idx])
-                                {
-                                    Count += 1;
-                                }
-                                Idx += -2;
-                            }
-                            If (Count > 2)
-                            {
-                                List.ReplaceItem(MinMaxResults, Depth, DrawByRepetitionEval);
-                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
-                                Stop(this script);
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -9869,7 +9872,7 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
                 List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
             }
             Call //("First iterative deepening iteration evals may override previous evals at same horizon (due to quiescence check/evasion extensions)");
-            If ((Not ((Score == ""))) And ((TTNodeScore[HashBucket] == "") Or (TTNodeHorizon[HashBucket] == -1)))
+            If ((Not ((Score == ""))) And ((TTNodeScore[HashBucket] == "") Or ((TTCurrentAge % 100) == 0)))
             {
                 List.ReplaceItem(TTNodeType, HashBucket, Type);
                 List.ReplaceItem(TTNodeScore, HashBucket, Score);
