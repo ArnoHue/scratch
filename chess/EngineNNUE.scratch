@@ -115,7 +115,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.019 (14.06.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.020 (15.06.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -7403,6 +7403,45 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     {
         Call Profile_MethodEnter(Depth);
     }
+    ScoreCalcRes = "";
+    ScoreCalcResIsDynamic = 0;
+    If ((IsScratch3 == 1) And (IsEndgame2 == 1))
+    {
+        If (Depth == 0)
+        {
+            Call EvaluateBoard;
+            EvalResultBase = EvalResult;
+            Call CalcBoardAttackedByMove(1);
+            Call StoreAttackInfo(1)(1);
+            Call CalcBoardAttackedByMove(2);
+            Call StoreAttackInfo(2)(1);
+            EvalMaterialBase = Operator.Round((((((BlackQueenCount * 9) + (BlackRookCount * 5)) + (((BlackBishopCount * 3.3) + (((BlackMinorCount - BlackRookCount) - BlackBishopCount) * 3.1)) + BlackPawnCount)) - (((WhiteQueenCount * 9) + (WhiteRookCount * 5)) + (((WhiteBishopCount * 3.3) + (((WhiteMinorCount - WhiteRookCount) - WhiteBishopCount) * 3.1)) + WhitePawnCount))) * 10));
+            If (IsBlockProfilerEnabled == 1)
+            {
+                Call Profile_MethodExit(Depth);
+            }
+            Stop(this script);
+        }
+        Call //("Incremental Evaluation");
+        If (Depth == 1)
+        {
+            List.ReplaceItem(PosScoreDeltaSum, Depth, PosScoreDelta[Depth]);
+            List.ReplaceItem(CapturesDeltaSum, Depth, TargetPieces[Depth]);
+            If (Not ((PromotionPieces[Depth] == 0)))
+            {
+                List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
+            }
+        }
+        Else
+        {
+            List.ReplaceItem(PosScoreDeltaSum, Depth, (PosScoreDeltaSum[(Depth - 1)] + PosScoreDelta[Depth]));
+            List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[(Depth - 1)] + TargetPieces[Depth]));
+            If (Not ((PromotionPieces[Depth] == 0)))
+            {
+                List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
+            }
+        }
+    }
     If (Depth == MaxDepth)
     {
         If (1 == 1)
@@ -7419,6 +7458,40 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 Stop(this script);
             }
         }
+        If ((IsScratch3 == 1) And (IsEndgame2 == 1))
+        {
+            ScoreCalcRes = (EvalResultBase + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (BlackMobBonus[Depth] - WhiteMobBonus[Depth])));
+            Delta = abs((IdxToRank[WhiteKingIdx] - IdxToRank[BlackKingIdx]));
+            Delta2 = abs((IdxToFile[WhiteKingIdx] - IdxToFile[BlackKingIdx]));
+            If (Not ((PromotionPieces[1] == 0)))
+            {
+                ScoreCalcRes += 50;
+                ScoreCalcResIsDynamic = 1;
+            }
+            If ((Depth > 1) And (Not ((PromotionPieces[2] == 0))))
+            {
+                ScoreCalcRes += -50;
+                ScoreCalcResIsDynamic = 1;
+            }
+            If (Delta < Delta2)
+            {
+                Delta = Delta2;
+            }
+            If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+            {
+                ScoreCalcRes += (-20 * (Delta - 1));
+            }
+            If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+            {
+                ScoreCalcRes += (20 * (Delta - 1));
+            }
+            Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(ScoreCalcRes);
+            If (IsBlockProfilerEnabled == 1)
+            {
+                Call Profile_MethodExit(Depth);
+            }
+            Stop(this script);
+        }
         Call NNUE_Public_Evaluate((Depth + 1));
         ScoreCalcRes = NNUE_EvalRes;
         ScoreCalcResIsDynamic = 0;
@@ -7433,116 +7506,119 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
 Define OnScoreCalcPostProcess(string Depth) (warp=true)
 {
     Call //("Early promotion detection via Rule-of-Squares / Chebyshev distance");
-    If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) Or ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
+    If ((IsScratch3 == 1) And (IsEndgame2 == 1))
     {
-        List.DeleteItem(BlackPawnCount, all);
-        List.DeleteItem(WhitePawnCount, all);
-        Repeat (8)
+        If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) Or ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
         {
-            List.Add(BlackPawnCount, 0);
-            List.Add(WhitePawnCount, 0);
-        }
-        List.DeleteItem(PawnAdvancePerFile, all);
-        Repeat (32)
-        {
-            List.Add(PawnAdvancePerFile, 0);
-        }
-        Idx = 1;
-        Repeat (64)
-        {
-            SourcePiece = Board[Idx];
-            If (SourcePiece == BlackPawn)
+            List.DeleteItem(BlackPawnCount, all);
+            List.DeleteItem(WhitePawnCount, all);
+            Repeat (8)
             {
-                File = IdxToFile[Idx];
-                Rank = IdxToRank[Idx];
-                List.ReplaceItem(BlackPawnCount, File, (BlackPawnCount[File] + 1));
-                If ((PawnAdvancePerFile[(File + 16)] == 0) Or (Rank < PawnAdvancePerFile[(File + 16)]))
-                {
-                    List.ReplaceItem(PawnAdvancePerFile, (File + 16), Rank);
-                }
-                If (Rank > PawnAdvancePerFile[(File + 24)])
-                {
-                    List.ReplaceItem(PawnAdvancePerFile, (File + 24), Rank);
-                }
+                List.Add(BlackPawnCount, 0);
+                List.Add(WhitePawnCount, 0);
             }
-            If (SourcePiece == WhitePawn)
+            List.DeleteItem(PawnAdvancePerFile, all);
+            Repeat (32)
             {
-                File = IdxToFile[Idx];
-                Rank = IdxToRank[Idx];
-                List.ReplaceItem(WhitePawnCount, File, (WhitePawnCount[File] + 1));
-                If (Rank > PawnAdvancePerFile[File])
-                {
-                    List.ReplaceItem(PawnAdvancePerFile, File, Rank);
-                }
-                If ((PawnAdvancePerFile[(File + 8)] == 0) Or (Rank < PawnAdvancePerFile[(File + 8)]))
-                {
-                    List.ReplaceItem(PawnAdvancePerFile, (File + 8), Rank);
-                }
+                List.Add(PawnAdvancePerFile, 0);
             }
-            Idx += 1;
-        }
-        Idx = 1;
-        Repeat (8)
-        {
-            WhitePawnForwardRank = PawnAdvancePerFile[(Idx + 8)];
-            BlackPawnForwardRank = PawnAdvancePerFile[(Idx + 24)];
-            If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+            Idx = 1;
+            Repeat (64)
             {
-                If ((WhitePawnForwardRank < 7) And (WhitePawnForwardRank > 0))
+                SourcePiece = Board[Idx];
+                If (SourcePiece == BlackPawn)
                 {
-                    BlackPawnBackwardRank = PawnAdvancePerFile[(Idx + 16)];
-                    If ((WhitePawnForwardRank < BlackPawnBackwardRank) Or (BlackPawnBackwardRank == 0))
+                    File = IdxToFile[Idx];
+                    Rank = IdxToRank[Idx];
+                    List.ReplaceItem(BlackPawnCount, File, (BlackPawnCount[File] + 1));
+                    If ((PawnAdvancePerFile[(File + 16)] == 0) Or (Rank < PawnAdvancePerFile[(File + 16)]))
                     {
-                        LeftOppPawnRank = PawnAdvancePerFile[((Idx + 16) - 1)];
-                        If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (WhitePawnForwardRank < LeftOppPawnRank))
+                        List.ReplaceItem(PawnAdvancePerFile, (File + 16), Rank);
+                    }
+                    If (Rank > PawnAdvancePerFile[(File + 24)])
+                    {
+                        List.ReplaceItem(PawnAdvancePerFile, (File + 24), Rank);
+                    }
+                }
+                If (SourcePiece == WhitePawn)
+                {
+                    File = IdxToFile[Idx];
+                    Rank = IdxToRank[Idx];
+                    List.ReplaceItem(WhitePawnCount, File, (WhitePawnCount[File] + 1));
+                    If (Rank > PawnAdvancePerFile[File])
+                    {
+                        List.ReplaceItem(PawnAdvancePerFile, File, Rank);
+                    }
+                    If ((PawnAdvancePerFile[(File + 8)] == 0) Or (Rank < PawnAdvancePerFile[(File + 8)]))
+                    {
+                        List.ReplaceItem(PawnAdvancePerFile, (File + 8), Rank);
+                    }
+                }
+                Idx += 1;
+            }
+            Idx = 1;
+            Repeat (8)
+            {
+                WhitePawnForwardRank = PawnAdvancePerFile[(Idx + 8)];
+                BlackPawnForwardRank = PawnAdvancePerFile[(Idx + 24)];
+                If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+                {
+                    If ((WhitePawnForwardRank < 7) And (WhitePawnForwardRank > 0))
+                    {
+                        BlackPawnBackwardRank = PawnAdvancePerFile[(Idx + 16)];
+                        If ((WhitePawnForwardRank < BlackPawnBackwardRank) Or (BlackPawnBackwardRank == 0))
                         {
-                            RightOppPawnRank = PawnAdvancePerFile[((Idx + 16) + 1)];
-                            If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (WhitePawnForwardRank < RightOppPawnRank))
+                            LeftOppPawnRank = PawnAdvancePerFile[((Idx + 16) - 1)];
+                            If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (WhitePawnForwardRank < LeftOppPawnRank))
                             {
-                                TargetIdx = Idx;
-                                Delta = (WhitePawnForwardRank - 1);
-                                If (Delta > 5)
+                                RightOppPawnRank = PawnAdvancePerFile[((Idx + 16) + 1)];
+                                If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (WhitePawnForwardRank < RightOppPawnRank))
                                 {
-                                    Delta = 5;
-                                }
-                                If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
-                                {
-                                    ScoreCalcRes += (WhiteQueen - WhitePawn);
+                                    TargetIdx = Idx;
+                                    Delta = (WhitePawnForwardRank - 1);
+                                    If (Delta > 5)
+                                    {
+                                        Delta = 5;
+                                    }
+                                    If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
+                                    {
+                                        ScoreCalcRes += (WhiteQueen - WhitePawn);
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            If ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0)
-            {
-                If (BlackPawnForwardRank > 2)
+                If ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0)
                 {
-                    WhitePawnBackwardRank = PawnAdvancePerFile[Idx];
-                    If (BlackPawnForwardRank > WhitePawnBackwardRank)
+                    If (BlackPawnForwardRank > 2)
                     {
-                        LeftOppPawnRank = PawnAdvancePerFile[(Idx - 1)];
-                        If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (BlackPawnForwardRank > LeftOppPawnRank))
+                        WhitePawnBackwardRank = PawnAdvancePerFile[Idx];
+                        If (BlackPawnForwardRank > WhitePawnBackwardRank)
                         {
-                            RightOppPawnRank = PawnAdvancePerFile[(Idx + 1)];
-                            If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (BlackPawnForwardRank > RightOppPawnRank))
+                            LeftOppPawnRank = PawnAdvancePerFile[(Idx - 1)];
+                            If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (BlackPawnForwardRank > LeftOppPawnRank))
                             {
-                                TargetIdx = (56 + Idx);
-                                Delta = (8 - BlackPawnForwardRank);
-                                If (Delta > 5)
+                                RightOppPawnRank = PawnAdvancePerFile[(Idx + 1)];
+                                If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (BlackPawnForwardRank > RightOppPawnRank))
                                 {
-                                    Delta = 5;
-                                }
-                                If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
-                                {
-                                    ScoreCalcRes += (BlackQueen - BlackPawn);
+                                    TargetIdx = (56 + Idx);
+                                    Delta = (8 - BlackPawnForwardRank);
+                                    If (Delta > 5)
+                                    {
+                                        Delta = 5;
+                                    }
+                                    If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
+                                    {
+                                        ScoreCalcRes += (BlackQueen - BlackPawn);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                Idx += 1;
             }
-            Idx += 1;
         }
     }
 }
