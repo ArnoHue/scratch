@@ -2298,14 +2298,6 @@ Define ApplyMove(num Depth) (warp=true)
             }
         }
     }
-    If (Depth == 1)
-    {
-        If (AppliedMove_NNUE_State[Depth] == 0)
-        {
-            Call NNUE_Public_Refresh;
-            List.ReplaceItem(AppliedMove_NNUE_State, Depth, 1);
-        }
-    }
     If (Not ((AppliedMove[Depth] == 0000)))
     {
         If (Quiescence[Depth] == 0)
@@ -7009,6 +7001,11 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate) (warp=true)
     }
 }
 
+Define NNUE_Activate(string GoKIdx)(string GoKPiece) (warp=true)
+{
+    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 1));
+}
+
 Define NNUE_AddAccWght1_16(string IdxAcc)(string IdxWght) (warp=true)
 {
     List.ReplaceItem(NNUE_Accumulator, IdxAcc, (NNUE_Accumulator[IdxAcc] + NNUE_InputWeights_1[IdxWght]));
@@ -7047,6 +7044,11 @@ Define NNUE_AddAccWght2_16(string IdxAcc)(string IdxWght) (warp=true)
     List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 13), (NNUE_Accumulator[(IdxAcc + 13)] + NNUE_InputWeights_2[(IdxWght + 13)]));
     List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 14), (NNUE_Accumulator[(IdxAcc + 14)] + NNUE_InputWeights_2[(IdxWght + 14)]));
     List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 15), (NNUE_Accumulator[(IdxAcc + 15)] + NNUE_InputWeights_2[(IdxWght + 15)]));
+}
+
+Define NNUE_Deactivate(string GoKIdx)(string GoKPiece) (warp=true)
+{
+    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 0));
 }
 
 Define NNUE_DecodeNetwork (warp=true)
@@ -7252,6 +7254,11 @@ Define NNUE_Init (warp=true)
         List.Add(NNUE_GoKIdxToSquare, ((((8 - IdxToRank[Idx]) * 8) + IdxToFile[Idx]) - 1));
         Idx += 1;
     }
+    List.DeleteAll(NNUE_PrevRefreshBoard);
+    Repeat (64)
+    {
+        List.Add(NNUE_PrevRefreshBoard, 0);
+    }
     List.DeleteAll(NNUE_InputIdxMap);
     Repeat (2000)
     {
@@ -7317,18 +7324,25 @@ Define NNUE_LoadList(string Data) (warp=true)
     }
 }
 
-Define NNUE_Public_Activate(string GoKIdx)(string GoKPiece) (warp=true)
-{
-    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 1));
-}
-
-Define NNUE_Public_Deactivate(string GoKIdx)(string GoKPiece) (warp=true)
-{
-    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 0));
-}
-
 Define NNUE_Public_Evaluate(string Depth) (warp=true)
 {
+    NNUE_Idx = 1;
+    Repeat (64)
+    {
+        If (Not ((Board[NNUE_Idx] == NNUE_PrevRefreshBoard[NNUE_Idx])))
+        {
+            If (Not ((NNUE_PrevRefreshBoard[NNUE_Idx] == 0)))
+            {
+                Call NNUE_Deactivate(NNUE_Idx)(NNUE_PrevRefreshBoard[NNUE_Idx]);
+            }
+            If (Not ((Board[NNUE_Idx] == 0)))
+            {
+                Call NNUE_Activate(NNUE_Idx)(Board[NNUE_Idx]);
+            }
+            List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, Board[NNUE_Idx]);
+        }
+        NNUE_Idx += 1;
+    }
     Call NNUE_Evaluate((Depth % 2));
     If (NNUE_EvalRes > AbsMinCheckmateEval)
     {
@@ -7353,12 +7367,6 @@ Define NNUE_Public_Evaluate(string Depth) (warp=true)
     }
 }
 
-Define NNUE_Public_Move(string FromGoKIdx)(string ToGoKIdx)(string GoKPiece) (warp=true)
-{
-    Call NNUE_Public_Deactivate(FromGoKIdx)(GoKPiece);
-    Call NNUE_Public_Activate(ToGoKIdx)(GoKPiece);
-}
-
 Define NNUE_Public_Refresh (warp=true)
 {
     Idx = 1;
@@ -7373,8 +7381,9 @@ Define NNUE_Public_Refresh (warp=true)
     {
         If (Not ((Board[NNUE_Idx] == 0)))
         {
-            Call NNUE_Public_Activate(NNUE_Idx)(Board[NNUE_Idx]);
+            Call NNUE_Activate(NNUE_Idx)(Board[NNUE_Idx]);
         }
+        List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, Board[NNUE_Idx]);
         NNUE_Idx += 1;
     }
 }
@@ -7573,43 +7582,6 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 Call Profile_MethodExit(Depth);
             }
             Stop(this script);
-        }
-        IdxOuter3 = Depth;
-        Repeat Until ((IdxOuter3 == 1) Or (AppliedMove_NNUE_State[IdxOuter3] == 1))
-        {
-            IdxOuter3 += -1;
-        }
-        Repeat Until (IdxOuter3 > Depth)
-        {
-            If (AppliedMove_NNUE_State[IdxOuter3] == 0)
-            {
-                SourceIdxOuter2 = floor((AppliedMove[IdxOuter3] / 100));
-                If (SourceIdxOuter2 > 0)
-                {
-                    TargetIdxOuter2 = floor((AppliedMove[IdxOuter3] % 100));
-                    If (PromotionPieces[IdxOuter3] == 0)
-                    {
-                        If (Not ((TargetPieces[IdxOuter3] == 0)))
-                        {
-                            Call NNUE_Public_Deactivate(TargetPiecesIdx[IdxOuter3])(TargetPieces[IdxOuter3]);
-                        }
-                        Call NNUE_Public_Move(SourceIdxOuter2)(TargetIdxOuter2)(SourcePieces[IdxOuter3]);
-                    }
-                    Else
-                    {
-                        Call NNUE_Public_Refresh;
-                    }
-                }
-                Else
-                {
-                    If (Not ((AppliedMove[IdxOuter3] == 0000)))
-                    {
-                        Call NNUE_Public_Refresh;
-                    }
-                }
-            }
-            List.ReplaceItem(AppliedMove_NNUE_State, IdxOuter3, 1);
-            IdxOuter3 += 1;
         }
         Call NNUE_Public_Evaluate((Depth + 1));
         ScoreCalcRes = NNUE_EvalRes;
@@ -8334,22 +8306,6 @@ Define RevertMove(num Depth) (warp=true)
                 }
             }
         }
-        If (AppliedMove_NNUE_State[Depth] == 1)
-        {
-            If (PromotionPieces[Depth] == 0)
-            {
-                Call NNUE_Public_Move(TargetIdx)(SourceIdx)(SourcePieces[Depth]);
-                If (Not ((TargetPieces[Depth] == 0)))
-                {
-                    Call NNUE_Public_Activate(TargetPiecesIdx[Depth])(TargetPieces[Depth]);
-                }
-            }
-            Else
-            {
-                Call NNUE_Public_Refresh;
-            }
-            List.ReplaceItem(AppliedMove_NNUE_State, Depth, 0);
-        }
     }
     Else
     {
@@ -8393,14 +8349,6 @@ Define RevertMove(num Depth) (warp=true)
                     }
                 }
             }
-        }
-        If (AppliedMove_NNUE_State[Depth] == 1)
-        {
-            If (Not ((AppliedMove[Depth] == 0000)))
-            {
-                Call NNUE_Public_Refresh;
-            }
-            List.ReplaceItem(AppliedMove_NNUE_State, Depth, 0);
         }
     }
     CurrentBoardHash = PreviousBoardHash[Depth];
