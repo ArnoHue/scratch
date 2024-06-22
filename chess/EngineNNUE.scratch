@@ -115,7 +115,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.031 (21.06.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.03 (22.06.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -911,21 +911,24 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
                 {
-                    If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
+                    If ((Not (Quiescence)) Or ((Not ((CheckedState[(Depth - 1)] == 1))) Or (TTCurrentAge == TTProbeNodeAgeRes)))
                     {
-                        If (((Depth > 1) And ((abs(SourcePieces[(Depth - 1)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 1)] == 0))))) Or ((Depth > 2) And ((abs(SourcePieces[(Depth - 2)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 2)] == 0))))))
+                        If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
                         {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
-                            Stop(this script);
-                        }
-                        Else
-                        {
-                            If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
+                            If (((Depth > 1) And ((abs(SourcePieces[(Depth - 1)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 1)] == 0))))) Or ((Depth > 2) And ((abs(SourcePieces[(Depth - 2)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 2)] == 0))))))
                             {
                                 List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
                                 List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
                                 Stop(this script);
+                            }
+                            Else
+                            {
+                                If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
+                                {
+                                    List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
+                                    Stop(this script);
+                                }
                             }
                         }
                     }
@@ -979,7 +982,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If ((Depth > 1) And (IsInNullMove == 0))
     {
         Call //("Draw-by-stalemate detection. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
-        If ((Depth < 3) Or ((Depth < 4) And (IsEndgame2 == 1)))
+        If ((Depth < 3) Or ((Depth < 5) And ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0)))))
         {
             Call IsDrawByStalemate((Depth + 2));
             If (IsDrawRes == 1)
@@ -6498,44 +6501,38 @@ Define IsDrawByMaterial (warp=true)
 
 Define IsDrawByStalemate(string Depth) (warp=true)
 {
+    IsDrawRes = 1;
     Call CalcBoardAttackedByMoveChecked((Depth + 1));
     If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
     {
         IsDrawRes = 0;
         Stop(this script);
     }
-    IsDrawRes = 1;
-    List.ReplaceItem(Quiescence, Depth, 0);
-    Call CalcBoardAttackedByMove((Depth + 1));
-    Call StoreAttackInfo((Depth + 1))(Depth);
-    List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-    Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 0));
-    List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
-    If (Quiescence[Depth] == 0)
+    List.ReplaceItem(PickPhase, Depth, 1);
+    List.ReplaceItem(PickMoveRes, Depth, 1);
+    Repeat Until ((PickMoveRes[Depth] == 0) Or (IsDrawRes == 0))
     {
-        MoveCount += MovesCount[Depth];
-    }
-    Else
-    {
-        MoveCountQ += MovesCount[Depth];
-    }
-    List.ReplaceItem(MovesIdx, Depth, 1);
-    Repeat (MovesCount[Depth])
-    {
-        If (IsDrawRes == 1)
+        Call PickMove(Depth)((1 == 0));
+        If (PickMoveRes[Depth] == 1)
         {
-            Call ApplyMoveLight(Depth);
+            If (MovesCount[Depth] == 1)
+            {
+                Call TTProbeNode(CurrentBoardHash)(Depth);
+                If ((TTProbeRes == 0) Or (TTProbeBestMoveRes == ""))
+                {
+                    Call GetCurrentMove(Depth);
+                    Call TTStoreNode(CurrentBoardHash)(Depth)("")(CurrentMove)("")("")(0)("")("")("")("")("")("");
+                }
+            }
             Call CalcBoardAttackedByMoveChecked((Depth + 1));
             If ((((Depth % 2) == 1) And (IsBlackChecked == 0)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 0)))
             {
                 IsDrawRes = 0;
-                Call RevertMoveLight(Depth);
-                Stop(this script);
             }
-            Call RevertMoveLight(Depth);
+            Call RevertMove(Depth);
         }
-        List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
     }
+    MoveCount += MovesCount[Depth];
 }
 
 Define IsEngineValidMove(string Move) (warp=true)
