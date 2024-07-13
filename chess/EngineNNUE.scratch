@@ -116,7 +116,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.065 (13.07.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.068 (13.07.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -208,11 +208,6 @@ WhenBroadcastReceived(credits)
     }
 }
 
-WhenBroadcastReceived(evaluationvaluechangedinternal)
-{
-    Event.BroadcastAndWait("evaluationvaluechanged");
-}
-
 WhenBroadcastReceived(export)
 {
     If (IsExecutionRunning == 0)
@@ -297,11 +292,6 @@ WhenBroadcastReceived(import)
 WhenBroadcastReceived(levelchanged)
 {
     Call DrawBoardAndWait;
-}
-
-WhenBroadcastReceived(progressvaluechangedinternal)
-{
-    Event.BroadcastAndWait("progressvaluechanged");
 }
 
 WhenBroadcastReceived(sayasyncmsg)
@@ -5276,6 +5266,25 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
             List.ReplaceItem(MaxHistoryMoveScore, IdxOuter, Operator.Round((MaxHistoryMoveScore[IdxOuter] / 8)));
             IdxOuter += 1;
         }
+        If ((IsScratch3 == 0) And (Level > 3))
+        {
+            IdxOuter = 1;
+            Repeat (List.Length(TTNodeHash))
+            {
+                If (TTNodeAge[IdxOuter] > 0)
+                {
+                    If (Not ((TTNodeDepth[IdxOuter] < ((floor((TTCurrentAge / 100)) - floor((TTNodeAge[IdxOuter] / 100))) * 2))))
+                    {
+                        List.ReplaceItem(TTNodeBoardAttackedByOpp, IdxOuter, "");
+                        List.ReplaceItem(TTNodeBoardAttackedByOppPiece, IdxOuter, "");
+                        List.ReplaceItem(TTNodeCheckedAttackLines, IdxOuter, "");
+                        List.ReplaceItem(TTNodeHash, IdxOuter, 0);
+                        List.ReplaceItem(TTNodeAge, IdxOuter, 0);
+                    }
+                }
+                IdxOuter += 1;
+            }
+        }
     }
     Call SetInitialEnPassantTarget(1);
     List.DeleteItem(MinMaxPly1EvalMoves, all);
@@ -6660,7 +6669,7 @@ Define IsPlyExtension(string Depth) (warp=true)
     }
     If (IsScratch3 == 0)
     {
-        If ((IsEndgame == 1) Or (1 == 0))
+        If ((IsEndgame == 1) Or (1 == 1))
         {
             Idx = 1;
             Repeat (Depth)
@@ -6729,7 +6738,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     }
     If (Quiescence[(Depth - 1)] == 0)
     {
-        If ((IsScratch3 == 0) Or (IsEndgame2 == 1))
+        If (IsEndgame2 == 1)
         {
             Stop(this script);
         }
@@ -6745,16 +6754,16 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
         }
         Else
         {
-            If (Quiescence[(Depth - 3)] == 0)
+            If (1 == 0)
             {
-                If (((IsScratch3 == 0) And (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
+                If (Quiescence[(Depth - 3)] == 0)
                 {
-                    Stop(this script);
+                    If (((IsScratch3 == 0) And (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
+                    {
+                        Stop(this script);
+                    }
                 }
-            }
-            Else
-            {
-                If (1 == 0)
+                Else
                 {
                     If (Quiescence[(Depth - 4)] == 0)
                     {
@@ -7463,27 +7472,28 @@ Define OnEvaluationChanged(string Eval) (warp=false)
         }
         If (CurrentValue > 1000)
         {
-            EvaluationValue = 100;
+            CurrentValue = 100;
         }
         Else
         {
             If (CurrentValue < -1000)
             {
-                EvaluationValue = -100;
+                CurrentValue = -100;
             }
             Else
             {
-                EvaluationValue = (CurrentValue / 10);
+                CurrentValue = (CurrentValue / 10);
             }
         }
     }
     Else
     {
-        EvaluationValue = 0;
+        CurrentValue = 0;
     }
-    Event.Broadcast("evaluationvaluechanged");
-    If (1 == 0)
+    If (Not ((EvaluationValue == CurrentValue)))
     {
+        EvaluationValue = CurrentValue;
+        Event.Broadcast("evaluationvaluechanged");
         Control.Wait(0);
     }
 }
@@ -7502,7 +7512,8 @@ Define OnProgressChanged(string Progress) (warp=false)
     If (Not ((CurrentValue2 == ProgressValue)))
     {
         ProgressValue = CurrentValue2;
-        Event.Broadcast("progressvaluechangedinternal");
+        Event.Broadcast("progressvaluechanged");
+        Control.Wait(0);
     }
 }
 
@@ -7808,6 +7819,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 If (Not ((TTProbeBestMoveRes == "")))
                 {
+                    Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(99);
                     SourceIdx = floor((TTProbeBestMoveRes / 100));
                     TargetIdx = floor((TTProbeBestMoveRes % 100));
                     If ((Not (Quiescence)) Or (Quiescence And ((TTProbeHorizonRes == -1) Or ((Not ((SourceIdx == 0))) And (Not ((Board[TargetIdx] == 0)))))))
@@ -7816,7 +7828,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         {
                             If ((Not ((SourceIdx == 0))) And (Not ((Board[SourceIdx] == 0))))
                             {
-                                Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(99);
                                 SourcePiece = Board[SourceIdx];
                                 Found = 0;
                                 If (SourcePiece > 0)
@@ -7841,14 +7852,30 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                                 }
                                 If (Found == 1)
                                 {
-                                    Call AddMoveToList(TTProbeBestMoveRes)(Depth);
-                                    List.ReplaceItem(MovesIdx, Depth, 1);
-                                    Call ApplyMove(Depth);
-                                    List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
-                                    List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                                    List.ReplaceItem(PickPhase, Depth, 2);
-                                    List.ReplaceItem(PickMoveRes, Depth, 1);
-                                    Stop(this script);
+                                    If (abs(SourcePiece) > BlackKnight)
+                                    {
+                                        Idx = ((SourceIdx * 100) + TargetIdx);
+                                        Repeat ((MovePathDelta[Idx] - 1))
+                                        {
+                                            SourceIdx += MovePathStepInc[Idx];
+                                            If (Not ((Board[SourceIdx] == 0)))
+                                            {
+                                                Found = 0;
+                                            }
+                                        }
+                                    }
+                                    If (Found == 1)
+                                    {
+                                        Call ClearMoveList(Depth);
+                                        Call AddMoveToList(TTProbeBestMoveRes)(Depth);
+                                        List.ReplaceItem(MovesIdx, Depth, 1);
+                                        Call ApplyMove(Depth);
+                                        List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
+                                        List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+                                        List.ReplaceItem(PickPhase, Depth, 2);
+                                        List.ReplaceItem(PickMoveRes, Depth, 1);
+                                        Stop(this script);
+                                    }
                                 }
                             }
                         }
@@ -8922,31 +8949,6 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
     TTProbeBoardScore3Res = "";
 }
 
-Define TTProbeBoard_Old(string BoardHash) (warp=true)
-{
-    HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 3)) + 1);
-    If (Not ((TTBoardHash[HashBucket] == BoardHash)))
-    {
-        HashBucket += 1;
-        If (Not ((TTBoardHash[HashBucket] == BoardHash)))
-        {
-            HashBucket += 1;
-            If (Not ((TTBoardHash[HashBucket] == BoardHash)))
-            {
-                TTProbeRes = 0;
-                Stop(this script);
-            }
-        }
-    }
-    TTProbeRes = 1;
-    TTProbeBoardScore1Res = TTBoardScore1[HashBucket];
-    TTProbeBoardScore2Res = TTBoardScore2[HashBucket];
-    TTProbeBoardScore3Res = TTBoardScore3[HashBucket];
-    TTProbeBoardScoreSumRes = TTBoardScoreSum[HashBucket];
-    TTProbeBoardAgeRes = TTBoardAge[HashBucket];
-    TTProbeBoardScoreIsDynamic = TTBoardScoreIsDynamic[HashBucket];
-}
-
 Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
 {
     Call TTProbeNodeImpl((BoardHash + ((Depth % 2) * floor((List.Length(TTNodeHash) / 2)))));
@@ -9018,60 +9020,6 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
     }
 }
 
-Define TTStoreBoard_Old(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum)(string IsDynamic) (warp=true)
-{
-    HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 3)) + 1);
-    Idx = 1;
-    Repeat Until (((TTBoardHash[HashBucket] == BoardHash) Or (TTBoardHash[HashBucket] == 0)) Or (TTBoardAge[HashBucket] < (TTCurrentAge - 1)))
-    {
-        If (Idx > 2)
-        {
-            Stop(this script);
-        }
-        Idx += 1;
-        HashBucket += 1;
-    }
-    If (Not ((TTBoardHash[HashBucket] == BoardHash)))
-    {
-        List.ReplaceItem(TTBoardAge, HashBucket, TTCurrentAge);
-        List.ReplaceItem(TTBoardHash, HashBucket, BoardHash);
-        List.ReplaceItem(TTBoardScore1, HashBucket, BoardScore1);
-        List.ReplaceItem(TTBoardScore2, HashBucket, BoardScore2);
-        List.ReplaceItem(TTBoardScore3, HashBucket, BoardScore3);
-        List.ReplaceItem(TTBoardScoreSum, HashBucket, BoardScoreSum);
-        List.ReplaceItem(TTBoardScoreIsDynamic, HashBucket, IsDynamic);
-    }
-    Else
-    {
-        If (Not ((floor((TTCurrentAge / 100)) == floor((TTBoardAge[HashBucket] / 100)))))
-        {
-            List.ReplaceItem(TTBoardAge, HashBucket, TTCurrentAge);
-            If (TTBoardScoreIsDynamic[HashBucket] == 1)
-            {
-                List.ReplaceItem(TTBoardScoreSum, HashBucket, "");
-                List.ReplaceItem(TTBoardScoreIsDynamic, HashBucket, "");
-            }
-        }
-        If (Not ((BoardScore1 == "")))
-        {
-            List.ReplaceItem(TTBoardScore1, HashBucket, BoardScore1);
-        }
-        If (Not ((BoardScore2 == "")))
-        {
-            List.ReplaceItem(TTBoardScore2, HashBucket, BoardScore2);
-        }
-        If (Not ((BoardScore3 == "")))
-        {
-            List.ReplaceItem(TTBoardScore3, HashBucket, BoardScore3);
-        }
-        If (Not ((BoardScoreSum == "")))
-        {
-            List.ReplaceItem(TTBoardScoreSum, HashBucket, BoardScoreSum);
-            List.ReplaceItem(TTBoardScoreIsDynamic, HashBucket, IsDynamic);
-        }
-    }
-}
-
 Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string BlackMob)(string WhiteMob)(string BoardAttackedByOpp)(string BoardAttackedByOppPiece)(string CheckedAttackLines)(string IsDynamic) (warp=true)
 {
     If (abs((IdxToRank[BlackKingIdx] - IdxToRank[WhiteKingIdx])) < 2)
@@ -9095,7 +9043,7 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
 {
     HashBucket = ((BoardHash % (List.Length(TTNodeHash) - 3)) + 1);
     Idx = 1;
-    Repeat Until (((TTNodeHash[HashBucket] == BoardHash) Or (TTNodeHash[HashBucket] == 0)) Or (TTNodeAge[HashBucket] < TTCurrentAge))
+    Repeat Until (((TTNodeHash[HashBucket] == BoardHash) Or (TTNodeHash[HashBucket] == 0)) Or (TTNodeAge[HashBucket] < (TTCurrentAge - 1)))
     {
         If (Idx > 2)
         {
@@ -9116,35 +9064,15 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
         {
             List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
         }
-        If (Horizon < TTNodeHorizon[HashBucket])
+        If (Not ((BlackMob == "")))
         {
-            If (((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == "")) Or ((Not ((Score == ""))) And (TTNodeScore[HashBucket] == "")))
-            {
-                List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-                List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-                List.ReplaceItem(TTNodeType, HashBucket, Type);
-                List.ReplaceItem(TTNodeScore, HashBucket, Score);
-                List.ReplaceItem(TTNodeScoreIsDynamic, HashBucket, IsDynamic);
-                List.ReplaceItem(TTNodeAge, HashBucket, TTCurrentAge);
-            }
-            Stop(this script);
+            List.ReplaceItem(TTNodeBlackMobility, HashBucket, BlackMob);
         }
-        If (Horizon == TTNodeHorizon[HashBucket])
+        If (Not ((WhiteMob == "")))
         {
-            If ((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == ""))
-            {
-                List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-            }
-            Call //("First iterative deepening iteration evals may override previous evals at same horizon (due to quiescence check/evasion extensions)");
-            If ((Not ((Score == ""))) And ((TTNodeScore[HashBucket] == "") Or ((TTCurrentAge % 100) == 0)))
-            {
-                List.ReplaceItem(TTNodeType, HashBucket, Type);
-                List.ReplaceItem(TTNodeScore, HashBucket, Score);
-                List.ReplaceItem(TTNodeScoreIsDynamic, HashBucket, IsDynamic);
-                List.ReplaceItem(TTNodeAge, HashBucket, TTCurrentAge);
-            }
+            List.ReplaceItem(TTNodeWhiteMobility, HashBucket, WhiteMob);
         }
-        Else
+        If (Horizon > TTNodeHorizon[HashBucket])
         {
             List.ReplaceItem(TTNodeDepth, HashBucket, Depth);
             List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
@@ -9154,13 +9082,33 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
             List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
             List.ReplaceItem(TTNodeAge, HashBucket, TTCurrentAge);
         }
-        If (Not ((BlackMob == "")))
+        Else
         {
-            List.ReplaceItem(TTNodeBlackMobility, HashBucket, BlackMob);
-        }
-        If (Not ((WhiteMob == "")))
-        {
-            List.ReplaceItem(TTNodeWhiteMobility, HashBucket, WhiteMob);
+            If (Horizon == TTNodeHorizon[HashBucket])
+            {
+                If ((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == ""))
+                {
+                    List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
+                }
+                Call //("First iterative deepening iteration evals may override previous evals at same horizon (due to quiescence check/evasion extensions)");
+                If ((Not ((Score == ""))) And ((TTNodeScore[HashBucket] == "") Or ((TTCurrentAge % 100) == 0)))
+                {
+                    List.ReplaceItem(TTNodeType, HashBucket, Type);
+                    List.ReplaceItem(TTNodeScore, HashBucket, Score);
+                    List.ReplaceItem(TTNodeScoreIsDynamic, HashBucket, IsDynamic);
+                }
+            }
+            Else
+            {
+                If ((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == ""))
+                {
+                    List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
+                    List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
+                    List.ReplaceItem(TTNodeType, HashBucket, Type);
+                    List.ReplaceItem(TTNodeScore, HashBucket, Score);
+                    List.ReplaceItem(TTNodeScoreIsDynamic, HashBucket, IsDynamic);
+                }
+            }
         }
     }
     Else
