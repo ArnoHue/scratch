@@ -116,7 +116,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.081 (23.07.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.082 (26.07.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -936,26 +936,11 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[Depth]))))))
                 {
-                    If ((Not (Quiescence)) Or ((Not ((CheckedState[(Depth - 1)] == 1))) Or (TTCurrentAge == TTProbeNodeAgeRes)))
+                    If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
                     {
-                        If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
-                        {
-                            If (((Depth > 1) And ((abs(SourcePieces[(Depth - 1)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 1)] == 0))))) Or ((Depth > 2) And ((abs(SourcePieces[(Depth - 2)]) == BlackPawn) Or (Not ((TargetPieces[(Depth - 2)] == 0))))))
-                            {
-                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
-                                Stop(this script);
-                            }
-                            Else
-                            {
-                                If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
-                                {
-                                    List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
-                                    Stop(this script);
-                                }
-                            }
-                        }
+                        List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
+                        Stop(this script);
                     }
                 }
             }
@@ -5472,6 +5457,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(PawnShelterCapture, all);
     List.DeleteItem(AppliedMove_NNUE_State, all);
     List.DeleteItem(BoardEval, all);
+    List.DeleteItem(QuiescentCheckMoveCount, all);
     Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(Alphas, "");
@@ -5521,6 +5507,7 @@ Define InitBoard (warp=true)
         List.Add(PawnShelterCapture, 0);
         List.Add(AppliedMove_NNUE_State, 0);
         List.Add(BoardEval, "");
+        List.Add(QuiescentCheckMoveCount, "");
     }
     List.DeleteItem(CastlingStateLookup, all);
     Idx = 0;
@@ -6749,74 +6736,34 @@ Define IsPlyExtension(string Depth) (warp=true)
 Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
-    If (IsScratch3 == 1)
-    {
-        IsQuiescentCheckRes = 0;
-        Stop(this script);
-    }
-    IsQuiescentCheckRes = 1;
-    If ((Depth < 6) And ((Quiescence[2] == 1) And (CheckedState[(Depth - 1)] == 1)))
-    {
-        Stop(this script);
-    }
-    If (Quiescence[(Depth - 1)] == 0)
-    {
-        If (CheckedState[(Depth - 1)] == 1)
-        {
-            Stop(this script);
-        }
-    }
-    Else
-    {
-        If (Quiescence[(Depth - 2)] == 0)
-        {
-            If (CheckedState[(Depth - 1)] == 1)
-            {
-                Stop(this script);
-            }
-        }
-        If (1 == 0)
-        {
-            If (Quiescence[(Depth - 2)] == 0)
-            {
-                If (((IsScratch3 == 0) And (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
-                {
-                    Stop(this script);
-                }
-            }
-            Else
-            {
-                If (Quiescence[(Depth - 3)] == 0)
-                {
-                    If (((IsScratch3 == 0) And (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
-                    {
-                        Stop(this script);
-                    }
-                }
-                Else
-                {
-                    If (Quiescence[(Depth - 4)] == 0)
-                    {
-                        If (((IsScratch3 == 0) And (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
-                        {
-                            Stop(this script);
-                        }
-                    }
-                    Else
-                    {
-                        If (Quiescence[(Depth - 5)] == 0)
-                        {
-                            If (((IsScratch3 == 0) And (IsEndgame2 == 1)) And (CheckedState[(Depth - 1)] == 1))
-                            {
-                                Stop(this script);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
     IsQuiescentCheckRes = 0;
+    If ((CheckedState[(Depth - 1)] == 1) Or (CheckedState[(Depth - 3)] == 1))
+    {
+        Count = 0;
+        Idx = (Depth - 1);
+        Repeat Until ((Idx < 1) Or (((TargetPieces[Idx] == 0) And (PromotionPieces[Idx] == 0)) And ((Not ((CheckedState[Idx] == 1))) And (Not (((Idx > 1) And (CheckedState[(Idx - 1)] == 1)))))))
+        {
+            If (((Idx % 2) == (Depth % 2)) And ((CheckedState[(Idx + 1)] == 1) And ((TargetPieces[Idx] == 0) And (PromotionPieces[Idx] == 0))))
+            {
+                Count += 1;
+            }
+            Idx += -1;
+        }
+        If (IsScratch3 == 1)
+        {
+            If (Count == 0)
+            {
+                IsQuiescentCheckRes = 1;
+            }
+        }
+        Else
+        {
+            If (Count < (1 + IsEndgame2))
+            {
+                IsQuiescentCheckRes = 1;
+            }
+        }
+    }
 }
 
 Define IsWhiteKingCheckMate (warp=true)
@@ -7804,6 +7751,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.ReplaceItem(MovesCount, Depth, 0);
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(MovesIdxBestMove, Depth, 0);
+        List.ReplaceItem(QuiescentCheckMoveCount, Depth, 0);
         List.DeleteAll(CalcMovesMoveList);
         List.DeleteAll(CalcMovesScoreList);
         List.DeleteAll(TmpList1);
@@ -9120,8 +9068,7 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
                 {
                     List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
                 }
-                Call //("First iterative deepening iteration evals may override previous evals at same horizon (due to quiescence check/evasion extensions)");
-                If ((Not ((Score == ""))) And ((TTNodeScore[HashBucket] == "") Or ((TTCurrentAge % 100) == 0)))
+                If ((Not ((Score == ""))) And (TTNodeScore[HashBucket] == ""))
                 {
                     List.ReplaceItem(TTNodeType, HashBucket, Type);
                     List.ReplaceItem(TTNodeScore, HashBucket, Score);
