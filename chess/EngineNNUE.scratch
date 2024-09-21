@@ -118,7 +118,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.133 (21.09.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.135 (21.09.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -625,7 +625,7 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
         }
         Stop(this script);
     }
-    Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(CurrentMove)(Depth);
+    Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(CurrentMove)(Depth)("");
     List.Add(CalcMovesScoreList, MoveScoreRes);
 }
 
@@ -812,7 +812,7 @@ Define AddSpecialMove(string Move)(string Depth) (warp=true)
             Stop(this script);
         }
     }
-    Call GetSpecialMoveScore(Move)(Depth);
+    Call GetMoveScore("")("")("")("")("")(Depth)(Move);
     List.Add(CalcMovesScoreList, MoveScoreRes);
 }
 
@@ -1565,7 +1565,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                         SourceIdxOuter2 = floor((AppliedMove[Depth] / 100));
                                         TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
                                         Call RevertMoveLight(Depth);
-                                        Call GetMoveScore(Board[SourceIdxOuter2])(Board[TargetIdxOuter2])(SourceIdxOuter2)(TargetIdxOuter2)(AppliedMove[Depth])(Depth);
+                                        Call GetMoveScore(Board[SourceIdxOuter2])(Board[TargetIdxOuter2])(SourceIdxOuter2)(TargetIdxOuter2)(AppliedMove[Depth])(Depth)("");
                                         Call ApplyMoveLight(Depth);
                                         If ((Depth % 2) == 1)
                                         {
@@ -4165,7 +4165,7 @@ Define GetBestMoveMedDiff (warp=false)
             ThinkTimeLimitMinMax = ThinkTimeLimit;
         }
         AWDelta = 20;
-        If ((((IdxDeepening > 6) And (IsEndgame2 == 0)) And (AWDelta < 300)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If ((IdxDeepening > 6) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestMinMaxRes - AWDelta));
             AWBeta = Operator.Round((BestMinMaxRes + AWDelta));
@@ -4421,18 +4421,37 @@ Define GetMoveNotation(num Move) (warp=true)
     }
 }
 
-Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
+Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth)(string SpecialMove) (warp=true)
 {
+    MoveScoreRes = "";
+    If (Not ((SpecialMove == "")))
+    {
+        Call //("Special moves");
+        If (floor((SpecialMove / 100)) == 0)
+        {
+            Call //("Castling");
+            MoveScoreRes = (1500 * (((Depth % 2) * 2) - 1));
+            Stop(this script);
+        }
+        If (Variable.Length(SpecialMove) == 6)
+        {
+            Call //("Promotions");
+            MoveScoreRes = ((5400 - (100 * Operator.LetterOf(SpecialMove, 6))) * (((Depth % 2) * 2) - 1));
+            Stop(this script);
+        }
+    }
+    Call //("1: Hash moves, handled by staged move generator / PickMove()");
     If (CheckedState[Depth] == 1)
     {
+        Call //("2: Check evasions");
         If (Operator.LetterOf(CheckedStateAttackLines[Depth], ToIdx) == 1)
         {
-            MoveScoreRes = (9000 * (((SourcePieceParam > 0) * 2) - 1));
+            MoveScoreRes = (9000 * (((Depth % 2) * 2) - 1));
             Stop(this script);
         }
         If (abs(SourcePieceParam) == GoK_BlackKing)
         {
-            MoveScoreRes = (8000 * (((SourcePieceParam > 0) * 2) - 1));
+            MoveScoreRes = (8000 * (((Depth % 2) * 2) - 1));
             Stop(this script);
         }
     }
@@ -4441,7 +4460,8 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Idx = List.IndexOf(CurrentKillerMoves, Move);
         If (Idx > 0)
         {
-            MoveScoreRes = ((6000 + Idx) * (((SourcePieceParam > 0) * 2) - 1));
+            Call //("4: Killer moves");
+            MoveScoreRes = ((6000 + Idx) * (((Depth % 2) * 2) - 1));
             Stop(this script);
         }
     }
@@ -4450,10 +4470,12 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         MoveScoreRes = ((7000 + ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (10 - PieceIdxLookup[abs(SourcePieceParam)]))) * (((SourcePieceParam > 0) * 2) - 1));
         If ((Not ((abs(TargetPieceParam) < abs(SourcePieceParam)))) Or (Quiescence[Depth] == 1))
         {
+            Call //("3a: Net positive captures");
             Stop(this script);
         }
         If (BoardAttackedCalculated[Depth] == 1)
         {
+            Call //("3b: Captures with positive SEE");
             If (SourcePieceParam > 0)
             {
                 If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], ToIdx) == 0)
@@ -4471,20 +4493,24 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
         If (floor((AppliedMove[(Depth - 1)] % 100)) == ToIdx)
         {
-            MoveScoreRes = (4000 * (((SourcePieceParam > 0) * 2) - 1));
+            Call //("5: Counter captures");
+            MoveScoreRes = (4000 * (((Depth % 2) * 2) - 1));
             Stop(this script);
         }
+        Call //("7: Net negative captures");
         MoveScoreRes = ((2000 + ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (10 - PieceIdxLookup[abs(SourcePieceParam)]))) * (((SourcePieceParam > 0) * 2) - 1));
         Stop(this script);
     }
     CurrentValue2 = (HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))] / MaxHistoryMoveScore[((Depth % 2) + 1)]);
     If (CurrentValue2 > 0.05)
     {
-        MoveScoreRes = ((3000 + Operator.Round((CurrentValue2 * 1000))) * (((SourcePieceParam > 0) * 2) - 1));
+        Call //("6: Quiets with high history score");
+        MoveScoreRes = ((3000 + Operator.Round((CurrentValue2 * 1000))) * (((Depth % 2) * 2) - 1));
     }
     Else
     {
-        MoveScoreRes = ((1000 + Operator.Round((CurrentValue2 * 1000))) * (((SourcePieceParam > 0) * 2) - 1));
+        Call //("8: Other quiets");
+        MoveScoreRes = ((1000 + Operator.Round((CurrentValue2 * 1000))) * (((Depth % 2) * 2) - 1));
     }
 }
 
@@ -8542,7 +8568,7 @@ Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(str
     }
     If (abs(MoveScoreRes) > 6000)
     {
-        Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(Move)(Depth);
+        Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(Move)(Depth)("");
         List.Add(TmpList1, Move);
         List.Add(TmpList2, MoveScoreRes);
     }
@@ -8620,7 +8646,7 @@ Define StagedMoveGenMVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(str
     }
     If (abs(MoveScoreRes) > 7000)
     {
-        Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(CurrentMoveOuter)(Depth);
+        Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(CurrentMoveOuter)(Depth)("");
         List.Add(TmpList1, CurrentMoveOuter);
         List.Add(TmpList2, MoveScoreRes);
     }
