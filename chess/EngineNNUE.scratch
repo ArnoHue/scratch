@@ -118,7 +118,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.158 (15.10.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.159 (17.10.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -448,17 +448,17 @@ Define AddBoardToHistory(string WasEngineMove) (warp=true)
 Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool LookupMoveTypeKing) (warp=true)
 {
     AddMove.SourcePiece = Board[SourceIdx];
-    AddMove.Idx = MoveLookupIndexOffset[SourceIdx];
+    AddMove.Idx = MoveSourceIdxToListOffsetNonSliding[SourceIdx];
     AddMove.Count = 1;
     Repeat (8)
     {
         If LookupMoveTypeKing
         {
-            AddMove.TargetIdx = MoveLookupKing[(AddMove.Idx + AddMove.Count)];
+            AddMove.TargetIdx = MoveListOffsetToTargetIdxKing[(AddMove.Idx + AddMove.Count)];
         }
         Else
         {
-            AddMove.TargetIdx = MoveLookupKnight[(AddMove.Idx + AddMove.Count)];
+            AddMove.TargetIdx = MoveListOffsetToTargetIdxKnight[(AddMove.Idx + AddMove.Count)];
         }
         If (AddMove.TargetIdx == -1)
         {
@@ -523,9 +523,9 @@ Define AddLookupMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool 
     }
 }
 
-Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
+Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool AttackTableOnly)(bool Quiescence) (warp=true)
 {
-    If CalcAttackState
+    If AttackTableOnly
     {
         If (Board[SourceIdx] > 0)
         {
@@ -580,7 +580,7 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             }
         }
     }
-    CurrentMove = MoveNotationLookup[((SourceIdx * 100) + TargetIdx)];
+    CurrentMove = MoveToAlgebraicNotation[((SourceIdx * 100) + TargetIdx)];
     If (abs(Board[SourceIdx]) == GoK_BlackPawn)
     {
         If ((IdxToRank[TargetIdx] == 1) Or (IdxToRank[TargetIdx] == 8))
@@ -594,7 +594,7 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
     }
     Else
     {
-        If (Not (CapturesOnly))
+        If (Not (Quiescence))
         {
             If ((Depth % 2) == 1)
             {
@@ -727,7 +727,7 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     }
     If (Piece > 0)
     {
-        If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((TargetIdx * 100) + WhiteKingIdx))] == "")
+        If (MoveToEvalDeltaBlack[((PieceIdxLookup[Piece] * 10000) + ((TargetIdx * 100) + WhiteKingIdx))] == "")
         {
             Stop(this script);
         }
@@ -745,11 +745,11 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
             Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
             Stop(this script);
         }
-        CurrentMove = MoveNotationLookup[((TargetIdx * 100) + WhiteKingIdx)];
+        CurrentMove = MoveToAlgebraicNotation[((TargetIdx * 100) + WhiteKingIdx)];
     }
     Else
     {
-        If (MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((TargetIdx * 100) + BlackKingIdx))] == "")
+        If (MoveToEvalDeltaWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((TargetIdx * 100) + BlackKingIdx))] == "")
         {
             Stop(this script);
         }
@@ -767,11 +767,11 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
             Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
             Stop(this script);
         }
-        CurrentMove = MoveNotationLookup[((TargetIdx * 100) + BlackKingIdx)];
+        CurrentMove = MoveToAlgebraicNotation[((TargetIdx * 100) + BlackKingIdx)];
     }
     SourceIdx = TargetIdx;
-    IdxInc = MovePathStepInc[CurrentMove];
-    Repeat ((MovePathDelta[CurrentMove] - 1))
+    IdxInc = MoveToPathStepInc[CurrentMove];
+    Repeat ((MoveToPathDelta[CurrentMove] - 1))
     {
         SourceIdx += IdxInc;
         If (Not ((Board[SourceIdx] == 0)))
@@ -782,15 +782,188 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
 }
 
-Define AddSlidingMove(string SourceIdx)(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool SlidingMoveTypeStraight) (warp=true)
+Define AddSlidingMove(string SourceIdx)(string Depth)(bool Quiescence)(bool SlidingStraight) (warp=true)
 {
-    If CalcAttackState
+    AddMove.SourcePiece = Board[SourceIdx];
+    AddMove.Count = 1;
+    AddMove.Idx = MoveSourceIdxToListOffsetSliding[SourceIdx];
+    AddMove.Idx2 = 8;
+    Repeat Until (AddMove.Count > 32)
     {
-        Call ASMAttack(SourceIdx)(Depth)(SlidingMoveTypeStraight);
+        If SlidingStraight
+        {
+            AddMove.TargetIdx = MoveSlidingStraightListIdxToTargetIdx[(AddMove.Idx + AddMove.Count)];
+        }
+        Else
+        {
+            AddMove.TargetIdx = MoveCrossListIdxToTargetIdx[(AddMove.Idx + AddMove.Count)];
+        }
+        If (AddMove.TargetIdx == -1)
+        {
+            AddMove.Count += AddMove.Idx2;
+            AddMove.Idx2 = 8;
+        }
+        Else
+        {
+            If (Board[AddMove.TargetIdx] == 0)
+            {
+                If Quiescence
+                {
+                    If (IsPotentialNonCapQuiescMove == 1)
+                    {
+                        Call AddPotentialQuiescenceMove(SourceIdx)(AddMove.TargetIdx)(AddMove.SourcePiece)(Depth);
+                    }
+                }
+                Else
+                {
+                    Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 0))(Quiescence);
+                }
+                AddMove.Count += 1;
+                AddMove.Idx2 += -1;
+            }
+            Else
+            {
+                If (AddMove.SourcePiece > 0)
+                {
+                    If (Board[AddMove.TargetIdx] < 0)
+                    {
+                        Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 0))(Quiescence);
+                    }
+                }
+                Else
+                {
+                    If (Board[AddMove.TargetIdx] > 0)
+                    {
+                        Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 0))(Quiescence);
+                    }
+                }
+                AddMove.Count += AddMove.Idx2;
+                AddMove.Idx2 = 8;
+            }
+        }
+    }
+}
+
+Define AddSlidingMove(string SourceIdx)(string Depth)(bool AttackTableOnly)(bool Quiescence)(bool SlidingStraight) (warp=true)
+{
+    If AttackTableOnly
+    {
+        Call AddSlidingMoveForAttackTable(SourceIdx)(Depth)(SlidingStraight);
     }
     Else
     {
-        Call ASM(SourceIdx)(Depth)(CapturesOnly)(SlidingMoveTypeStraight);
+        Call AddSlidingMove(SourceIdx)(Depth)(Quiescence)(SlidingStraight);
+    }
+}
+
+Define AddSlidingMoveForAttackTable(string SourceIdx)(string Depth)(bool SlidingStraight) (warp=true)
+{
+    Caller.SourcePiece = Board[SourceIdx];
+    AddMove.Count = 1;
+    AddMove.Idx = MoveSourceIdxToListOffsetSliding[SourceIdx];
+    AddMove.Idx2 = 8;
+    List.DeleteAll(KingAttackLinesTemp);
+    Repeat Until (AddMove.Count > 32)
+    {
+        If SlidingStraight
+        {
+            AddMove.TargetIdx = MoveSlidingStraightListIdxToTargetIdx[(AddMove.Idx + AddMove.Count)];
+        }
+        Else
+        {
+            AddMove.TargetIdx = MoveCrossListIdxToTargetIdx[(AddMove.Idx + AddMove.Count)];
+        }
+        If (AddMove.TargetIdx == -1)
+        {
+            AddMove.Count += AddMove.Idx2;
+            AddMove.Idx2 = 8;
+            List.DeleteAll(KingAttackLinesTemp);
+        }
+        Else
+        {
+            If (Board[AddMove.TargetIdx] == 0)
+            {
+                Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 1))((1 == 0));
+                List.Add(KingAttackLinesTemp, AddMove.TargetIdx);
+                AddMove.Count += 1;
+                AddMove.Idx2 += -1;
+            }
+            Else
+            {
+                Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 1))((1 == 0));
+                IsXRay = 0;
+                AddMove.TargetPiece = Board[AddMove.TargetIdx];
+                If (AddMove.SourcePiece > 0)
+                {
+                    If (AddMove.TargetPiece == GoK_WhiteKing)
+                    {
+                        Idx = 1;
+                        Repeat (List.Length(KingAttackLinesTemp))
+                        {
+                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
+                            Idx += 1;
+                        }
+                    }
+                    If (AddMove.TargetIdx > GoK_BlackKnight)
+                    {
+                        If SlidingStraight
+                        {
+                            If ((AddMove.TargetPiece == GoK_BlackQueen) Or (AddMove.TargetPiece == GoK_BlackRook))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                        Else
+                        {
+                            If ((AddMove.TargetPiece == GoK_BlackQueen) Or (AddMove.TargetPiece == GoK_BlackBishop))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                    }
+                }
+                Else
+                {
+                    If (AddMove.TargetPiece == GoK_BlackKing)
+                    {
+                        Idx = 1;
+                        Repeat (List.Length(KingAttackLinesTemp))
+                        {
+                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
+                            Idx += 1;
+                        }
+                    }
+                    If (AddMove.TargetPiece < GoK_WhiteKnight)
+                    {
+                        If SlidingStraight
+                        {
+                            If ((AddMove.TargetPiece == GoK_WhiteQueen) Or (AddMove.TargetPiece == GoK_WhiteRook))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                        Else
+                        {
+                            If ((AddMove.TargetPiece == GoK_WhiteQueen) Or (AddMove.TargetPiece == GoK_WhiteBishop))
+                            {
+                                IsXRay = 1;
+                            }
+                        }
+                    }
+                }
+                If (IsXRay == 1)
+                {
+                    AddMove.Count += 1;
+                    AddMove.Idx2 += -1;
+                }
+                Else
+                {
+                    AddMove.Count += AddMove.Idx2;
+                    AddMove.Idx2 = 8;
+                }
+                List.DeleteAll(KingAttackLinesTemp);
+            }
+        }
     }
 }
 
@@ -840,7 +1013,6 @@ Define ApplyMove(num Depth) (warp=true)
     List.ReplaceItem(PreviousBoardHashKR, Depth, CurrentBoardHashKR);
     Call GetCurrentMove(Depth);
     List.ReplaceItem(AppliedMove, Depth, CurrentMove);
-    List.ReplaceItem(AppliedMove_NNUE_State, Depth, 0);
     SourceIdx = floor((CurrentMove / 100));
     If (SourceIdx > 0)
     {
@@ -856,11 +1028,11 @@ Define ApplyMove(num Depth) (warp=true)
         If (SourcePiece > 0)
         {
             Idx2 = ((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx));
-            List.ReplaceItem(PosEvalDelta, Depth, MovePosLookupBlack[Idx2]);
-            CurrentBoardHash += MoveHashLookupBlack[Idx2];
+            List.ReplaceItem(PosEvalDelta, Depth, MoveToEvalDeltaBlack[Idx2]);
+            CurrentBoardHash += MoveToHashBlack[Idx2];
             If (SourcePiece == GoK_BlackPawn)
             {
-                CurrentBoardHashKR += MoveHashLookupBlack[Idx2];
+                CurrentBoardHashKR += MoveToHashBlack[Idx2];
                 If (Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx])))
                 {
                     If (TargetPieces[Depth] == 0)
@@ -917,7 +1089,7 @@ Define ApplyMove(num Depth) (warp=true)
                 If (SourcePiece == GoK_BlackKing)
                 {
                     BlackKingIdx = TargetIdx;
-                    CurrentBoardHashKR += MoveHashLookupBlack[Idx2];
+                    CurrentBoardHashKR += MoveToHashBlack[Idx2];
                     Call SetCastlingStateFlag(Depth)(2)(1);
                 }
                 If (SourcePiece == GoK_BlackRook)
@@ -942,11 +1114,11 @@ Define ApplyMove(num Depth) (warp=true)
         Else
         {
             Idx2 = ((PieceIdxLookup[(0 - SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx));
-            List.ReplaceItem(PosEvalDelta, Depth, MovePosLookupWhite[Idx2]);
-            CurrentBoardHash += MoveHashLookupWhite[Idx2];
+            List.ReplaceItem(PosEvalDelta, Depth, MoveToEvalDeltaWhite[Idx2]);
+            CurrentBoardHash += MoveToHashWhite[Idx2];
             If (SourcePiece == GoK_WhitePawn)
             {
-                CurrentBoardHashKR += MoveHashLookupWhite[Idx2];
+                CurrentBoardHashKR += MoveToHashWhite[Idx2];
                 If (Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx])))
                 {
                     If (TargetPieces[Depth] == 0)
@@ -1003,7 +1175,7 @@ Define ApplyMove(num Depth) (warp=true)
                 If (SourcePiece == GoK_WhiteKing)
                 {
                     WhiteKingIdx = TargetIdx;
-                    CurrentBoardHashKR += MoveHashLookupWhite[Idx2];
+                    CurrentBoardHashKR += MoveToHashWhite[Idx2];
                     Call SetCastlingStateFlag(Depth)(6)(1);
                 }
                 If (SourcePiece == GoK_WhiteRook)
@@ -1028,13 +1200,13 @@ Define ApplyMove(num Depth) (warp=true)
         If (TargetPiece > 0)
         {
             Idx2 = ((PieceIdxLookup[TargetPiece] * 10000) + (TargetIdx * 100));
-            List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + MovePosLookupBlack[Idx2]));
-            CurrentBoardHash += MoveHashLookupBlack[Idx2];
+            List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + MoveToEvalDeltaBlack[Idx2]));
+            CurrentBoardHash += MoveToHashBlack[Idx2];
             If (TargetPiece > 0)
             {
                 If (TargetPiece == GoK_BlackPawn)
                 {
-                    CurrentBoardHashKR += MoveHashLookupBlack[Idx2];
+                    CurrentBoardHashKR += MoveToHashBlack[Idx2];
                     BlackPawnCountLocal += -1;
                     If ((IdxToRank[BlackKingIdx] < IdxToRank[TargetIdx]) And ((abs((IdxToRank[BlackKingIdx] - IdxToRank[TargetIdx])) < 4) And (abs((IdxToFile[BlackKingIdx] - IdxToFile[TargetIdx])) < 2)))
                     {
@@ -1070,13 +1242,13 @@ Define ApplyMove(num Depth) (warp=true)
             If (TargetPiece < 0)
             {
                 Idx2 = ((PieceIdxLookup[(0 - TargetPiece)] * 10000) + (TargetIdx * 100));
-                List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + MovePosLookupWhite[Idx2]));
-                CurrentBoardHash += MoveHashLookupWhite[Idx2];
+                List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + MoveToEvalDeltaWhite[Idx2]));
+                CurrentBoardHash += MoveToHashWhite[Idx2];
                 If (TargetPiece < 0)
                 {
                     If (TargetPiece == GoK_WhitePawn)
                     {
-                        CurrentBoardHashKR += MoveHashLookupWhite[Idx2];
+                        CurrentBoardHashKR += MoveToHashWhite[Idx2];
                         WhitePawnCountLocal += -1;
                         If ((IdxToRank[TargetIdx] < IdxToRank[WhiteKingIdx]) And ((abs((IdxToRank[WhiteKingIdx] - IdxToRank[TargetIdx])) < 4) And (abs((IdxToFile[WhiteKingIdx] - IdxToFile[TargetIdx])) < 2)))
                         {
@@ -1201,21 +1373,21 @@ Define ApplyMoveLight(string Depth) (warp=true)
         List.ReplaceItem(Board, SourceIdx, 0);
         If (SourcePiece > 0)
         {
-            CurrentBoardHash += MoveHashLookupBlack[((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx))];
+            CurrentBoardHash += MoveToHashBlack[((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx))];
         }
         Else
         {
-            CurrentBoardHash += MoveHashLookupWhite[((PieceIdxLookup[(0 - SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx))];
+            CurrentBoardHash += MoveToHashWhite[((PieceIdxLookup[(0 - SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx))];
         }
         If (TargetPiece > 0)
         {
-            CurrentBoardHash += MoveHashLookupBlack[((PieceIdxLookup[TargetPiece] * 10000) + (TargetIdx * 100))];
+            CurrentBoardHash += MoveToHashBlack[((PieceIdxLookup[TargetPiece] * 10000) + (TargetIdx * 100))];
         }
         Else
         {
             If (TargetPiece < 0)
             {
-                CurrentBoardHash += MoveHashLookupWhite[((PieceIdxLookup[(0 - TargetPiece)] * 10000) + (TargetIdx * 100))];
+                CurrentBoardHash += MoveToHashWhite[((PieceIdxLookup[(0 - TargetPiece)] * 10000) + (TargetIdx * 100))];
             }
         }
     }
@@ -1277,179 +1449,6 @@ Define ApplyMoveLight(string Depth) (warp=true)
                         Call UpdateMoveHashPosEval(GoK_BlackRook)(VirtualBoard[1])(VirtualBoard[4])((1 == 1));
                     }
                 }
-            }
-        }
-    }
-}
-
-Define ASM(string SourceIdx)(string Depth)(bool CapturesOnly)(bool SlidingMoveTypeStraight) (warp=true)
-{
-    AddMove.SourcePiece = Board[SourceIdx];
-    AddMove.Count = 1;
-    AddMove.Idx = MoveLookupLineIndexOffset[SourceIdx];
-    AddMove.Idx2 = 8;
-    Repeat Until (AddMove.Count > 32)
-    {
-        If SlidingMoveTypeStraight
-        {
-            AddMove.TargetIdx = MoveLookupStraight[(AddMove.Idx + AddMove.Count)];
-        }
-        Else
-        {
-            AddMove.TargetIdx = MoveLookupCross[(AddMove.Idx + AddMove.Count)];
-        }
-        If (AddMove.TargetIdx == -1)
-        {
-            AddMove.Count += AddMove.Idx2;
-            AddMove.Idx2 = 8;
-        }
-        Else
-        {
-            If (Board[AddMove.TargetIdx] == 0)
-            {
-                If CapturesOnly
-                {
-                    If (IsPotentialNonCapQuiescMove == 1)
-                    {
-                        Call AddPotentialQuiescenceMove(SourceIdx)(AddMove.TargetIdx)(AddMove.SourcePiece)(Depth);
-                    }
-                }
-                Else
-                {
-                    Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 0))(CapturesOnly);
-                }
-                AddMove.Count += 1;
-                AddMove.Idx2 += -1;
-            }
-            Else
-            {
-                If (AddMove.SourcePiece > 0)
-                {
-                    If (Board[AddMove.TargetIdx] < 0)
-                    {
-                        Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 0))(CapturesOnly);
-                    }
-                }
-                Else
-                {
-                    If (Board[AddMove.TargetIdx] > 0)
-                    {
-                        Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 0))(CapturesOnly);
-                    }
-                }
-                AddMove.Count += AddMove.Idx2;
-                AddMove.Idx2 = 8;
-            }
-        }
-    }
-}
-
-Define ASMAttack(string SourceIdx)(string Depth)(bool SlidingMoveTypeStraight) (warp=true)
-{
-    Caller.SourcePiece = Board[SourceIdx];
-    AddMove.Count = 1;
-    AddMove.Idx = MoveLookupLineIndexOffset[SourceIdx];
-    AddMove.Idx2 = 8;
-    List.DeleteAll(KingAttackLinesTemp);
-    Repeat Until (AddMove.Count > 32)
-    {
-        If SlidingMoveTypeStraight
-        {
-            AddMove.TargetIdx = MoveLookupStraight[(AddMove.Idx + AddMove.Count)];
-        }
-        Else
-        {
-            AddMove.TargetIdx = MoveLookupCross[(AddMove.Idx + AddMove.Count)];
-        }
-        If (AddMove.TargetIdx == -1)
-        {
-            AddMove.Count += AddMove.Idx2;
-            AddMove.Idx2 = 8;
-            List.DeleteAll(KingAttackLinesTemp);
-        }
-        Else
-        {
-            If (Board[AddMove.TargetIdx] == 0)
-            {
-                Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 1))((1 == 0));
-                List.Add(KingAttackLinesTemp, AddMove.TargetIdx);
-                AddMove.Count += 1;
-                AddMove.Idx2 += -1;
-            }
-            Else
-            {
-                Call AddMoveImpl(SourceIdx)(AddMove.TargetIdx)(Depth)((1 == 1))((1 == 0));
-                IsXRay = 0;
-                AddMove.TargetPiece = Board[AddMove.TargetIdx];
-                If (AddMove.SourcePiece > 0)
-                {
-                    If (AddMove.TargetPiece == GoK_WhiteKing)
-                    {
-                        Idx = 1;
-                        Repeat (List.Length(KingAttackLinesTemp))
-                        {
-                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
-                            Idx += 1;
-                        }
-                    }
-                    If (AddMove.TargetIdx > GoK_BlackKnight)
-                    {
-                        If SlidingMoveTypeStraight
-                        {
-                            If ((AddMove.TargetPiece == GoK_BlackQueen) Or (AddMove.TargetPiece == GoK_BlackRook))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                        Else
-                        {
-                            If ((AddMove.TargetPiece == GoK_BlackQueen) Or (AddMove.TargetPiece == GoK_BlackBishop))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                    }
-                }
-                Else
-                {
-                    If (AddMove.TargetPiece == GoK_BlackKing)
-                    {
-                        Idx = 1;
-                        Repeat (List.Length(KingAttackLinesTemp))
-                        {
-                            List.Add(KingAttackLines, KingAttackLinesTemp[Idx]);
-                            Idx += 1;
-                        }
-                    }
-                    If (AddMove.TargetPiece < GoK_WhiteKnight)
-                    {
-                        If SlidingMoveTypeStraight
-                        {
-                            If ((AddMove.TargetPiece == GoK_WhiteQueen) Or (AddMove.TargetPiece == GoK_WhiteRook))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                        Else
-                        {
-                            If ((AddMove.TargetPiece == GoK_WhiteQueen) Or (AddMove.TargetPiece == GoK_WhiteBishop))
-                            {
-                                IsXRay = 1;
-                            }
-                        }
-                    }
-                }
-                If (IsXRay == 1)
-                {
-                    AddMove.Count += 1;
-                    AddMove.Idx2 += -1;
-                }
-                Else
-                {
-                    AddMove.Count += AddMove.Idx2;
-                    AddMove.Idx2 = 8;
-                }
-                List.DeleteAll(KingAttackLinesTemp);
             }
         }
     }
@@ -1844,7 +1843,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
 {
     If (IsBlockProfilerEnabled == 1)
     {
-        Call Profile_MethodEnter(Depth);
+        Call ProfilerMethodEnter(Depth);
     }
     EvaluationRes = "";
     EvaluationIsDynamicRes = 0;
@@ -1860,7 +1859,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
             Call StoreAttackInfo(2)(1);
             If (IsBlockProfilerEnabled == 1)
             {
-                Call Profile_MethodExit(Depth);
+                Call ProfilerMethodExit(Depth);
             }
             Stop(this script);
         }
@@ -1895,7 +1894,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
                 EvaluationIsDynamicRes = TTProbeBoard.EvalSumIsDynamic;
                 If (IsBlockProfilerEnabled == 1)
                 {
-                    Call Profile_MethodExit(Depth);
+                    Call ProfilerMethodExit(Depth);
                 }
                 Stop(this script);
             }
@@ -1933,7 +1932,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
             Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
             If (IsBlockProfilerEnabled == 1)
             {
-                Call Profile_MethodExit(Depth);
+                Call ProfilerMethodExit(Depth);
             }
             Stop(this script);
         }
@@ -1944,7 +1943,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
     }
     If (IsBlockProfilerEnabled == 1)
     {
-        Call Profile_MethodExit(Depth);
+        Call ProfilerMethodExit(Depth);
     }
 }
 
@@ -2627,7 +2626,7 @@ Define FillBoard (warp=true)
     List.ReplaceItem(Board, VirtualBoard[64], GoK_WhiteRook);
 }
 
-Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
+Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool AttackTableOnly)(bool Quiescence) (warp=true)
 {
     If ((IsQuiescentCheckInvariantRes == 1) Or (CheckedState[Depth] == 1))
     {
@@ -2641,25 +2640,25 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
     Call //("Pawn moves (generated via code logic)");
     If (MoveGen.SourcePiece == GoK_BlackPawn)
     {
-        If (CalcAttackState Or (Board[(SourceIdx + 7)] < 0))
+        If (AttackTableOnly Or (Board[(SourceIdx + 7)] < 0))
         {
             If (IdxToFile[SourceIdx] > 1)
             {
-                Call AddMoveImpl(SourceIdx)((SourceIdx + 7))(Depth)(CalcAttackState)(CapturesOnly);
+                Call AddMoveImpl(SourceIdx)((SourceIdx + 7))(Depth)(AttackTableOnly)(Quiescence);
             }
         }
-        If (CalcAttackState Or (Board[(SourceIdx + 9)] < 0))
+        If (AttackTableOnly Or (Board[(SourceIdx + 9)] < 0))
         {
             If (IdxToFile[SourceIdx] < 8)
             {
-                Call AddMoveImpl(SourceIdx)((SourceIdx + 9))(Depth)(CalcAttackState)(CapturesOnly);
+                Call AddMoveImpl(SourceIdx)((SourceIdx + 9))(Depth)(AttackTableOnly)(Quiescence);
             }
         }
-        If (Not (CalcAttackState))
+        If (Not (AttackTableOnly))
         {
             If (Board[(SourceIdx + 8)] == 0)
             {
-                If CapturesOnly
+                If Quiescence
                 {
                     If ((IsPotentialNonCapQuiescMove == 1) Or (IdxToRank[SourceIdx] == 7))
                     {
@@ -2668,11 +2667,11 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                 }
                 Else
                 {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
+                    Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Depth)(AttackTableOnly)(Quiescence);
                 }
                 If ((IdxToRank[SourceIdx] == 2) And (Board[(SourceIdx + 16)] == 0))
                 {
-                    If CapturesOnly
+                    If Quiescence
                     {
                         If (IsPotentialNonCapQuiescMove == 1)
                         {
@@ -2681,7 +2680,7 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                     }
                     Else
                     {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(CalcAttackState)(CapturesOnly);
+                        Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Depth)(AttackTableOnly)(Quiescence);
                     }
                 }
             }
@@ -2689,11 +2688,11 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
         If (Not ((EnPassantTarget[Depth] == "")))
         {
             TargetIdx = EnPassantTarget[Depth];
-            If ((Not (CalcAttackState)) And (IdxToRank[SourceIdx] == IdxToRank[TargetIdx]))
+            If ((Not (AttackTableOnly)) And (IdxToRank[SourceIdx] == IdxToRank[TargetIdx]))
             {
                 If (abs((IdxToFile[SourceIdx] - IdxToFile[TargetIdx])) == 1)
                 {
-                    Call AddMoveImpl(SourceIdx)((TargetIdx + 8))(Depth)(CalcAttackState)(CapturesOnly);
+                    Call AddMoveImpl(SourceIdx)((TargetIdx + 8))(Depth)(AttackTableOnly)(Quiescence);
                 }
             }
         }
@@ -2701,25 +2700,25 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
     }
     If (MoveGen.SourcePiece == GoK_WhitePawn)
     {
-        If (CalcAttackState Or (Board[(SourceIdx - 9)] > 0))
+        If (AttackTableOnly Or (Board[(SourceIdx - 9)] > 0))
         {
             If (IdxToFile[SourceIdx] > 1)
             {
-                Call AddMoveImpl(SourceIdx)((SourceIdx - 9))(Depth)(CalcAttackState)(CapturesOnly);
+                Call AddMoveImpl(SourceIdx)((SourceIdx - 9))(Depth)(AttackTableOnly)(Quiescence);
             }
         }
-        If (CalcAttackState Or (Board[(SourceIdx - 7)] > 0))
+        If (AttackTableOnly Or (Board[(SourceIdx - 7)] > 0))
         {
             If (IdxToFile[SourceIdx] < 8)
             {
-                Call AddMoveImpl(SourceIdx)((SourceIdx - 7))(Depth)(CalcAttackState)(CapturesOnly);
+                Call AddMoveImpl(SourceIdx)((SourceIdx - 7))(Depth)(AttackTableOnly)(Quiescence);
             }
         }
-        If (Not (CalcAttackState))
+        If (Not (AttackTableOnly))
         {
             If (Board[(SourceIdx - 8)] == 0)
             {
-                If CapturesOnly
+                If Quiescence
                 {
                     If ((IsPotentialNonCapQuiescMove == 1) Or (IdxToRank[SourceIdx] == 2))
                     {
@@ -2728,11 +2727,11 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                 }
                 Else
                 {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
+                    Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Depth)(AttackTableOnly)(Quiescence);
                 }
                 If ((IdxToRank[SourceIdx] == 7) And (Board[(SourceIdx - 16)] == 0))
                 {
-                    If CapturesOnly
+                    If Quiescence
                     {
                         If (IsPotentialNonCapQuiescMove == 1)
                         {
@@ -2741,7 +2740,7 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
                     }
                     Else
                     {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(CalcAttackState)(CapturesOnly);
+                        Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Depth)(AttackTableOnly)(Quiescence);
                     }
                 }
             }
@@ -2749,11 +2748,11 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
         If (Not ((EnPassantTarget[Depth] == "")))
         {
             TargetIdx = EnPassantTarget[Depth];
-            If ((Not (CalcAttackState)) And (IdxToRank[SourceIdx] == IdxToRank[TargetIdx]))
+            If ((Not (AttackTableOnly)) And (IdxToRank[SourceIdx] == IdxToRank[TargetIdx]))
             {
                 If (abs((IdxToFile[SourceIdx] - IdxToFile[TargetIdx])) == 1)
                 {
-                    Call AddMoveImpl(SourceIdx)((TargetIdx - 8))(Depth)(CalcAttackState)(CapturesOnly);
+                    Call AddMoveImpl(SourceIdx)((TargetIdx - 8))(Depth)(AttackTableOnly)(Quiescence);
                 }
             }
         }
@@ -2763,49 +2762,49 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool CalcAttackSta
     MoveGen.SourcePiece = abs(MoveGen.SourcePiece);
     If (MoveGen.SourcePiece == GoK_BlackRook)
     {
-        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
+        Call AddSlidingMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 1));
         Stop(this script);
     }
     If (MoveGen.SourcePiece == GoK_BlackBishop)
     {
-        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Call AddSlidingMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 0));
         Stop(this script);
     }
     If (MoveGen.SourcePiece == GoK_BlackKnight)
     {
-        Call AddLookupMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Call AddLookupMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 0));
         Stop(this script);
     }
     If (MoveGen.SourcePiece == GoK_BlackKing)
     {
-        Call AddLookupMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
+        Call AddLookupMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 1));
         Stop(this script);
     }
     If (MoveGen.SourcePiece == GoK_BlackQueen)
     {
-        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 1));
-        Call AddSlidingMove(SourceIdx)(Depth)(CalcAttackState)(CapturesOnly)((1 == 0));
+        Call AddSlidingMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 1));
+        Call AddSlidingMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 0));
         Stop(this script);
     }
 }
 
-Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
+Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool AttackTableOnly)(bool Quiescence) (warp=true)
 {
     List.DeleteAll(CalcMovesMoveList);
     List.DeleteAll(CalcMovesScoreList);
-    Call GenerateMovesForSource(Depth)(SourceIdx)(CalcAttackState)(CapturesOnly);
+    Call GenerateMovesForSource(Depth)(SourceIdx)(AttackTableOnly)(Quiescence);
     Call SortMoveList(Depth);
 }
 
-Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool IsBlackMove) (warp=true)
+Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bool IsBlackMove) (warp=true)
 {
-    If ((Not (CalcAttackState)) And (Not (CapturesOnly)))
+    If ((Not (AttackTableOnly)) And (Not (Quiescence)))
     {
         If (BoardAttackedCalculated[Depth] == 0)
         {
             If IsBlackMove
             {
-                Call GenerateMovesForSource(Depth)(BlackKingIdx)(CalcAttackState)(CapturesOnly);
+                Call GenerateMovesForSource(Depth)(BlackKingIdx)(AttackTableOnly)(Quiescence);
                 If (GenerateMovesRequiresAttackRecalc == 1)
                 {
                     Stop(this script);
@@ -2813,7 +2812,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
             }
             Else
             {
-                Call GenerateMovesForSource(Depth)(WhiteKingIdx)(CalcAttackState)(CapturesOnly);
+                Call GenerateMovesForSource(Depth)(WhiteKingIdx)(AttackTableOnly)(Quiescence);
                 If (GenerateMovesRequiresAttackRecalc == 1)
                 {
                     Stop(this script);
@@ -2846,8 +2845,8 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
             If (Board[Caller.SourceIdx] > 0)
             {
                 Piece = Board[Caller.SourceIdx];
-                Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(CalcAttackState)(CapturesOnly);
-                If (((Not (CalcAttackState)) And (Not (CapturesOnly))) And (Not ((Piece == GoK_BlackPawn))))
+                Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(AttackTableOnly)(Quiescence);
+                If (((Not (AttackTableOnly)) And (Not (Quiescence))) And (Not ((Piece == GoK_BlackPawn))))
                 {
                     If (IsEndgame == 0)
                     {
@@ -2900,8 +2899,8 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
             If (Board[Caller.SourceIdx] < 0)
             {
                 Piece = Board[Caller.SourceIdx];
-                Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(CalcAttackState)(CapturesOnly);
-                If (((Not (CalcAttackState)) And (Not (CapturesOnly))) And (Not ((Piece == GoK_WhitePawn))))
+                Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(AttackTableOnly)(Quiescence);
+                If (((Not (AttackTableOnly)) And (Not (Quiescence))) And (Not ((Piece == GoK_WhitePawn))))
                 {
                     If (IsEndgame == 0)
                     {
@@ -2947,7 +2946,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
         }
     }
     Call //("Castling moves");
-    If ((Not (CalcAttackState)) And (Not (CapturesOnly)))
+    If ((Not (AttackTableOnly)) And (Not (Quiescence)))
     {
         If IsBlackMove
         {
@@ -3015,7 +3014,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
         }
     }
     Call //("Move ordering");
-    If (Not (CalcAttackState))
+    If (Not (AttackTableOnly))
     {
         If (Depth == 1)
         {
@@ -3051,19 +3050,19 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
     }
 }
 
-Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool CapturesOnly) (warp=true)
+Define GenerateMovesImplWrapper(string Depth)(bool AttackTableOnly)(bool Quiescence) (warp=true)
 {
     If (IsBlockProfilerEnabled == 1)
     {
-        Call Profile_MethodEnter(((((3 * MaxSearchDepthStackFrames) - (MaxSearchDepthStackFrames * CapturesOnly)) - ((2 * MaxSearchDepthStackFrames) * CalcAttackState)) + Depth));
+        Call ProfilerMethodEnter(((((3 * MaxSearchDepthStackFrames) - (MaxSearchDepthStackFrames * Quiescence)) - ((2 * MaxSearchDepthStackFrames) * AttackTableOnly)) + Depth));
     }
     Call IsQuiescentCheckCond(Depth);
     IsQuiescentCheckInvariantRes = IsQuiescentCheckRes;
     GenerateMovesRequiresAttackRecalc = 0;
-    Call GenerateMovesImpl(Depth)(CalcAttackState)(CapturesOnly)(((Depth % 2) == 1));
+    Call GenerateMovesImpl(Depth)(AttackTableOnly)(Quiescence)(((Depth % 2) == 1));
     If (IsBlockProfilerEnabled == 1)
     {
-        Call Profile_MethodExit(((((3 * MaxSearchDepthStackFrames) - (MaxSearchDepthStackFrames * CapturesOnly)) - ((2 * MaxSearchDepthStackFrames) * CalcAttackState)) + Depth));
+        Call ProfilerMethodExit(((((3 * MaxSearchDepthStackFrames) - (MaxSearchDepthStackFrames * Quiescence)) - ((2 * MaxSearchDepthStackFrames) * AttackTableOnly)) + Depth));
     }
 }
 
@@ -4259,7 +4258,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(SearchEvalResultsIsDynamic, all);
     List.DeleteItem(MovesCount, all);
     List.DeleteItem(MovesIdx, all);
-    List.DeleteItem(MovesIdxBestMove, all);
+    List.DeleteItem(BestMoveListIdx, all);
     List.DeleteItem(TargetPieces, all);
     List.DeleteItem(PreviousBoardHash, all);
     List.DeleteItem(PreviousBoardHashKR, all);
@@ -4296,7 +4295,6 @@ Define InitBoard (warp=true)
     List.DeleteItem(PassedWhitePawnOnEndgame, all);
     List.DeleteItem(CastlingState, all);
     List.DeleteItem(PawnShelterCapture, all);
-    List.DeleteItem(AppliedMove_NNUE_State, all);
     List.DeleteItem(BoardEval, all);
     List.DeleteItem(QuiescentCheckMoveCount, all);
     Repeat (MaxSearchDepthStackFrames)
@@ -4309,7 +4307,7 @@ Define InitBoard (warp=true)
         List.Add(SearchEvalResultsIsDynamic, "");
         List.Add(MovesCount, 0);
         List.Add(MovesIdx, "");
-        List.Add(MovesIdxBestMove, "");
+        List.Add(BestMoveListIdx, "");
         List.Add(TargetPieces, "");
         List.Add(PreviousBoardHash, "");
         List.Add(PreviousBoardHashKR, "");
@@ -4346,7 +4344,6 @@ Define InitBoard (warp=true)
         List.Add(PassedWhitePawnOnEndgame, 0);
         List.Add(CastlingState, 0);
         List.Add(PawnShelterCapture, 0);
-        List.Add(AppliedMove_NNUE_State, 0);
         List.Add(BoardEval, "");
         List.Add(QuiescentCheckMoveCount, "");
     }
@@ -4504,30 +4501,30 @@ Define InitMoveLookup (warp=true)
     List.Add(KingMoveOffsets, 0);
     List.Add(KingMoveOffsets, 1);
     List.Add(KingMoveOffsets, 1);
-    List.DeleteItem(MoveLookupStraight, all);
-    List.DeleteItem(MoveLookupCross, all);
-    List.DeleteItem(MoveLookupOffsetsStraight, all);
-    List.DeleteItem(MoveLookupOffsetsCross, all);
-    List.DeleteItem(MoveLookupKnight, all);
-    List.DeleteItem(MoveLookupKing, all);
-    List.DeleteItem(MoveLookupIndexOffset, all);
-    List.DeleteItem(MoveLookupLineIndexOffset, all);
-    List.Add(MoveLookupOffsetsStraight, 1);
-    List.Add(MoveLookupOffsetsStraight, 0);
-    List.Add(MoveLookupOffsetsStraight, 0);
-    List.Add(MoveLookupOffsetsStraight, 1);
-    List.Add(MoveLookupOffsetsStraight, -1);
-    List.Add(MoveLookupOffsetsStraight, 0);
-    List.Add(MoveLookupOffsetsStraight, 0);
-    List.Add(MoveLookupOffsetsStraight, -1);
-    List.Add(MoveLookupOffsetsCross, 1);
-    List.Add(MoveLookupOffsetsCross, 1);
-    List.Add(MoveLookupOffsetsCross, 1);
-    List.Add(MoveLookupOffsetsCross, -1);
-    List.Add(MoveLookupOffsetsCross, -1);
-    List.Add(MoveLookupOffsetsCross, 1);
-    List.Add(MoveLookupOffsetsCross, -1);
-    List.Add(MoveLookupOffsetsCross, -1);
+    List.DeleteItem(MoveSlidingStraightListIdxToTargetIdx, all);
+    List.DeleteItem(MoveCrossListIdxToTargetIdx, all);
+    List.DeleteItem(MoveSlidingStraighOffsetIdxToDelta, all);
+    List.DeleteItem(MoveCrossOffsetIdxToDelta, all);
+    List.DeleteItem(MoveListOffsetToTargetIdxKnight, all);
+    List.DeleteItem(MoveListOffsetToTargetIdxKing, all);
+    List.DeleteItem(MoveSourceIdxToListOffsetNonSliding, all);
+    List.DeleteItem(MoveSourceIdxToListOffsetSliding, all);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, 1);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, 0);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, 0);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, 1);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, -1);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, 0);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, 0);
+    List.Add(MoveSlidingStraighOffsetIdxToDelta, -1);
+    List.Add(MoveCrossOffsetIdxToDelta, 1);
+    List.Add(MoveCrossOffsetIdxToDelta, 1);
+    List.Add(MoveCrossOffsetIdxToDelta, 1);
+    List.Add(MoveCrossOffsetIdxToDelta, -1);
+    List.Add(MoveCrossOffsetIdxToDelta, -1);
+    List.Add(MoveCrossOffsetIdxToDelta, 1);
+    List.Add(MoveCrossOffsetIdxToDelta, -1);
+    List.Add(MoveCrossOffsetIdxToDelta, -1);
     Idx = 1;
     Repeat (64)
     {
@@ -4538,15 +4535,15 @@ Define InitMoveLookup (warp=true)
             Y = IdxToRank[Idx];
             Repeat (8)
             {
-                X += MoveLookupOffsetsStraight[Idx2];
-                Y += MoveLookupOffsetsStraight[(Idx2 + 1)];
-                List.Add(MoveLookupStraight, -1);
+                X += MoveSlidingStraighOffsetIdxToDelta[Idx2];
+                Y += MoveSlidingStraighOffsetIdxToDelta[(Idx2 + 1)];
+                List.Add(MoveSlidingStraightListIdxToTargetIdx, -1);
                 If ((Y > 0) And (Y < 9))
                 {
                     If ((X > 0) And (X < 9))
                     {
                         TargetIdx = (X + ((Y - 1) * 8));
-                        List.ReplaceItem(MoveLookupStraight, List.Length(MoveLookupStraight), TargetIdx);
+                        List.ReplaceItem(MoveSlidingStraightListIdxToTargetIdx, List.Length(MoveSlidingStraightListIdxToTargetIdx), TargetIdx);
                     }
                 }
             }
@@ -4559,15 +4556,15 @@ Define InitMoveLookup (warp=true)
             Y = IdxToRank[Idx];
             Repeat (8)
             {
-                X += MoveLookupOffsetsCross[Idx2];
-                Y += MoveLookupOffsetsCross[(Idx2 + 1)];
-                List.Add(MoveLookupCross, -1);
+                X += MoveCrossOffsetIdxToDelta[Idx2];
+                Y += MoveCrossOffsetIdxToDelta[(Idx2 + 1)];
+                List.Add(MoveCrossListIdxToTargetIdx, -1);
                 If ((Y > 0) And (Y < 9))
                 {
                     If ((X > 0) And (X < 9))
                     {
                         TargetIdx = (X + ((Y - 1) * 8));
-                        List.ReplaceItem(MoveLookupCross, List.Length(MoveLookupCross), TargetIdx);
+                        List.ReplaceItem(MoveCrossListIdxToTargetIdx, List.Length(MoveCrossListIdxToTargetIdx), TargetIdx);
                     }
                 }
             }
@@ -4578,8 +4575,8 @@ Define InitMoveLookup (warp=true)
     Idx = 1;
     Repeat (64)
     {
-        List.InsertItem(MoveLookupIndexOffset, Idx, ((Idx - 1) * 8));
-        List.InsertItem(MoveLookupLineIndexOffset, Idx, ((Idx - 1) * 32));
+        List.InsertItem(MoveSourceIdxToListOffsetNonSliding, Idx, ((Idx - 1) * 8));
+        List.InsertItem(MoveSourceIdxToListOffsetSliding, Idx, ((Idx - 1) * 32));
         Idx += 1;
     }
     Idx = 1;
@@ -4591,13 +4588,13 @@ Define InitMoveLookup (warp=true)
             Call GetTargetIdx(Idx)(KingMoveOffsets[Idx2])(KingMoveOffsets[(Idx2 + 1)]);
             If (Not ((GetTargetIdxRes == -1)))
             {
-                List.Add(MoveLookupKing, GetTargetIdxRes);
+                List.Add(MoveListOffsetToTargetIdxKing, GetTargetIdxRes);
             }
             Idx2 += 2;
         }
-        Repeat Until (List.Length(MoveLookupKing) == (Idx * 8))
+        Repeat Until (List.Length(MoveListOffsetToTargetIdxKing) == (Idx * 8))
         {
-            List.Add(MoveLookupKing, -1);
+            List.Add(MoveListOffsetToTargetIdxKing, -1);
         }
         Idx2 = 1;
         Repeat (8)
@@ -4605,19 +4602,19 @@ Define InitMoveLookup (warp=true)
             Call GetTargetIdx(Idx)(KnightMoveOffsets[Idx2])(KnightMoveOffsets[(Idx2 + 1)]);
             If (Not ((GetTargetIdxRes == -1)))
             {
-                List.Add(MoveLookupKnight, GetTargetIdxRes);
+                List.Add(MoveListOffsetToTargetIdxKnight, GetTargetIdxRes);
             }
             Idx2 += 2;
         }
-        Repeat Until (List.Length(MoveLookupKnight) == (Idx * 8))
+        Repeat Until (List.Length(MoveListOffsetToTargetIdxKnight) == (Idx * 8))
         {
-            List.Add(MoveLookupKnight, -1);
+            List.Add(MoveListOffsetToTargetIdxKnight, -1);
         }
         Idx += 1;
     }
-    List.DeleteItem(MoveNotationLookup, all);
-    List.DeleteItem(MovePathDelta, all);
-    List.DeleteItem(MovePathStepInc, all);
+    List.DeleteItem(MoveToAlgebraicNotation, all);
+    List.DeleteItem(MoveToPathDelta, all);
+    List.DeleteItem(MoveToPathStepInc, all);
     List.DeleteItem(BoardAttackedByPieceMap, all);
     Idx = 0;
     Repeat (10000)
@@ -4651,23 +4648,23 @@ Define InitMoveLookup (warp=true)
     {
         If (Idx < 10)
         {
-            List.Add(MoveNotationLookup, Operator.Join(000, Idx));
+            List.Add(MoveToAlgebraicNotation, Operator.Join(000, Idx));
         }
         Else
         {
             If (Idx < 100)
             {
-                List.Add(MoveNotationLookup, Operator.Join(00, Idx));
+                List.Add(MoveToAlgebraicNotation, Operator.Join(00, Idx));
             }
             Else
             {
                 If (Idx < 1000)
                 {
-                    List.Add(MoveNotationLookup, Operator.Join(0, Idx));
+                    List.Add(MoveToAlgebraicNotation, Operator.Join(0, Idx));
                 }
                 Else
                 {
-                    List.Add(MoveNotationLookup, Idx);
+                    List.Add(MoveToAlgebraicNotation, Idx);
                 }
             }
         }
@@ -4675,8 +4672,8 @@ Define InitMoveLookup (warp=true)
     }
     Repeat (10000)
     {
-        List.Add(MovePathDelta, "");
-        List.Add(MovePathStepInc, "");
+        List.Add(MoveToPathDelta, "");
+        List.Add(MoveToPathStepInc, "");
     }
     Idx = 1;
     Repeat (64)
@@ -4696,8 +4693,8 @@ Define InitMoveLookup (warp=true)
                 {
                     Delta = abs(Y);
                 }
-                List.ReplaceItem(MovePathDelta, ((Idx * 100) + Idx2), Delta);
-                List.ReplaceItem(MovePathStepInc, ((Idx * 100) + Idx2), ((8 * (Y / Delta)) + (X / Delta)));
+                List.ReplaceItem(MoveToPathDelta, ((Idx * 100) + Idx2), Delta);
+                List.ReplaceItem(MoveToPathStepInc, ((Idx * 100) + Idx2), ((8 * (Y / Delta)) + (X / Delta)));
             }
             Idx2 += 1;
         }
@@ -4791,18 +4788,18 @@ Define InitMovePosLookup(bool Init) (warp=true)
                 Idx += 1;
             }
         }
-        If (((Not ((List.Length(MovePosLookupBlack) == 100000))) Or (Not ((List.Length(MovePosLookupWhite) == 100000)))) Or ((Not ((List.Length(MoveHashLookupBlack) == 100000))) Or (Not ((List.Length(MoveHashLookupWhite) == 100000)))))
+        If (((Not ((List.Length(MoveToEvalDeltaBlack) == 100000))) Or (Not ((List.Length(MoveToEvalDeltaWhite) == 100000)))) Or ((Not ((List.Length(MoveToHashBlack) == 100000))) Or (Not ((List.Length(MoveToHashWhite) == 100000)))))
         {
-            List.DeleteAll(MovePosLookupBlack);
-            List.DeleteAll(MovePosLookupWhite);
-            List.DeleteAll(MoveHashLookupBlack);
-            List.DeleteAll(MoveHashLookupWhite);
+            List.DeleteAll(MoveToEvalDeltaBlack);
+            List.DeleteAll(MoveToEvalDeltaWhite);
+            List.DeleteAll(MoveToHashBlack);
+            List.DeleteAll(MoveToHashWhite);
             Repeat (100000)
             {
-                List.Add(MovePosLookupBlack, "");
-                List.Add(MovePosLookupWhite, "");
-                List.Add(MoveHashLookupBlack, "");
-                List.Add(MoveHashLookupWhite, "");
+                List.Add(MoveToEvalDeltaBlack, "");
+                List.Add(MoveToEvalDeltaWhite, "");
+                List.Add(MoveToHashBlack, "");
+                List.Add(MoveToHashWhite, "");
             }
         }
         List.DeleteAll(Pieces);
@@ -4937,14 +4934,14 @@ Define InitMovePosLookup(bool Init) (warp=true)
                         If (SourcePiece > 0)
                         {
                             Idx = ((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx));
-                            List.ReplaceItem(MovePosLookupBlack, Idx, (PosEvalRes - PosEvalRes2));
-                            List.ReplaceItem(MoveHashLookupBlack, Idx, (PiecePosHash - PiecePosHash2));
+                            List.ReplaceItem(MoveToEvalDeltaBlack, Idx, (PosEvalRes - PosEvalRes2));
+                            List.ReplaceItem(MoveToHashBlack, Idx, (PiecePosHash - PiecePosHash2));
                         }
                         Else
                         {
                             Idx = ((PieceIdxLookup[(0 - SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx));
-                            List.ReplaceItem(MovePosLookupWhite, Idx, (PosEvalRes - PosEvalRes2));
-                            List.ReplaceItem(MoveHashLookupWhite, Idx, (PiecePosHash - PiecePosHash2));
+                            List.ReplaceItem(MoveToEvalDeltaWhite, Idx, (PosEvalRes - PosEvalRes2));
+                            List.ReplaceItem(MoveToHashWhite, Idx, (PiecePosHash - PiecePosHash2));
                         }
                     }
                     TargetIdx += 1;
@@ -5310,7 +5307,7 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
     IsSearchTimeout = 0;
     If InitialDeepening
     {
-        Call Profile_Reset;
+        Call ProfilerReset;
         Call OnProgressChanged(1);
         PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
         TT.CurrentAge = ((floor((TT.CurrentAge / 100)) + 1) * 100);
@@ -5428,7 +5425,7 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
     }
     If (Piece > 0)
     {
-        If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == "")
+        If (MoveToEvalDeltaBlack[((PieceIdxLookup[Piece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == "")
         {
             Stop(this script);
         }
@@ -5446,13 +5443,13 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
             IsCheckingPieceRes = 1;
             Stop(this script);
         }
-        CurrentMove = MoveNotationLookup[((Idx * 100) + WhiteKingIdx)];
+        CurrentMove = MoveToAlgebraicNotation[((Idx * 100) + WhiteKingIdx)];
     }
     Else
     {
         If (Piece < 0)
         {
-            If (MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == "")
+            If (MoveToEvalDeltaWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == "")
             {
                 Stop(this script);
             }
@@ -5470,12 +5467,12 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
                 IsCheckingPieceRes = 1;
                 Stop(this script);
             }
-            CurrentMove = MoveNotationLookup[((Idx * 100) + BlackKingIdx)];
+            CurrentMove = MoveToAlgebraicNotation[((Idx * 100) + BlackKingIdx)];
         }
     }
     SourceIdx = Idx;
-    IdxInc = MovePathStepInc[CurrentMove];
-    Repeat ((MovePathDelta[CurrentMove] - 1))
+    IdxInc = MoveToPathStepInc[CurrentMove];
+    Repeat ((MoveToPathDelta[CurrentMove] - 1))
     {
         SourceIdx += IdxInc;
         If (Not ((Board[SourceIdx] == 0)))
@@ -6432,7 +6429,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.ReplaceItem(PickedMoveCount, Depth, 0);
         List.ReplaceItem(MovesCount, Depth, 0);
         List.ReplaceItem(MovesIdx, Depth, 0);
-        List.ReplaceItem(MovesIdxBestMove, Depth, 0);
+        List.ReplaceItem(BestMoveListIdx, Depth, 0);
         List.ReplaceItem(QuiescentCheckMoveCount, Depth, 0);
         List.DeleteAll(CalcMovesMoveList);
         List.DeleteAll(CalcMovesScoreList);
@@ -6562,7 +6559,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         {
                             MoveGen.SourceIdx = Operator.Join(Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], ((MoveGen.TargetIdx * 2) - 1)), Operator.LetterOf(BoardAttackedByBlackPieceSnapshot[Depth], (MoveGen.TargetIdx * 2)));
                             MoveGen.SourcePiece = Board[MoveGen.SourceIdx];
-                            If ((MoveGen.SourcePiece > 0) And (Not ((MovePosLookupBlack[((PieceIdxLookup[MoveGen.SourcePiece] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
+                            If ((MoveGen.SourcePiece > 0) And (Not ((MoveToEvalDeltaBlack[((PieceIdxLookup[MoveGen.SourcePiece] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
                             {
                                 Call StagedMoveGenMVVLVA(Depth)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(MoveGen.SourcePiece)(abs(Board[MoveGen.TargetIdx]))(floor((AppliedMove[(Depth - 1)] % 100)));
                             }
@@ -6570,7 +6567,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         MoveGen.Idx = 1;
                         Repeat (List.Length(TmpList3))
                         {
-                            If (Not ((MovePosLookupBlack[(TmpList4[MoveGen.Idx] + MoveGen.TargetIdx)] == "")))
+                            If (Not ((MoveToEvalDeltaBlack[(TmpList4[MoveGen.Idx] + MoveGen.TargetIdx)] == "")))
                             {
                                 MoveGen.SourceIdx = TmpList3[MoveGen.Idx];
                                 Call StagedMoveGenMVVLVA(Depth)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(Board[MoveGen.SourceIdx])(abs(Board[MoveGen.TargetIdx]))(floor((AppliedMove[(Depth - 1)] % 100)));
@@ -6592,7 +6589,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         {
                             MoveGen.SourceIdx = Operator.Join(Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], ((MoveGen.TargetIdx * 2) - 1)), Operator.LetterOf(BoardAttackedByWhitePieceSnapshot[Depth], (MoveGen.TargetIdx * 2)));
                             MoveGen.SourcePiece = Board[MoveGen.SourceIdx];
-                            If ((MoveGen.SourcePiece < 0) And (Not ((MovePosLookupWhite[((PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
+                            If ((MoveGen.SourcePiece < 0) And (Not ((MoveToEvalDeltaWhite[((PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
                             {
                                 Call StagedMoveGenMVVLVA(Depth)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(MoveGen.SourcePiece))(Board[MoveGen.TargetIdx])(floor((AppliedMove[(Depth - 1)] % 100)));
                             }
@@ -6600,7 +6597,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         MoveGen.Idx = 1;
                         Repeat (List.Length(TmpList3))
                         {
-                            If (Not ((MovePosLookupWhite[(TmpList4[MoveGen.Idx] + MoveGen.TargetIdx)] == "")))
+                            If (Not ((MoveToEvalDeltaWhite[(TmpList4[MoveGen.Idx] + MoveGen.TargetIdx)] == "")))
                             {
                                 MoveGen.SourceIdx = TmpList3[MoveGen.Idx];
                                 Call StagedMoveGenMVVLVA(Depth)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(Board[MoveGen.SourceIdx]))(Board[MoveGen.TargetIdx])(floor((AppliedMove[(Depth - 1)] % 100)));
@@ -6683,14 +6680,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 {
                     If ((Depth % 2) == 1)
                     {
-                        If ((Board[MoveGen.SourceIdx] > 0) And (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[MoveGen.SourceIdx]] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
+                        If ((Board[MoveGen.SourceIdx] > 0) And (Not ((MoveToEvalDeltaBlack[((PieceIdxLookup[Board[MoveGen.SourceIdx]] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
                         {
                             Call StagedMoveGenKillerMoves(Depth)(Caller.CurrentMove)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(Board[MoveGen.SourceIdx])(MoveGen.Idx);
                         }
                     }
                     Else
                     {
-                        If ((Board[MoveGen.SourceIdx] < 0) And (Not ((MovePosLookupWhite[((PieceIdxLookup[abs(Board[MoveGen.SourceIdx])] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
+                        If ((Board[MoveGen.SourceIdx] < 0) And (Not ((MoveToEvalDeltaWhite[((PieceIdxLookup[abs(Board[MoveGen.SourceIdx])] * 10000) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == ""))))
                         {
                             Call StagedMoveGenKillerMoves(Depth)(Caller.CurrentMove)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(Board[MoveGen.SourceIdx]))(MoveGen.Idx);
                         }
@@ -6822,7 +6819,7 @@ Define PrepareCurrentKillerMoves(string Depth) (warp=true)
     List.Add(CurrentKillerMoves, KillerMoves[(Idx + 1)]);
 }
 
-Define Profile_MethodEnter(num Id) (warp=true)
+Define ProfilerMethodEnter(string Id) (warp=true)
 {
     Repeat Until (Not ((List.Length(ProfilingData) < Id)))
     {
@@ -6831,12 +6828,12 @@ Define Profile_MethodEnter(num Id) (warp=true)
     List.ReplaceItem(ProfilingData, Id, (ProfilingData[Id] - ((Sensing.DaysSince2000() * 24) * 3600)));
 }
 
-Define Profile_MethodExit(num Id) (warp=false)
+Define ProfilerMethodExit(string Id) (warp=false)
 {
     List.ReplaceItem(ProfilingData, Id, (ProfilingData[Id] + ((Sensing.DaysSince2000() * 24) * 3600)));
 }
 
-Define Profile_Reset (warp=true)
+Define ProfilerReset (warp=true)
 {
     List.DeleteItem(ProfilingData, all);
 }
@@ -7201,7 +7198,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     List.ReplaceItem(NodeTypes, Depth, "E");
     List.ReplaceItem(BestMoves, Depth, "");
     List.ReplaceItem(AppliedMove, Depth, "");
-    List.ReplaceItem(AppliedMove_NNUE_State, Depth, 0);
     List.ReplaceItem(BoardEval, Depth, "");
     If (IsSearchTimeout == 1)
     {
@@ -7680,13 +7676,13 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         }
         If (IsBlockProfilerEnabled == 1)
         {
-            Call Profile_MethodEnter(((5 * MaxSearchDepthStackFrames) + Depth));
+            Call ProfilerMethodEnter(((5 * MaxSearchDepthStackFrames) + Depth));
         }
         Call //("Invoke move generator and apply next move from list");
         Call PickMove(Depth)(Quiescence);
         If (IsBlockProfilerEnabled == 1)
         {
-            Call Profile_MethodExit(((5 * MaxSearchDepthStackFrames) + Depth));
+            Call ProfilerMethodExit(((5 * MaxSearchDepthStackFrames) + Depth));
         }
         If (PickMoveRes[Depth] == 1)
         {
@@ -7736,7 +7732,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                             {
                                 If (MoveGen.SourcePiece < abs(Board[MoveGen.TargetIdx]))
                                 {
-                                    If (Not ((MovePosLookupBlack[((PieceIdxLookup[MoveGen.SourcePiece] * 10000) + ((Caller.SourceIdx * 100) + MoveGen.TargetIdx))] == "")))
+                                    If (Not ((MoveToEvalDeltaBlack[((PieceIdxLookup[MoveGen.SourcePiece] * 10000) + ((Caller.SourceIdx * 100) + MoveGen.TargetIdx))] == "")))
                                     {
                                         Search.Count += 1;
                                     }
@@ -7754,7 +7750,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                             {
                                 If (abs(MoveGen.SourcePiece) < Board[MoveGen.TargetIdx])
                                 {
-                                    If (Not ((MovePosLookupWhite[((PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000) + ((Caller.SourceIdx * 100) + MoveGen.TargetIdx))] == "")))
+                                    If (Not ((MoveToEvalDeltaWhite[((PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000) + ((Caller.SourceIdx * 100) + MoveGen.TargetIdx))] == "")))
                                     {
                                         Search.Count += 1;
                                     }
@@ -8037,7 +8033,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                         {
                             Call GetCurrentMove(Depth);
                             List.ReplaceItem(BestMoves, Depth, CurrentMove);
-                            List.ReplaceItem(MovesIdxBestMove, Depth, MovesIdx[Depth]);
+                            List.ReplaceItem(BestMoveListIdx, Depth, MovesIdx[Depth]);
                             If Quiescence
                             {
                                 If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Eval < Betas[Depth]))
@@ -8132,7 +8128,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                         {
                             Call GetCurrentMove(Depth);
                             List.ReplaceItem(BestMoves, Depth, CurrentMove);
-                            List.ReplaceItem(MovesIdxBestMove, Depth, MovesIdx[Depth]);
+                            List.ReplaceItem(BestMoveListIdx, Depth, MovesIdx[Depth]);
                             If Quiescence
                             {
                                 If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Eval > Alphas[Depth]))
@@ -8299,26 +8295,26 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         }
     }
     Call //("Collect statistics");
-    If (MovesIdxBestMove[Depth] > 0)
+    If (BestMoveListIdx[Depth] > 0)
     {
         If Quiescence
         {
             ProfBestMoveCountQ += 1;
-            ProfBestMoveIdxSumQ += MovesIdxBestMove[Depth];
+            ProfBestMoveIdxSumQ += BestMoveListIdx[Depth];
         }
         Else
         {
             ProfBestMoveCount += 1;
-            ProfBestMoveIdxSum += MovesIdxBestMove[Depth];
+            ProfBestMoveIdxSum += BestMoveListIdx[Depth];
         }
         If (1 == 0)
         {
             If (IsBlockProfilerEnabled == 1)
             {
-                If (MovesIdxBestMove[Depth] > (3 - (Quiescence[Depth] * 2)))
+                If (BestMoveListIdx[Depth] > (3 - (Quiescence[Depth] * 2)))
                 {
                     Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
-                    Call Log("Move ordering indication")(Operator.Join(Operator.Join(":", Depth), Operator.Join(":", MovesIdxBestMove[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] / 100))]), Operator.Join(":", BestMoves[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] % 100))]), Operator.Join(":", Quiescence[Depth])))(":")(ExportDataFEN)("")("");
+                    Call Log("Move ordering indication")(Operator.Join(Operator.Join(":", Depth), Operator.Join(":", BestMoveListIdx[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] / 100))]), Operator.Join(":", BestMoves[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] % 100))]), Operator.Join(":", Quiescence[Depth])))(":")(ExportDataFEN)("")("");
                 }
             }
         }
@@ -8478,8 +8474,8 @@ Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(str
     If (SourcePieceAbs > GoK_BlackKnight)
     {
         SourceIdx = SourceIdx;
-        IdxInc = MovePathStepInc[Move];
-        Repeat ((MovePathDelta[Move] - 1))
+        IdxInc = MoveToPathStepInc[Move];
+        Repeat ((MoveToPathDelta[Move] - 1))
         {
             SourceIdx += IdxInc;
             If (Not ((Board[SourceIdx] == 0)))
@@ -8556,16 +8552,16 @@ Define StagedMoveGenMVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(str
     {
         Idx = ((SourceIdx * 100) + TargetIdx);
         SourceIdx = SourceIdx;
-        Repeat ((MovePathDelta[Idx] - 1))
+        Repeat ((MoveToPathDelta[Idx] - 1))
         {
-            SourceIdx += MovePathStepInc[Idx];
+            SourceIdx += MoveToPathStepInc[Idx];
             If (Not ((Board[SourceIdx] == 0)))
             {
                 Stop(this script);
             }
         }
     }
-    Caller.CurrentMove = MoveNotationLookup[((SourceIdx * 100) + TargetIdx)];
+    Caller.CurrentMove = MoveToAlgebraicNotation[((SourceIdx * 100) + TargetIdx)];
     If Operator.Contains(PickedMoves[Depth], Caller.CurrentMove)
     {
         Stop(this script);
@@ -8990,18 +8986,18 @@ Define _ClearLists (warp=true)
     List.DeleteAll(TTNodeHorizon);
     List.DeleteAll(OpeningMoves);
     List.DeleteAll(PosPieceHashLookup);
-    List.DeleteAll(MoveLookupStraight);
-    List.DeleteAll(MoveLookupOffsetsCross);
-    List.DeleteAll(MoveLookupKing);
-    List.DeleteAll(MoveLookupKnight);
+    List.DeleteAll(MoveSlidingStraightListIdxToTargetIdx);
+    List.DeleteAll(MoveCrossOffsetIdxToDelta);
+    List.DeleteAll(MoveListOffsetToTargetIdxKing);
+    List.DeleteAll(MoveListOffsetToTargetIdxKnight);
     List.DeleteAll(Logfile);
-    List.DeleteAll(MovePosLookupBlack);
-    List.DeleteAll(MovePosLookupWhite);
-    List.DeleteAll(MoveHashLookupBlack);
-    List.DeleteAll(MoveHashLookupWhite);
+    List.DeleteAll(MoveToEvalDeltaBlack);
+    List.DeleteAll(MoveToEvalDeltaWhite);
+    List.DeleteAll(MoveToHashBlack);
+    List.DeleteAll(MoveToHashWhite);
     List.DeleteAll(TmpList3);
-    List.DeleteAll(MovePathDelta);
-    List.DeleteAll(MovePathStepInc);
+    List.DeleteAll(MoveToPathDelta);
+    List.DeleteAll(MoveToPathStepInc);
     List.DeleteAll(OpeningMoves);
     List.DeleteAll(OpeningMovesMapHash);
     List.DeleteAll(OpeningMovesMapStack);
@@ -9014,21 +9010,21 @@ Define _ClearLists (warp=true)
     List.DeleteAll(ChebyshevDistance);
     List.DeleteAll(NNUE_ListRes_1);
     List.DeleteAll(NNUE_Accumulator);
-    List.DeleteAll(MoveNotationLookup);
+    List.DeleteAll(MoveToAlgebraicNotation);
     List.DeleteAll(CastlingStateLookup);
-    List.DeleteAll(MoveLookupCross);
-    List.DeleteAll(MoveLookupIndexOffset);
-    List.DeleteAll(MoveLookupKing);
-    List.DeleteAll(MoveLookupKnight);
-    List.DeleteAll(MoveLookupLineIndexOffset);
-    List.DeleteAll(MoveLookupOffsetsCross);
-    List.DeleteAll(MoveLookupOffsetsStraight);
-    List.DeleteAll(MoveLookupStraight);
-    List.DeleteAll(MoveNotationLookup);
-    List.DeleteAll(MovePathDelta);
-    List.DeleteAll(MovePathStepInc);
-    List.DeleteAll(MovePosLookupBlack);
-    List.DeleteAll(MovePosLookupWhite);
+    List.DeleteAll(MoveCrossListIdxToTargetIdx);
+    List.DeleteAll(MoveSourceIdxToListOffsetNonSliding);
+    List.DeleteAll(MoveListOffsetToTargetIdxKing);
+    List.DeleteAll(MoveListOffsetToTargetIdxKnight);
+    List.DeleteAll(MoveSourceIdxToListOffsetSliding);
+    List.DeleteAll(MoveCrossOffsetIdxToDelta);
+    List.DeleteAll(MoveSlidingStraighOffsetIdxToDelta);
+    List.DeleteAll(MoveSlidingStraightListIdxToTargetIdx);
+    List.DeleteAll(MoveToAlgebraicNotation);
+    List.DeleteAll(MoveToPathDelta);
+    List.DeleteAll(MoveToPathStepInc);
+    List.DeleteAll(MoveToEvalDeltaBlack);
+    List.DeleteAll(MoveToEvalDeltaWhite);
     List.DeleteAll(Moves);
     List.DeleteAll(TTBoardAge);
     List.DeleteAll(TTBoardHash);
