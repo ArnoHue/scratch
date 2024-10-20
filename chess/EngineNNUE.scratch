@@ -118,7 +118,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.162 (18.10.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.163 (20.10.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -3132,15 +3132,15 @@ Define GetBestMoveEasy (warp=false)
     BestMove = "";
     If (Level == 1)
     {
-        JuniorDistQuota = 40;
-        JuniorSearchQuota = 40;
+        JuniorDistQuota = 100;
+        JuniorSearchQuota = 0;
     }
     Else
     {
         If (Level == 2)
         {
-            JuniorDistQuota = 20;
-            JuniorSearchQuota = 75;
+            JuniorDistQuota = 40;
+            JuniorSearchQuota = 20;
         }
     }
     Call Search(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
@@ -5529,7 +5529,6 @@ Define IsDrawByStalemate(string Depth) (warp=true)
         IsDrawRes = 0;
         Stop(this script);
     }
-    IsDrawRes = 1;
     List.ReplaceItem(Quiescence, Depth, 0);
     Call CalcBoardAttackedByMove((Depth + 1));
     Call StoreAttackInfo((Depth + 1))(Depth);
@@ -5544,21 +5543,19 @@ Define IsDrawByStalemate(string Depth) (warp=true)
     {
         MoveCountQ += MovesCount[Depth];
     }
+    IsDrawRes = 1;
     List.ReplaceItem(MovesIdx, Depth, 1);
     Repeat (MovesCount[Depth])
     {
-        If (IsDrawRes == 1)
+        Call ApplyMove(Depth);
+        Call CalcBoardAttackedByMoveChecked((Depth + 1));
+        If ((((Depth % 2) == 1) And (IsBlackChecked == 0)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 0)))
         {
-            Call ApplyMove(Depth);
-            Call CalcBoardAttackedByMoveChecked((Depth + 1));
-            If ((((Depth % 2) == 1) And (IsBlackChecked == 0)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 0)))
-            {
-                IsDrawRes = 0;
-                Call RevertMove(Depth);
-                Stop(this script);
-            }
+            IsDrawRes = 0;
             Call RevertMove(Depth);
+            Stop(this script);
         }
+        Call RevertMove(Depth);
         List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
     }
 }
@@ -8339,14 +8336,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
         If Quiescence
         {
-            If (InitialDeepening And (abs(SearchEvalResults[Depth]) < AbsMinCheckmateEval))
-            {
-                Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(-1)("")("")("")("")("")("");
-            }
-            Else
-            {
-                Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth]);
-            }
+            Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth]);
         }
         Else
         {
@@ -8901,49 +8891,34 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
         }
         If (Not ((Horizon == "")))
         {
-            If ((Horizon > TTNodeHorizon[HashBucket]) Or (TTNodeHorizon[HashBucket] == ""))
+            If ((Not ((Horizon < TTNodeHorizon[HashBucket]))) Or (TTNodeHorizon[HashBucket] == ""))
             {
-                List.ReplaceItem(TTNodeDepth, HashBucket, Depth);
-                List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-                List.ReplaceItem(TTNodeType, HashBucket, Type);
-                List.ReplaceItem(TTNodeEval, HashBucket, Score);
-                List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
-                List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-                List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
+                If (Not ((Score == "")))
+                {
+                    List.ReplaceItem(TTNodeType, HashBucket, Type);
+                    List.ReplaceItem(TTNodeEval, HashBucket, Score);
+                    List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
+                    List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
+                    List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
+                }
+                If (Not ((BestMove == "")))
+                {
+                    List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
+                }
             }
             Else
             {
-                If (Horizon == TTNodeHorizon[HashBucket])
+                If ((Not ((Score == ""))) And (TTNodeEval[HashBucket] == ""))
                 {
-                    Call //("First iterative deepening iteration evals may override previous evals at same horizon (due to quiescence check/evasion extensions)");
-                    If ((Not ((Score == ""))) And (((Horizon == -1) Or (TTNodeEval[HashBucket] == "")) Or ((Type == "E") And (Not ((TTNodeType[HashBucket] == "E"))))))
-                    {
-                        List.ReplaceItem(TTNodeType, HashBucket, Type);
-                        List.ReplaceItem(TTNodeEval, HashBucket, Score);
-                        List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
-                        If (Not ((BestMove == "")))
-                        {
-                            List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-                        }
-                    }
-                    If ((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == ""))
-                    {
-                        List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-                    }
+                    List.ReplaceItem(TTNodeType, HashBucket, Type);
+                    List.ReplaceItem(TTNodeEval, HashBucket, Score);
+                    List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
+                    List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
+                    List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
                 }
-                Else
+                If ((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == ""))
                 {
-                    If ((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == ""))
-                    {
-                        If ((Not ((Score == ""))) And (TTNodeEval[HashBucket] == ""))
-                        {
-                            List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-                            List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-                            List.ReplaceItem(TTNodeType, HashBucket, Type);
-                            List.ReplaceItem(TTNodeEval, HashBucket, Score);
-                            List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
-                        }
-                    }
+                    List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
                 }
             }
         }
