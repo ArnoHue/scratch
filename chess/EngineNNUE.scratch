@@ -118,7 +118,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.177 (03.11.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.178 (03.11.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -7206,6 +7206,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         List.ReplaceItem(Quiescence, Depth, 0);
     }
+    Call //("Fast checkmate and draw checks, and end TT eval probing");
     Call Search_DetectDrawByRepetition(Depth);
     If (Not ((SearchEvalResults[Depth] == "")))
     {
@@ -7226,11 +7227,12 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         Stop(this script);
     }
+    Call //("We could not return prematurely => initialize stack data for additional functionality");
     Call Search_InitStack(Depth)(InitialDeepening);
     If (Horizon == 0)
     {
         Call //("Search tree leaf reached => evaluate board and return result");
-        Call //("Just for security, the usual search termination is quiescence search only finding quite moves");
+        Call //("This will seldomly be invoked, as the usual search termination is quiescence search having reached a quite position");
         Call Evaluate((Depth - 1))((1 == 1));
         Call EvaluatePostProcess((Depth - 1));
         List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
@@ -7239,7 +7241,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
     If (Not (Quiescence))
     {
-        Call //("Full search => invoke board evaluation to calculate intermediate results if required");
+        Call //("Full search => invoke evaluation to update incremental eval components");
         Call Evaluate((Depth - 1))((1 == 0));
         Call Search_NullMovePruning(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon);
         If (Not ((SearchEvalResults[Depth] == "")))
@@ -7249,23 +7251,32 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
     Else
     {
-        Call //("Quiescence search standing pat handling (unless in check and must evade)");
-        Call Evaluate((Depth - 1))((1 == 1));
-        Call EvaluatePostProcess((Depth - 1));
-        If (CheckedState[Depth] == 0)
+        Call //("Quiescence search => standing pat handling (unless in check and must evade)");
+        If (CheckedState[Depth] == 1)
         {
+            Call //("Only update incremental eval components");
+            Call Evaluate((Depth - 1))((1 == 0));
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(SearchEvalResults, Depth, (-100000 + (Depth * 1000)));
+            }
+            Else
+            {
+                List.ReplaceItem(SearchEvalResults, Depth, (100000 - (Depth * 1000)));
+            }
+        }
+        Else
+        {
+            Call //("Invoke full eval to establish standing pat value");
+            Call Evaluate((Depth - 1))((1 == 1));
+            Call EvaluatePostProcess((Depth - 1));
             List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
             List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
             If ((Depth % 2) == 1)
             {
                 If (Not ((EvaluationRes < Betas[Depth])))
                 {
-                    List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
-                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
-                    If (1 == 0)
-                    {
-                        Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])("")("B")("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth]);
-                    }
+                    Call //("Failing high => cutoff");
                     Stop(this script);
                 }
                 If (EvaluationRes > Alphas[Depth])
@@ -7277,29 +7288,13 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 If (Not ((EvaluationRes > Alphas[Depth])))
                 {
-                    List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
-                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
-                    If (1 == 0)
-                    {
-                        Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])("")("A")("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth]);
-                    }
+                    Call //("Failing high => cutoff");
                     Stop(this script);
                 }
                 If (EvaluationRes < Betas[Depth])
                 {
                     List.ReplaceItem(Betas, Depth, EvaluationRes);
                 }
-            }
-        }
-        Else
-        {
-            If ((Depth % 2) == 1)
-            {
-                List.ReplaceItem(SearchEvalResults, Depth, (-100000 + (Depth * 1000)));
-            }
-            Else
-            {
-                List.ReplaceItem(SearchEvalResults, Depth, (100000 - (Depth * 1000)));
             }
         }
     }
