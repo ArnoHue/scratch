@@ -499,7 +499,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.635 (01.11.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.637 (03.11.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1506,13 +1506,30 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("E")("")(0)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
         Stop(this script);
     }
-    If Quiescence
+    If (Not (Quiescence))
+    {
+        Call //("Full search => invoke board evaluation to calculate intermediate results if required");
+        Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
+    }
+    Else
     {
         Call //("Quiescence search standing pat handling (unless in check and must evade)");
-        Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
-        Call OnScoreCalcPostProcess((Depth - 1));
-        If (CheckedState[Depth] == 0)
+        Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
+        If (CheckedState[Depth] == 1)
         {
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
+            }
+            Else
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
+            }
+        }
+        Else
+        {
+            Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
+            Call OnScoreCalcPostProcess((Depth - 1));
             List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
             List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreCalcResIsDynamic);
             If ((Depth % 2) == 1)
@@ -1550,22 +1567,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
             }
         }
-        Else
-        {
-            If ((Depth % 2) == 1)
-            {
-                List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
-            }
-            Else
-            {
-                List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
-            }
-        }
-    }
-    Else
-    {
-        Call //("Full search => invoke board evaluation to calculate intermediate results if required");
-        Call OnScoreCalc((Depth - 1))(MinDepth)((MaxDepth - 1))(PrevQuiescence);
     }
     Call //("Null move pruning");
     If (Not (Quiescence))
@@ -4899,6 +4900,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
                     If ((TTProbeRes == 1) And (CalcMovesMoveList[Idx] == TTProbeBestMoveRes))
                     {
                         List.ReplaceItem(CalcMovesScoreList, Idx, MaxPly1DeepeningMoveOrderScore);
+                        List.ReplaceItem(DeepeningScore, Idx, MaxPly1DeepeningMoveOrderScore);
                     }
                     Idx += 1;
                 }
@@ -5319,30 +5321,85 @@ Define GetMoveNotation(num Move) (warp=true)
 Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
 {
     MoveScoreRes = "";
+    Factor = (((Depth % 2) * 2) - 1);
+    ToIdxAttacked = 0;
+    If (SourcePieceParam > 0)
+    {
+        If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], ToIdx) > 0)
+        {
+            ToIdxAttacked = 1;
+        }
+    }
+    Else
+    {
+        If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], ToIdx) > 0)
+        {
+            ToIdxAttacked = 1;
+        }
+    }
+    UserMove = "";
+    If (Depth == 1)
+    {
+        Idx = Variable.Length(GameMoves);
+        If (Idx > 3)
+        {
+            UserMove = (((Operator.LetterOf(GameMoves, (Idx - 3)) * 1000) + (Operator.LetterOf(GameMoves, (Idx - 2)) * 100)) + ((Operator.LetterOf(GameMoves, (Idx - 1)) * 10) + (Operator.LetterOf(GameMoves, (Idx - 0)) * 1)));
+        }
+    }
+    Else
+    {
+        UserMove = AppliedMove[(Depth - 1)];
+    }
     If (floor((Move / 100)) == 0)
     {
         Call //("Castling");
-        MoveScoreRes = (1500 * (((Depth % 2) * 2) - 1));
+        MoveScoreRes = (1500 * Factor);
         Stop(this script);
     }
     If (Operator.LetterOf(Move, (Variable.Length(Move) - 1)) == ".")
     {
         Call //("Promotions");
-        MoveScoreRes = ((5400 - (100 * Operator.LetterOf(Move, Variable.Length(Move)))) * (((Depth % 2) * 2) - 1));
+        MoveScoreRes = (5400 - (100 * Operator.LetterOf(Move, Variable.Length(Move))));
         Stop(this script);
     }
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
     If (CheckedState[Depth] == 1)
     {
         Call //("2: Check evasions");
-        If (Operator.LetterOf(CheckedStateAttackLines[Depth], ToIdx) == 1)
-        {
-            MoveScoreRes = (9000 * (((Depth % 2) * 2) - 1));
-            Stop(this script);
-        }
         If (abs(SourcePieceParam) == GoK_BlackKing)
         {
-            MoveScoreRes = (8000 * (((Depth % 2) * 2) - 1));
+            If (floor((UserMove % 100)) == ToIdx)
+            {
+                MoveScoreRes = (9000 * Factor);
+            }
+            Else
+            {
+                MoveScoreRes = (8800 * Factor);
+            }
+            Stop(this script);
+        }
+        If (floor((UserMove % 100)) == ToIdx)
+        {
+            If (ToIdxAttacked == 0)
+            {
+                MoveScoreRes = (8900 * Factor);
+            }
+            Else
+            {
+                MoveScoreRes = (8600 * Factor);
+            }
+            Stop(this script);
+        }
+        If (Operator.LetterOf(CheckedStateAttackLines[Depth], ToIdx) == 1)
+        {
+            If (ToIdxAttacked == 0)
+            {
+                MoveScoreRes = (8700 * Factor);
+            }
+            Else
+            {
+                MoveScoreRes = (8500 * Factor);
+            }
             Stop(this script);
         }
     }
@@ -5363,13 +5420,13 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
         If (Idx > 0)
         {
-            MoveScoreRes = ((6000 + Idx) * (((Depth % 2) * 2) - 1));
+            MoveScoreRes = ((6000 + Idx) * Factor);
             Stop(this script);
         }
         Call //("5. Counter Moves");
-        If (HistoryCounterMoves[AppliedMove[(Depth - 1)]] == Move)
+        If (HistoryCounterMoves[UserMove] == Move)
         {
-            MoveScoreRes = (6000 * (((Depth % 2) * 2) - 1));
+            MoveScoreRes = (6000 * Factor);
             Stop(this script);
         }
     }
@@ -5381,30 +5438,17 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             Call //("3a: Net positive captures");
             Stop(this script);
         }
-        If (BoardAttackedCalculated[Depth] == 1)
+        Call //("3b: Captures with positive SEE");
+        If (ToIdxAttacked == 0)
         {
-            Call //("3b: Captures with positive SEE");
-            If (SourcePieceParam > 0)
-            {
-                If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], ToIdx) == 0)
-                {
-                    Stop(this script);
-                }
-            }
-            Else
-            {
-                If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], ToIdx) == 0)
-                {
-                    Stop(this script);
-                }
-            }
+            Stop(this script);
         }
         If (1 == 1)
         {
-            If (floor((AppliedMove[(Depth - 1)] % 100)) == ToIdx)
+            If (floor((UserMove % 100)) == ToIdx)
             {
                 Call //("5. Counter captures");
-                MoveScoreRes = (3000 * (((Depth % 2) * 2) - 1));
+                MoveScoreRes = (3000 * Factor);
                 Stop(this script);
             }
         }
@@ -5416,12 +5460,12 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If (CurrentValue2 > 0.05)
     {
         Call //("6: Quiets with high history score");
-        MoveScoreRes = ((4000 + Operator.Round((CurrentValue2 * 1000))) * (((Depth % 2) * 2) - 1));
+        MoveScoreRes = ((4000 + Operator.Round((CurrentValue2 * 1000))) * Factor);
     }
     Else
     {
         Call //("8: Other quiets");
-        MoveScoreRes = ((0 + Operator.Round((CurrentValue2 * 1000))) * (((Depth % 2) * 2) - 1));
+        MoveScoreRes = ((0 + Operator.Round((CurrentValue2 * 1000))) * Factor);
     }
 }
 
@@ -7437,7 +7481,7 @@ Define IsPlyExtension(string Depth) (warp=true)
                 Idx = 1;
                 Repeat (Depth)
                 {
-                    If ((PlyExtensionTagged[Idx] == 1) Or (PawnShelterCapture[Idx] > 0))
+                    If ((PlyExtensionTagged[Idx] == 1) Or ((PawnShelterCapture[Idx] > 0) And (Depth < 8)))
                     {
                         IsPlyExtensionRes = 1;
                         Stop(this script);
