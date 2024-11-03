@@ -7254,8 +7254,10 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         Call //("Quiescence search => standing pat handling (unless in check and must evade)");
         If (CheckedState[Depth] == 1)
         {
-            Call //("Only update incremental eval components");
+            Call //("Update incremental eval components for later use");
             Call Evaluate((Depth - 1))((1 == 0));
+            Call //("Put a checkmate baseline into node eval, which must be improved later by at east one move that gets us out of check");
+            Call //("Important to consider in subsequent code that node eval might be set from here on");
             If ((Depth % 2) == 1)
             {
                 List.ReplaceItem(SearchEvalResults, Depth, (-100000 + (Depth * 1000)));
@@ -7300,7 +7302,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
     List.ReplaceItem(PickPhase, Depth, 1);
     List.ReplaceItem(PickMoveRes, Depth, 1);
-    Call //("Move generation and application loop, recursive search invocation");
+    Call //("Move generation and move loop");
     Repeat Until (PickMoveRes[Depth] == 0)
     {
         If ((Depth < 6) Or ((Depth < 9) And (Not (Quiescence))))
@@ -7329,7 +7331,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         {
             Call ProfilerMethodEnter(((5 * MaxSearchDepthStackFrames) + Depth));
         }
-        Call //("Invoke move generator and apply next move from list");
+        Call //("Invoke staged move generator and apply next move from list");
         Call PickMove(Depth)(Quiescence);
         If (IsBlockProfilerEnabled == 1)
         {
@@ -7366,78 +7368,35 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 List.ReplaceItem(PutsInCheck, Depth, 1);
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(0)("")("")("")("")("")("");
             }
+            Call //("Tag the current node on whether it should trigger a search extension later at horizon = 1");
             Call Search_TagSearchExtension(Depth);
             If ((Depth > 1) And (Horizon == 1))
             {
+                Call //("Mark this leaf node for search extension");
                 Call IsSearchExtension(Depth);
                 If (IsSearchExtensionRes == 1)
                 {
                     List.ReplaceItem(SearchExtension, Depth, 1);
                 }
             }
-            Call //("Futility pruning");
-            IsFutile = 0;
-            If ((Not ((CheckedState[Depth] == 1))) And (Not ((PutsInCheck[Depth] == 1))))
-            {
-                FutilityMargin = "";
-                If Quiescence
-                {
-                    FutilityMargin = 125;
-                }
-                Else
-                {
-                    If ((Depth > 2) And (Horizon < 3))
-                    {
-                        If (((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
-                        {
-                            FutilityMargin = (Horizon * 75);
-                        }
-                    }
-                }
-                If (Not ((FutilityMargin == "")))
-                {
-                    Call Evaluate(Depth)((1 == 1));
-                    If ((Depth % 2) == 1)
-                    {
-                        If (Not (((EvaluationRes + FutilityMargin) > Alphas[Depth])))
-                        {
-                            IsFutile = 1;
-                            If (SearchEvalResults[Depth] == "")
-                            {
-                                List.ReplaceItem(SearchEvalResults, Depth, Alphas[Depth]);
-                                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        If (Not (((EvaluationRes - FutilityMargin) < Betas[Depth])))
-                        {
-                            IsFutile = 1;
-                            If (SearchEvalResults[Depth] == "")
-                            {
-                                List.ReplaceItem(SearchEvalResults, Depth, Betas[Depth]);
-                                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
-                            }
-                        }
-                    }
-                }
-            }
+            Call Search_FutilityPruning(Depth)(Quiescence)(Horizon);
             If (IsFutile == 1)
             {
+                Call //("If futile, ignore this move");
                 Call RevertMove(Depth);
             }
             Else
             {
+                Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
                 Call Search_LMRNonPV(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon);
                 If ((Search.LmrNonPV.IsPVSearchRequired == 1) And (IsSearchTimeout == 0))
                 {
-                    Call //("Move was not pruned upfront, enter standard search");
+                    Call //("Move was not pruned upfront, enter full depth + current window search");
                     List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                     List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
                     If ((QuiescenceDepth > 0) And (Horizon == 1))
                     {
-                        Call //("If still on full search: max depth reached, extend or continue with quiescence. If on quiescence search, continue");
+                        Call //("If still on full search: max depth reached, extend or continue with quiescence. If on quiescence search, simply continue");
                         Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((Quiescence Or (SearchExtension[Depth] == 0)))(ShowProgress)(1);
                     }
                     Else
@@ -7917,6 +7876,57 @@ Define Search_DetectDrawByRepetition(string Depth) (warp=true)
                     List.ReplaceItem(SearchEvalResults, Depth, DrawByRepetitionEval);
                     List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
                     Stop(this script);
+                }
+            }
+        }
+    }
+}
+
+Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (warp=true)
+{
+    IsFutile = 0;
+    If ((Not ((CheckedState[Depth] == 1))) And (Not ((PutsInCheck[Depth] == 1))))
+    {
+        FutilityMargin = "";
+        If Quiescence
+        {
+            FutilityMargin = 125;
+        }
+        Else
+        {
+            If ((Depth > 2) And (Horizon < 3))
+            {
+                If (((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+                {
+                    FutilityMargin = (Depth * 75);
+                }
+            }
+        }
+        If (Not ((FutilityMargin == "")))
+        {
+            Call Evaluate(Depth)((1 == 1));
+            If ((Depth % 2) == 1)
+            {
+                If (Not (((EvaluationRes + FutilityMargin) > Alphas[Depth])))
+                {
+                    IsFutile = 1;
+                    If (SearchEvalResults[Depth] == "")
+                    {
+                        List.ReplaceItem(SearchEvalResults, Depth, Alphas[Depth]);
+                        List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
+                    }
+                }
+            }
+            Else
+            {
+                If (Not (((EvaluationRes - FutilityMargin) < Betas[Depth])))
+                {
+                    IsFutile = 1;
+                    If (SearchEvalResults[Depth] == "")
+                    {
+                        List.ReplaceItem(SearchEvalResults, Depth, Betas[Depth]);
+                        List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
+                    }
                 }
             }
         }
