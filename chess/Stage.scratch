@@ -2,72 +2,79 @@
 
 WhenGreenFlagClicked()
 {
-    BackdropEnabled = 1;
+    Stg_IsGreenFlag = 1;
+    Stg_BackdropEnabled = 1;
     Event.Broadcast("SoundWelcome");
-    Event.Broadcast("ShowWelcomeMessage");
+    Event.Broadcast("Stg_ShowWelcomeMessage");
     Call StartGame;
 }
 
 
-//----- Key pressed events --------------------------------------------------------------------------------------------
+//----- Backdrop switch events ----------------------------------------------------------------------------------------
 
-WhenKeyPressed(space)
+WhenBackdropSwitchesTo(Board)
 {
-    If (Backdrop.GetNumberName(name) == "Intro")
-    {
-        IsPlayerBlack = 0;
-        Looks.SwitchBackdropTo(Board);
-        Event.Broadcast("startgame");
-    }
+    Stg_KingHoveredIdx = -1;
+    Event.Broadcast("Stg_KingHovered");
+}
+
+WhenBackdropSwitchesTo(BoardInverted)
+{
+    Stg_KingHoveredIdx = -1;
+    Event.Broadcast("Stg_KingHovered");
 }
 
 
 //----- Broadcast received events -------------------------------------------------------------------------------------
 
-WhenBroadcastReceived(calcmode)
+WhenBroadcastReceived(GoK_ModeBusy)
 {
-    BackdropEnabled = 0;
+    Stg_BackdropEnabled = 0;
 }
 
-WhenBroadcastReceived(inputmode)
+WhenBroadcastReceived(GoK_ModeInput)
 {
-    BackdropEnabled = 1;
+    Stg_BackdropEnabled = 1;
 }
 
-WhenBroadcastReceived(kingselected)
+WhenBroadcastReceived(Stg_KingSelected)
 {
-    If (Backdrop.GetNumberName(name) == "Intro")
+    If (Backdrop.GetNumberName(name) == "Intro3")
     {
-        If (KingHoveredIdx == 1)
+        If (Stg_KingSelectedIdx == 2)
         {
-            KingHoveredIdx = -1;
-            Event.Broadcast("kinghovered");
-            IsPlayerBlack = 1;
-            Looks.SwitchBackdropTo(BoardInverted);
-            Event.Broadcast("startgame");
-        }
-        If (KingHoveredIdx == 0)
-        {
-            KingHoveredIdx = -1;
-            Event.Broadcast("kinghovered");
-            IsPlayerBlack = 0;
+            GoK_IsPlayerBlack = 0;
             Looks.SwitchBackdropTo(Board);
-            Event.Broadcast("startgame");
+            Event.Broadcast("GoK_StartGame");
+        }
+        Else
+        {
+            If (Stg_KingSelectedIdx == 1)
+            {
+                GoK_IsPlayerBlack = 1;
+                Looks.SwitchBackdropTo(BoardInverted);
+                Event.Broadcast("GoK_StartGame");
+            }
         }
     }
 }
 
-WhenBroadcastReceived(modaldialogbegin)
+WhenBroadcastReceived(Stg_ModalDialogBegin)
 {
     Looks.ChangeEffectBy(brightness, -25);
 }
 
-WhenBroadcastReceived(modaldialogend)
+WhenBroadcastReceived(Stg_ModalDialogEnd)
 {
     Looks.ChangeEffectBy(brightness, 25);
 }
 
-WhenBroadcastReceived(triggerrestart)
+WhenBroadcastReceived(Stg_StageClickedRouted)
+{
+    Call OnStageClicked;
+}
+
+WhenBroadcastReceived(Stg_TriggerRestart)
 {
     Call StartGame;
 }
@@ -75,37 +82,66 @@ WhenBroadcastReceived(triggerrestart)
 
 //----- Custom blocks -------------------------------------------------------------------------------------------------
 
+Define OnStageClicked (warp=false)
+{
+    If (Stg_BackdropEnabled == 1)
+    {
+        If ((Backdrop.GetNumberName(name) == "Board") Or (Backdrop.GetNumberName(name) == "BoardInverted"))
+        {
+            Stg_StageX = (floor(((Sensing.MouseX() + 230) / 42.2)) + 1);
+            Stg_StageY = (floor(((Sensing.MouseY() + 168) / 42.2)) + 1);
+            If (((Stg_StageX > 0) And (Stg_StageX < 9)) And ((Stg_StageY > 0) And (Stg_StageY < 9)))
+            {
+                If (Sensing.Timer() > (Stg_ClickedTimer + 0.25))
+                {
+                    Stg_ClickedTimer = Sensing.Timer();
+                    Stg_SquareClickedIdx = (((8 - Stg_StageY) * 8) + Stg_StageX);
+                    Event.BroadcastAndWait("Stg_SquareClicked");
+                    Stop(this script);
+                }
+            }
+            Event.BroadcastAndWait("Stg_StageClicked");
+        }
+    }
+}
+
 Define StartGame (warp=false)
 {
-    ClickedTimer = 0;
     Pen.Clear();
-    Looks.SwitchBackdropTo(Intro);
-    Repeat Until (Not ((Backdrop.GetNumberName(name) == "Intro")))
+    Looks.SwitchBackdropTo(Intro3);
+    Stg_KingHoveredIdx = 0;
+    Stg_ClickedTimer = 0;
+    Stg_PrevMouseX = Sensing.MouseX();
+    Stg_PrevMouseY = Sensing.MouseY();
+    Repeat Until (Not ((Backdrop.GetNumberName(name) == "Intro3")))
     {
-        If (((Sensing.MouseX() > 0) And (Sensing.MouseX() < 60)) And ((Sensing.MouseY() > -80) And (Sensing.MouseY() < 100)))
+        If ((Not ((Sensing.MouseX() == Stg_PrevMouseX))) Or (Not ((Sensing.MouseY() == Stg_PrevMouseY))))
         {
-            If (Not ((KingHoveredIdx == 1)))
+            If (((Sensing.MouseX() > -15) And (Sensing.MouseX() < 45)) And ((Sensing.MouseY() > -80) And (Sensing.MouseY() < 100)))
             {
-                KingHoveredIdx = 1;
-                Event.Broadcast("kinghovered");
-            }
-        }
-        Else
-        {
-            If (((Sensing.MouseX() > 90) And (Sensing.MouseX() < 160)) And ((Sensing.MouseY() > -60) And (Sensing.MouseY() < 100)))
-            {
-                If (Not ((KingHoveredIdx == 0)))
+                If (Not ((Stg_KingHoveredIdx == 1)))
                 {
-                    KingHoveredIdx = 0;
-                    Event.Broadcast("kinghovered");
+                    Stg_KingHoveredIdx = 1;
+                    Event.Broadcast("Stg_KingHovered");
                 }
             }
             Else
             {
-                If (Not ((KingHoveredIdx == -1)))
+                If (((Sensing.MouseX() > 75) And (Sensing.MouseX() < 145)) And ((Sensing.MouseY() > -60) And (Sensing.MouseY() < 100)))
                 {
-                    KingHoveredIdx = -1;
-                    Event.Broadcast("kinghovered");
+                    If (Not ((Stg_KingHoveredIdx == 2)))
+                    {
+                        Stg_KingHoveredIdx = 2;
+                        Event.Broadcast("Stg_KingHovered");
+                    }
+                }
+                Else
+                {
+                    If (Not ((Stg_KingHoveredIdx == -1)))
+                    {
+                        Stg_KingHoveredIdx = 0;
+                        Event.Broadcast("Stg_KingHovered");
+                    }
                 }
             }
         }
