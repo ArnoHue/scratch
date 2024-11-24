@@ -380,7 +380,6 @@ WhitePawnCount = { }
 WhitePawnCountOrig = { }
 
 
-
 //----- Green flag events ---------------------------------------------------------------------------------------------
 
 WhenGreenFlagClicked()
@@ -500,7 +499,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.658 (25.11.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.660 (25.11.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -3028,7 +3027,7 @@ Define CalcBoardAttackedIfRequiredForDepth(string Depth)(bool Quiescence)(bool F
 {
     If (BoardAttackedCalculated[Depth] == 0)
     {
-        If ((ForceOnCheck And (CheckedState[Depth] == 1)) Or ((Not (Quiescence)) And ((Depth < 9) Or (Depth < (IdxDeepening - 1)))))
+        If ((ForceOnCheck And (CheckedState[Depth] == 1)) Or ((Not (Quiescence)) And ((Depth < 7) Or (Depth < (IdxDeepening - 1)))))
         {
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
@@ -6024,15 +6023,15 @@ Define InitBoard (warp=true)
     PrevProgressUpdate = 0;
     GoK_Empty = 0;
     GoK_WhiteKing = -50000;
-    GoK_WhiteQueen = -950;
-    GoK_WhiteRook = -563;
-    GoK_WhiteBishop = -333;
+    GoK_WhiteQueen = -930;
+    GoK_WhiteRook = -520;
+    GoK_WhiteBishop = -330;
     GoK_WhiteKnight = -305;
     GoK_WhitePawn = -100;
     GoK_BlackKing = 50000;
-    GoK_BlackQueen = 950;
-    GoK_BlackRook = 563;
-    GoK_BlackBishop = 333;
+    GoK_BlackQueen = 930;
+    GoK_BlackRook = 520;
+    GoK_BlackBishop = 330;
     GoK_BlackKnight = 305;
     GoK_BlackPawn = 100;
     AbsMinCheckmateEval = (GoK_BlackKing - 10000);
@@ -7373,7 +7372,7 @@ Define IsPlyExtension(string Depth) (warp=true)
                 Idx = 1;
                 Repeat (Depth)
                 {
-                    If ((PlyExtensionTagged[Idx] == 1) Or (PawnShelterCapture[Idx] > 0))
+                    If ((PlyExtensionTagged[Idx] == 1) Or ((PawnShelterCapture[Idx] > 0) And (Depth < 5)))
                     {
                         IsPlyExtensionRes = 1;
                         Stop(this script);
@@ -7390,7 +7389,7 @@ Define IsPlyExtension(string Depth) (warp=true)
             Idx = 1;
             Repeat (Depth)
             {
-                If (PlyExtensionTagged[Idx] == 1)
+                If (((PlyExtensionTagged[Idx] == 1) And (Depth < 9)) Or ((PawnShelterCapture[Idx] > 0) And (Depth < 5)))
                 {
                     IsPlyExtensionRes = 1;
                     Stop(this script);
@@ -7984,6 +7983,20 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
             }
         }
         ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (IsEndgame2 * (BlackMobBonus[Depth] - WhiteMobBonus[Depth]))));
+        CurrentValue = ((GoK_BlackRook + GoK_BlackPawn) - (GoK_BlackKnight + GoK_BlackBishop));
+        If (CapturesDeltaSum[Depth] == CurrentValue)
+        {
+            ScoreCalcRes += 50;
+            ScoreCalcResIsDynamic = 1;
+        }
+        Else
+        {
+            If (CapturesDeltaSum[Depth] == (0 - CurrentValue))
+            {
+                ScoreCalcRes += -50;
+                ScoreCalcResIsDynamic = 1;
+            }
+        }
         If (IsEndgame == 1)
         {
             Call //("Bonus for earlier promo");
@@ -8042,14 +8055,14 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
             {
                 If ((Operator.LetterOf(CastlingState[Depth], 2) == 1) Or ((Operator.LetterOf(CastlingState[Depth], 3) == 1) And (Operator.LetterOf(CastlingState[Depth], 4) == 1)))
                 {
-                    ScoreCalcRes += -65;
+                    ScoreCalcRes += -50;
                 }
             }
             If (Operator.LetterOf(CastlingState[Depth], 5) == 0)
             {
                 If ((Operator.LetterOf(CastlingState[Depth], 6) == 1) Or ((Operator.LetterOf(CastlingState[Depth], 7) == 1) And (Operator.LetterOf(CastlingState[Depth], 8) == 1)))
                 {
-                    ScoreCalcRes += 65;
+                    ScoreCalcRes += 50;
                 }
             }
         }
@@ -8057,11 +8070,11 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         Call //("Tempo");
         If ((Depth % 2) == 1)
         {
-            ScoreCalcRes += -10;
+            ScoreCalcRes += -15;
         }
         Else
         {
-            ScoreCalcRes += 10;
+            ScoreCalcRes += 15;
         }
     }
     If (IsBlockProfilerEnabled == 1)
@@ -8249,20 +8262,23 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     {
                         If ((Not (Quiescence)) Or (Quiescence And ((TTProbeHorizonRes == -1) Or (Not ((Board[TargetIdx] == 0))))))
                         {
-                            Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(99);
-                            Call GenerateMovesForSourceEx(Depth)(SourceIdx)((1 == 0))((1 == 0));
-                            If List.ContainsItem(CalcMovesMoveList, TTProbeBestMoveRes)
+                            If (1 == 0)
                             {
-                                Call ClearMoveList(Depth);
-                                Call AddMoveToList(TTProbeBestMoveRes)(Depth);
-                                List.ReplaceItem(MovesIdx, Depth, 1);
-                                Call ApplyMove(Depth);
-                                List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
-                                List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                                List.ReplaceItem(PickPhase, Depth, 2);
-                                List.ReplaceItem(PickMoveRes, Depth, 1);
-                                Stop(this script);
+                                Call GenerateMovesForSourceEx(Depth)(SourceIdx)((1 == 0))((1 == 0));
+                                If List.ContainsItem(CalcMovesMoveList, TTProbeBestMoveRes)
+                                {
+                                }
                             }
+                            Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(99);
+                            Call ClearMoveList(Depth);
+                            Call AddMoveToList(TTProbeBestMoveRes)(Depth);
+                            List.ReplaceItem(MovesIdx, Depth, 1);
+                            Call ApplyMove(Depth);
+                            List.ReplaceItem(PickedMoves, Depth, Operator.Join(AppliedMove[Depth], ":"));
+                            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+                            List.ReplaceItem(PickPhase, Depth, 2);
+                            List.ReplaceItem(PickMoveRes, Depth, 1);
+                            Stop(this script);
                         }
                     }
                 }
