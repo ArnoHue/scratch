@@ -6310,9 +6310,9 @@ Define OnRestart (warp=true)
 Define PickMove(string Depth)(bool Quiescence) (warp=true)
 {
     Call //("Staged move-generator implementation");
-    Call //("Phase 1: Look up hash-move from transposition table");
     If (PickPhase[Depth] == 1)
     {
+        Call //("Phase 1: Look up hash-move from transposition table");
         List.ReplaceItem(PickedMoves, Depth, "");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
         List.ReplaceItem(MovesCount, Depth, 0);
@@ -6335,6 +6335,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     If ((Not ((TTProbeNode.BoardAttackedByOpp == ""))) And (Not ((TTProbeNode.BoardAttackedByOppPiece == ""))))
                     {
                         List.ReplaceItem(CheckedStateAttackLines, Depth, TTProbeNode.CheckedAttackLinesRes);
+                        Call //("Attack tables (number of attacks, square of LVA): Convert flattened TT string structure to int lists");
                         Idx = 1;
                         Idx2 = (((Depth - 1) * 100) + 1);
                         Repeat (64)
@@ -6369,6 +6370,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     {
                         If (Not ((SourceIdx == 0)))
                         {
+                            Call //("Hash move found => apply and return. Fill attack table only when in check");
                             Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(0);
                             Call ClearMoveList(Depth);
                             Call AddMoveToList(TTProbeNode.BestMoveRes)(Depth);
@@ -6384,36 +6386,39 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
             }
         }
-        If (BoardAttackedCalculated[Depth] == 0)
-        {
-            Idx = (((Depth - 2) * 100) + 1);
-            Idx2 = (((Depth - 1) * 100) + 1);
-            Repeat (64)
-            {
-                List.ReplaceItem(BoardAttackedByOpponentSnapshot, Idx2, BoardAttackedBySelfSnapshot[Idx]);
-                List.ReplaceItem(BoardAttackedByOpponentPieceSnapshot, Idx2, BoardAttackedBySelfPieceSnapshot[Idx]);
-                List.ReplaceItem(BoardAttackedBySelfSnapshot, Idx2, BoardAttackedByOpponentSnapshot[Idx]);
-                List.ReplaceItem(BoardAttackedBySelfPieceSnapshot, Idx2, BoardAttackedByOpponentPieceSnapshot[Idx]);
-                Idx += 1;
-                Idx2 += 1;
-            }
-        }
         List.ReplaceItem(PickPhase, Depth, 2);
     }
-    Call //("Phase 2: Search for MVV-LVA captures via attack tables (and from recently moved pieces when attack tables not up-to-date)");
     If (PickPhase[Depth] == 2)
     {
+        Call //("Phase 2: Search for MVV-LVA captures via attack tables (and from recently moved pieces when attack tables not up-to-date)");
         If ((IsEndgame2 == 1) Or (Depth < 4))
         {
             List.ReplaceItem(PickPhase, Depth, 6);
         }
         Else
         {
+            Call //("Generate attack tables according");
             Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(14);
+            Call //("Update attack tables from previous ply if required");
+            Idx = (((Depth - 2) * 100) + 1);
+            Idx2 = (((Depth - 1) * 100) + 1);
+            Repeat (64)
+            {
+                If (BoardAttackedCalculated[Depth] == 0)
+                {
+                    List.ReplaceItem(BoardAttackedByOpponentSnapshot, Idx2, BoardAttackedBySelfSnapshot[Idx]);
+                    List.ReplaceItem(BoardAttackedByOpponentPieceSnapshot, Idx2, BoardAttackedBySelfPieceSnapshot[Idx]);
+                }
+                List.ReplaceItem(BoardAttackedBySelfSnapshot, Idx2, BoardAttackedByOpponentSnapshot[Idx]);
+                List.ReplaceItem(BoardAttackedBySelfPieceSnapshot, Idx2, BoardAttackedByOpponentPieceSnapshot[Idx]);
+                Idx += 1;
+                Idx2 += 1;
+            }
             List.DeleteAll(TmpList1);
             List.DeleteAll(TmpList2);
             List.DeleteAll(TmpList3);
             List.DeleteAll(TmpList4);
+            Call //("Fixup for outdated attack tables: Inspect applied moves, find attack sources not present in current attack table");
             Idx = (Depth - 2);
             Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
             {
@@ -6431,6 +6436,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 Idx += -2;
             }
+            Call //("Look for net positive attacks via attack tables and add to move list");
             MoveGen.TargetIdx = 1;
             Repeat (64)
             {
@@ -6448,6 +6454,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             }
                         }
                     }
+                    Call //("Look for net positive attacks applied move data and add to move list");
                     MoveGen.Idx = 1;
                     Repeat (List.Length(TmpList3))
                     {
@@ -6461,6 +6468,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 MoveGen.TargetIdx += 1;
             }
+            Call //("When net positive captures have been found, sort them and prepare for move loop ");
             If (List.Length(TmpList1) > 0)
             {
                 If (List.Length(TmpList1) == 1)
@@ -6491,9 +6499,9 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.ReplaceItem(PickPhase, Depth, 3);
         }
     }
-    Call //("Pick next move detected in phase 2");
     If (PickPhase[Depth] == 3)
     {
+        Call //("Phase 3: Return moves to caller one by one on each invocation");
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
@@ -6505,9 +6513,9 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         List.ReplaceItem(PickPhase, Depth, 4);
     }
-    Call //("Phase 4: Search for killer moves that can be applied on current board");
     If (PickPhase[Depth] == 4)
     {
+        Call //("Phase 4: Search for killer moves that can be applied on current board");
         If ((Quiescence Or (CheckedState[Depth] == 1)) Or (Depth == 1))
         {
             List.ReplaceItem(PickPhase, Depth, 6);
@@ -6571,9 +6579,9 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.ReplaceItem(PickPhase, Depth, 5);
         }
     }
-    Call //("Pick next move detected in phase 4");
     If (PickPhase[Depth] == 5)
     {
+        Call //("Phase 5: Return moves to caller one by one on each invocation");
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
@@ -6585,14 +6593,15 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         List.ReplaceItem(PickPhase, Depth, 6);
     }
-    Call //("Phase 6: Full move generator for all moves not found yet");
     If (PickPhase[Depth] == 6)
     {
+        Call //("Phase 6: Full move generator for all moves not found yet");
         If (Depth == 1)
         {
             Call CalcBoardAttackedByMove((Depth + 2));
             Call StoreAttackInfo((Depth + 2))(Depth);
         }
+        Call //("Create attack tables in case not found in TT");
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
         If (Not (Quiescence))
         {
@@ -6603,9 +6612,11 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
             }
         }
+        Call //("Invoke full move generator. When in check, only create evasions");
         Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
         If (GenerateMovesRequiresAttackRecalc == 1)
         {
+            Call //("Move generator will raise this error when creating king moves without having provided current attack tables (can only happen during quiescence search) => create them and invoke again");
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
@@ -6625,9 +6636,9 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
     }
-    Call //("Pick next move detected in phase 6, skip those applied in earlier stages");
     If (PickPhase[Depth] == 7)
     {
+        Call //("Phase 7: Return moves detected in phase 6 on each invocation, skip those applied in earlier stages");
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
@@ -6651,6 +6662,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
             Stop(this script);
         }
+        Call //("* as PickPhase indicates we are done");
         List.ReplaceItem(PickPhase, Depth, "*");
         List.ReplaceItem(PickMoveRes, Depth, 0);
     }
