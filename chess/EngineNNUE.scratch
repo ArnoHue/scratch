@@ -118,7 +118,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.210 (07.12.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.212 (08.12.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1787,7 +1787,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         Call ProfilerMethodEnter(Depth);
     }
     EvaluationRes = "";
-    EvaluationIsDynamicRes = 0;
+    EvaluationIsDynamicRes = "";
     If (IsClassicEndgameEval == 1)
     {
         If (Depth == 0)
@@ -1826,13 +1826,14 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
     }
     If ForceFullEval
     {
+        EvaluationRes = 0;
+        EvaluationIsDynamicRes = 0;
         If (1 == 1)
         {
             Call TTProbeBoard(CurrentBoardHash)((Depth + 1));
             If ((TTProbeRes == 1) And (Not ((TTProbeBoard.EvalSumRes == ""))))
             {
                 EvaluationRes = TTProbeBoard.EvalSumRes;
-                EvaluationIsDynamicRes = TTProbeBoard.EvalSumIsDynamic;
                 If (IsBlockProfilerEnabled == 1)
                 {
                     Call ProfilerMethodExit(Depth);
@@ -1840,19 +1841,16 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
                 Stop(this script);
             }
         }
-        If (IsClassicEndgameEval == 1)
+        If (IsClassicEndgameEval == 0)
+        {
+            Call NNUE_Public_Evaluate((Depth + 1));
+            EvaluationRes = NNUE_EvalRes;
+            EvaluationIsDynamicRes = 0;
+            Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
+        }
+        Else
         {
             EvaluationRes = (EvalBase + ((PosEvalDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (IsEndgame2 * (BlackMobBonus[Depth] - WhiteMobBonus[Depth]))));
-            If (Not ((PromotionPieces[1] == 0)))
-            {
-                EvaluationRes += 50;
-                EvaluationIsDynamicRes = 1;
-            }
-            If ((Depth > 1) And (Not ((PromotionPieces[2] == 0))))
-            {
-                EvaluationRes += -50;
-                EvaluationIsDynamicRes = 1;
-            }
             If (IsEndgame2 == 1)
             {
                 Delta = abs((IdxToRank[WhiteKingIdx] - IdxToRank[BlackKingIdx]));
@@ -1871,16 +1869,12 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
                 }
             }
             Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
-            If (IsBlockProfilerEnabled == 1)
+            If (Not ((PromotionPieces[1] == 0)))
             {
-                Call ProfilerMethodExit(Depth);
+                EvaluationRes += 40;
+                EvaluationIsDynamicRes = 1;
             }
-            Stop(this script);
         }
-        Call NNUE_Public_Evaluate((Depth + 1));
-        EvaluationRes = NNUE_EvalRes;
-        EvaluationIsDynamicRes = 0;
-        Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
     }
     If (IsBlockProfilerEnabled == 1)
     {
@@ -8135,21 +8129,24 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
             {
                 If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
                 {
-                    If ((Depth > 2) Or (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval))))
+                    If ((TTProbeNode.EvalIsDynamicRes == 0) Or (floor((TT.CurrentAge / 100)) == floor((TTProbeNode.AgeRes / 100))))
                     {
-                        If (((Not ((TargetPieces[(Depth - 1)] == 0))) Or (abs(SourcePieces[(Depth - 1)]) == GoK_BlackPawn)) Or ((Depth > 2) And ((Not ((TargetPieces[(Depth - 2)] == 0))) Or (abs(SourcePieces[(Depth - 2)]) == GoK_BlackPawn))))
+                        If ((Depth > 2) Or (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval))))
                         {
-                            List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
-                            List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
-                            Stop(this script);
-                        }
-                        Else
-                        {
-                            If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
+                            If (((Not ((TargetPieces[(Depth - 1)] == 0))) Or (abs(SourcePieces[(Depth - 1)]) == GoK_BlackPawn)) Or ((Depth > 2) And ((Not ((TargetPieces[(Depth - 2)] == 0))) Or (abs(SourcePieces[(Depth - 2)]) == GoK_BlackPawn))))
                             {
                                 List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
                                 List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
                                 Stop(this script);
+                            }
+                            Else
+                            {
+                                If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
+                                {
+                                    List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
+                                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
+                                    Stop(this script);
+                                }
                             }
                         }
                     }
@@ -8543,7 +8540,6 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
     TTProbeBoard.Eval1Res = "";
     TTProbeBoard.Eval2Res = "";
     TTProbeBoard.Eval3Res = "";
-    List.ReplaceItem(TTBoardAge, HashBucket, TT.CurrentAge);
 }
 
 Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
