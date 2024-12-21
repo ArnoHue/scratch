@@ -117,7 +117,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.704 (21.12.2024) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.705 (21.12.2024) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -7758,6 +7758,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             {
                 If (Not ((TTProbeCheckedRes == "")))
                 {
+                    Call //("Retrieve attack tables from TT");
                     List.ReplaceItem(CheckedState, Depth, TTProbeCheckedRes);
                     If ((Not ((TTProbeBoardAttackedByOpp == ""))) And (Not ((TTProbeBoardAttackedByOppPiece == ""))))
                     {
@@ -7801,6 +7802,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             {
                                 If (((Not ((abs(Board[SourceIdx]) == GoK_BlackPawn))) Or (IdxToFile[SourceIdx] == IdxToFile[TargetIdx])) Or (Not ((Board[TargetIdx] == 0))))
                                 {
+                                    Call //("Hash move found => apply and return. Fill attack table only when in check");
                                     Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(0);
                                     Call ClearMoveList(Depth);
                                     Call AddMoveToList(TTProbeBestMoveRes)(Depth);
@@ -7829,7 +7831,9 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         Else
         {
+            Call //("Generate attack tables if not done before");
             Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(99);
+            Call //("Update current depth attack tables (esp. attacks of current turn) from previous depth if applicable");
             List.DeleteAll(TmpList1);
             List.DeleteAll(TmpList2);
             List.DeleteAll(TmpList3);
@@ -7845,6 +7849,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 TmpAttackedByOppSnapshot = BoardAttackedByWhiteSnapshot[Depth];
                 TmpAttackedByOppPieceSnapshot = BoardAttackedByWhitePieceSnapshot[Depth];
             }
+            Call //("Fixup for outdated attack tables: Inspect applied moves, find attack sources not present in current attack table");
             Idx = (Depth - 2);
             Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
             {
@@ -7862,7 +7867,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 Idx += -2;
             }
-            TargetIdxOuter = floor((AppliedMove[(Depth - 1)] % 100));
+            Call //("Look for net positive attacks via attack tables");
             TargetIdxOuter2 = 1;
             Repeat (64)
             {
@@ -7877,10 +7882,11 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             IdxOuter2 = ((PieceIdxLookup[abs(SourcePieceOuter2)] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2));
                             If ((((Depth % 2) == 1) And (Not ((MovePosLookupBlack[IdxOuter2] == "")))) Or (((Depth % 2) == 0) And (Not ((MovePosLookupWhite[IdxOuter2] == "")))))
                             {
-                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(SourcePieceOuter2))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
+                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(SourcePieceOuter2))(abs(Board[TargetIdxOuter2]))(floor((AppliedMove[(Depth - 1)] % 100)));
                             }
                         }
                     }
+                    Call //("Look for net positive attacks created previous plies (and attack table not up to date) ");
                     IdxOuter3 = 1;
                     Repeat (List.Length(TmpList3))
                     {
@@ -7888,13 +7894,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         If ((((Depth % 2) == 1) And (Not ((MovePosLookupBlack[IdxOuter2] == "")))) Or (((Depth % 2) == 0) And (Not ((MovePosLookupWhite[IdxOuter2] == "")))))
                         {
                             SourceIdxOuter2 = TmpList3[IdxOuter3];
-                            Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(TargetIdxOuter);
+                            Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(floor((AppliedMove[(Depth - 1)] % 100)));
                         }
                         IdxOuter3 += 1;
                     }
                 }
                 TargetIdxOuter2 += 1;
             }
+            Call //("Sort found captures and prepare for move loop ");
             If (List.Length(TmpList1) > 0)
             {
                 If (List.Length(TmpList1) == 1)
@@ -7925,7 +7932,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.ReplaceItem(PickPhase, Depth, 3);
         }
     }
-    Call //("Pick next move detected in phase 2");
+    Call //("Phase 3: Return moves found in phase 2 on subsequent PickMove() invocations");
     If (PickPhase[Depth] == 3)
     {
         If (MovesIdx[Depth] < MovesCount[Depth])
@@ -7951,6 +7958,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             Call CalcBoardAttackedIfRequiredForDepth(Depth)(Quiescence)((1 == 1))(99);
             List.DeleteAll(TmpList1);
             List.DeleteAll(TmpList2);
+            FactorOuter = (((Depth % 2) * 2) - 1);
             Call PrepareCurrentKillerMoves(Depth);
             CurrentValue = HistoryCounterMoves[AppliedMove[(Depth - 1)]];
             If (Not ((CurrentValue == "")))
@@ -7965,24 +7973,13 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 TargetIdxOuter2 = floor((CurrentMoveOuter % 100));
                 If ((SourceIdxOuter2 > 0) And (Board[TargetIdxOuter2] == 0))
                 {
-                    If ((Depth % 2) == 1)
+                    If ((Board[SourceIdxOuter2] * FactorOuter) > 0)
                     {
-                        If (Board[SourceIdxOuter2] > 0)
+                        IdxOuter2 = ((PieceIdxLookup[abs(Board[SourceIdxOuter2])] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2));
+                        If ((((Depth % 2) == 1) And (Not ((MovePosLookupBlack[IdxOuter2] == "")))) Or (((Depth % 2) == 0) And (Not ((MovePosLookupWhite[IdxOuter2] == "")))))
                         {
-                            If (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[SourceIdxOuter2]] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2))] == "")))
-                            {
-                                Call StagedMoveGenKillerMoves(Depth)(CurrentMoveOuter)(SourceIdxOuter2)(TargetIdxOuter2)(Board[SourceIdxOuter2])(IdxOuter3);
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        If (Board[SourceIdxOuter2] < 0)
-                        {
-                            If (Not ((MovePosLookupWhite[((PieceIdxLookup[abs(Board[SourceIdxOuter2])] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2))] == "")))
-                            {
-                                Call StagedMoveGenKillerMoves(Depth)(CurrentMoveOuter)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(IdxOuter3);
-                            }
+                            Call //("When killer move is applicable, add to temp list");
+                            Call StagedMoveGenKillerMoves(Depth)(CurrentMoveOuter)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(IdxOuter3);
                         }
                     }
                 }
@@ -7990,6 +7987,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             }
             If (List.Length(TmpList1) > 0)
             {
+                Call //("Convert temp list to move list and sort moves");
                 If (List.Length(TmpList1) == 1)
                 {
                     Call AddMoveToList(TmpList1[1])(Depth);
@@ -8018,7 +8016,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.ReplaceItem(PickPhase, Depth, 5);
         }
     }
-    Call //("Pick next move detected in phase 4");
+    Call //("Phase 5: Return moves found in phase 4 on subsequent PickMove() invocations");
     If (PickPhase[Depth] == 5)
     {
         If (MovesIdx[Depth] < MovesCount[Depth])
