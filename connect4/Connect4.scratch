@@ -1,0 +1,1228 @@
+//----- Green flag events ---------------------------------------------------------------------------------------------
+
+WhenGreenFlagClicked()
+{
+    Variable.Hide(Depth);
+    Variable.Hide(Nodes);
+    Variable.Hide(NPS);
+    Variable.Hide(Search.Eval);
+}
+
+
+//----- Key pressed events --------------------------------------------------------------------------------------------
+
+WhenKeyPressed(d)
+{
+    If (Debug == 0)
+    {
+        Debug = 1;
+        Variable.Show(Depth);
+        Variable.Show(Nodes);
+        Variable.Show(NPS);
+        Variable.Show(Search.Eval);
+    }
+    Else
+    {
+        Debug = 0;
+        Variable.Hide(Depth);
+        Variable.Hide(Nodes);
+        Variable.Hide(NPS);
+        Variable.Hide(Search.Eval);
+    }
+}
+
+
+//----- Broadcast received events -------------------------------------------------------------------------------------
+
+WhenBroadcastReceived(C4_EngineMove)
+{
+    Search.Eval = "";
+    If ((Not ((PrevSearchDepth == ""))) And (PrevSearchDepth > 3))
+    {
+        SearchDepth = (PrevSearchDepth - 2);
+    }
+    Else
+    {
+        If is compiled?
+        {
+            SearchDepth = 4;
+        }
+        Else
+        {
+            SearchDepth = 8;
+        }
+    }
+    If (SearchDepth > (42 - PieceCount))
+    {
+        SearchDepth = (42 - PieceCount);
+    }
+    Timer = (Sensing.DaysSince2000() * 86400);
+    Repeat Until ((((Sensing.DaysSince2000() * 86400) - Timer) > 2.5) Or (SearchDepth > (42 - PieceCount)))
+    {
+        Call Search(1)((SearchDepth + 1));
+        PrevSearchDepth = SearchDepth;
+        SearchDepth += 1;
+    }
+    NPS = Operator.Join(Operator.Round(((NodesCount / ((Sensing.DaysSince2000() * 86400) - Timer)) / 1000)), "k");
+    Nodes = Operator.Join(Operator.Round((NodesCount / 1000)), "k");
+    List.ReplaceItem(Board, Search.BestMove, 1);
+    List.ReplaceItem(ColumnHeight, (((Search.BestMove - 1) % 7) + 1), (ColumnHeight[(((Search.BestMove - 1) % 7) + 1)] + 1));
+    Board1 += IdxToExp[Search.BestMove];
+    PieceCount += 1;
+    C4_EngineMove.Column = (((Search.BestMove - 1) % 7) + 1);
+    C4_EngineMove.Result = 0;
+    Call EvaluateWin(Board1)(Search.BestMove);
+    If (EvalRes == 1)
+    {
+        C4_EngineMove.Result = 1;
+    }
+    Else
+    {
+        If (PieceCount == 42)
+        {
+            C4_EngineMove.Result = 3;
+        }
+    }
+    Event.Broadcast("C4_EngineMoveDone");
+}
+
+WhenBroadcastReceived(C4_InitEngine)
+{
+    Call Init;
+}
+
+WhenBroadcastReceived(C4_PlayerMove)
+{
+    If (ColumnHeight[C4_PlayerMove.Column] < 6)
+    {
+        Move = (((5 - ColumnHeight[C4_PlayerMove.Column]) * 7) + C4_PlayerMove.Column);
+        List.ReplaceItem(Board, Move, 2);
+        List.ReplaceItem(ColumnHeight, C4_PlayerMove.Column, (ColumnHeight[C4_PlayerMove.Column] + 1));
+        Board2 += IdxToExp[Move];
+        PieceCount += 1;
+        C4_PlayerMove.Result = 0;
+        Call EvaluateWin(Board2)(Move);
+        If (EvalRes == 1)
+        {
+            C4_PlayerMove.Result = 2;
+        }
+        Else
+        {
+            If (PieceCount == 42)
+            {
+                C4_PlayerMove.Result = 3;
+            }
+        }
+        Event.Broadcast("C4_PlayerMoveDone");
+    }
+    Else
+    {
+        C4_PlayerMove.Result = -1;
+        Event.Broadcast("C4_PlayerMoveDone");
+    }
+}
+
+
+//----- Custom blocks -------------------------------------------------------------------------------------------------
+
+Define ApplyMove(string Depth) (warp=true)
+{
+    Move = Moves[(((Depth - 1) * 10) + MovesIdx[Depth])];
+    Idx = (((Move - 1) % 7) + 1);
+    List.ReplaceItem(ColumnHeight, Idx, (ColumnHeight[Idx] + 1));
+    If ((Depth % 2) == 1)
+    {
+        Board1 += IdxToExp[Move];
+    }
+    Else
+    {
+        Board2 += IdxToExp[Move];
+    }
+    PieceCount += 1;
+    NodesCount += 1;
+}
+
+Define Evaluate1(string Depth) (warp=true)
+{
+    EvalRes = "";
+    Move = Moves[(((Depth - 1) * 10) + MovesIdx[Depth])];
+    If ((Depth % 2) == 1)
+    {
+        Call EvaluateWin(Board1)(Move);
+        If (EvalRes == 1)
+        {
+            EvalRes = (1000 - Depth);
+            Stop(this script);
+        }
+    }
+    Else
+    {
+        Call EvaluateWin(Board2)(Move);
+        If (EvalRes == 1)
+        {
+            EvalRes = (-1000 + Depth);
+            Stop(this script);
+        }
+    }
+}
+
+Define Evaluate2(string Depth) (warp=true)
+{
+    Call TTProbe(Board1)(Board2);
+    If (Not ((TT.Eval == "")))
+    {
+        EvalRes = TT.Eval;
+        Stop(this script);
+    }
+    List.DeleteAll(WinEndgameRanks);
+    Repeat (7)
+    {
+        List.Add(WinEndgameRanks, 0);
+    }
+    EmptyCompletions1 = 0;
+    EmptyCompletions2 = 0;
+    EvalRes = 0;
+    Count = 0;
+    Idx = 3;
+    Repeat (6)
+    {
+        Repeat (3)
+        {
+            Rank = (floor((Idx / 7)) + 1);
+            Exp = IdxToExp[Idx];
+            Val = (5 + (5 * (((Rank == 4) Or (Rank == 5)) + (5 * ((Idx % 7) == 4)))));
+            If ((Board1 % (Exp * 2)) > (Exp - 1))
+            {
+                EvalRes += Val;
+            }
+            Else
+            {
+                If ((Board2 % (Exp * 2)) > (Exp - 1))
+                {
+                    EvalRes += (0 - Val);
+                }
+            }
+            Idx += 1;
+        }
+        Idx += 4;
+    }
+    Idx = 1;
+    Repeat (6)
+    {
+        Count1 = 0;
+        Count2 = 0;
+        Count3 = 0;
+        Repeat (7)
+        {
+            Exp = IdxToExp[Idx];
+            If ((Board1 % (Exp * 2)) > (Exp - 1))
+            {
+                Count1 += 1;
+            }
+            Else
+            {
+                If ((Board2 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count2 += 1;
+                }
+                Else
+                {
+                    Count3 += 1;
+                    EmptyIdx = Idx;
+                }
+            }
+            If ((((Idx - 1) % 7) + 1) > 3)
+            {
+                If (Count3 == 1)
+                {
+                    EmptyRank = (floor((EmptyIdx / 7)) + 1);
+                    EmptyFile = (((EmptyIdx - 1) % 7) + 1);
+                    If (Count1 == 3)
+                    {
+                        EvalRes += 15;
+                        If ((EmptyRank % 2) == 0)
+                        {
+                            If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                            {
+                                List.ReplaceItem(WinEndgameRanks, EmptyFile, EmptyRank);
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If (Count2 == 3)
+                        {
+                            EvalRes += -15;
+                            If ((EmptyRank % 2) == 1)
+                            {
+                                If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                                {
+                                    List.ReplaceItem(WinEndgameRanks, EmptyFile, (0 - EmptyRank));
+                                }
+                            }
+                        }
+                    }
+                }
+                If (Count3 == 2)
+                {
+                    If (Count1 == 2)
+                    {
+                        EvalRes += 5;
+                    }
+                    Else
+                    {
+                        If (Count2 == 2)
+                        {
+                            EvalRes += -5;
+                        }
+                    }
+                }
+                Exp = IdxToExp[(Idx - 3)];
+                If ((Board1 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count1 += -1;
+                }
+                Else
+                {
+                    If ((Board2 % (Exp * 2)) > (Exp - 1))
+                    {
+                        Count2 += -1;
+                    }
+                    Else
+                    {
+                        Count3 += -1;
+                    }
+                }
+            }
+            Idx += 1;
+        }
+        Idx += 1;
+    }
+    Idx = 1;
+    Repeat (7)
+    {
+        Count1 = 0;
+        Count2 = 0;
+        Count3 = 0;
+        Repeat (6)
+        {
+            Exp = IdxToExp[Idx];
+            If ((Board1 % (Exp * 2)) > (Exp - 1))
+            {
+                Count1 += 1;
+            }
+            Else
+            {
+                If ((Board2 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count2 += 1;
+                }
+                Else
+                {
+                    Count3 += 1;
+                    EmptyIdx = Idx;
+                }
+            }
+            If (Idx > 21)
+            {
+                If (Count3 == 1)
+                {
+                    EmptyRank = (floor((EmptyIdx / 7)) + 1);
+                    EmptyFile = (((EmptyIdx - 1) % 7) + 1);
+                    If (Count1 == 3)
+                    {
+                        EvalRes += 15;
+                        If ((EmptyRank % 2) == 0)
+                        {
+                            If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                            {
+                                List.ReplaceItem(WinEndgameRanks, EmptyFile, EmptyRank);
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If (Count2 == 3)
+                        {
+                            EvalRes += -15;
+                            If ((EmptyRank % 2) == 1)
+                            {
+                                If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                                {
+                                    List.ReplaceItem(WinEndgameRanks, EmptyFile, (0 - EmptyRank));
+                                }
+                            }
+                        }
+                    }
+                }
+                If (Count3 == 2)
+                {
+                    If (Count1 == 2)
+                    {
+                        EvalRes += 5;
+                    }
+                    Else
+                    {
+                        If (Count2 == 2)
+                        {
+                            EvalRes += -5;
+                        }
+                    }
+                }
+                Exp = IdxToExp[(Idx - 21)];
+                If ((Board1 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count1 += -1;
+                }
+                Else
+                {
+                    If ((Board2 % (Exp * 2)) > (Exp - 1))
+                    {
+                        Count2 += -1;
+                    }
+                    Else
+                    {
+                        Count3 += -1;
+                    }
+                }
+            }
+            Idx += 7;
+        }
+        Idx += -41;
+    }
+    Count = 0;
+    Idx = 1;
+    Repeat (7)
+    {
+        Count1 = 0;
+        Count2 = 0;
+        Count3 = 0;
+        Repeat Until (((Idx % 7) == 0) Or (Idx > 35))
+        {
+            Exp = IdxToExp[Idx];
+            If ((Board1 % (Exp * 2)) > (Exp - 1))
+            {
+                Count1 += 1;
+            }
+            Else
+            {
+                If ((Board2 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count2 += 1;
+                }
+                Else
+                {
+                    Count3 += 1;
+                    EmptyIdx = Idx;
+                }
+            }
+            If (((((Idx - 1) % 7) + 1) > 3) And (Idx > 21))
+            {
+                If (Count3 == 1)
+                {
+                    EmptyRank = (floor((EmptyIdx / 7)) + 1);
+                    EmptyFile = (((EmptyIdx - 1) % 7) + 1);
+                    If (Count1 == 3)
+                    {
+                        EvalRes += 15;
+                        If ((EmptyRank % 2) == 0)
+                        {
+                            If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                            {
+                                List.ReplaceItem(WinEndgameRanks, EmptyFile, EmptyRank);
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If (Count2 == 3)
+                        {
+                            EvalRes += -15;
+                            If ((EmptyRank % 2) == 1)
+                            {
+                                If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                                {
+                                    List.ReplaceItem(WinEndgameRanks, EmptyFile, (0 - EmptyRank));
+                                }
+                            }
+                        }
+                    }
+                }
+                If (Count3 == 2)
+                {
+                    If (Count1 == 2)
+                    {
+                        EvalRes += 5;
+                    }
+                    Else
+                    {
+                        If (Count2 == 2)
+                        {
+                            EvalRes += -5;
+                        }
+                    }
+                }
+                Exp = IdxToExp[(Idx - 24)];
+                If ((Board1 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count1 += -1;
+                }
+                Else
+                {
+                    If ((Board2 % (Exp * 2)) > (Exp - 1))
+                    {
+                        Count2 += -1;
+                    }
+                    Else
+                    {
+                        Count3 += -1;
+                    }
+                }
+            }
+            Idx += 8;
+        }
+        Count += 1;
+        If (Count < 4)
+        {
+            Idx = Count;
+        }
+        Else
+        {
+            If (Count > 4)
+            {
+                Idx = (Count * 7);
+            }
+            Else
+            {
+                Idx = 1;
+            }
+        }
+    }
+    Count = 0;
+    Idx = 4;
+    Repeat (7)
+    {
+        Count1 = 0;
+        Count2 = 0;
+        Count3 = 0;
+        Repeat Until (((((Idx - 1) % 7) + 1) == 1) Or (Idx > 35))
+        {
+            Exp = IdxToExp[Idx];
+            If ((Board1 % (Exp * 2)) > (Exp - 1))
+            {
+                Count1 += 1;
+            }
+            Else
+            {
+                If ((Board2 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count2 += 1;
+                }
+                Else
+                {
+                    Count3 += 1;
+                    EmptyIdx = Idx;
+                }
+            }
+            If (((((Idx - 1) % 7) + 1) < 5) And (Idx > 21))
+            {
+                If (Count3 == 1)
+                {
+                    EmptyRank = (floor((EmptyIdx / 7)) + 1);
+                    EmptyFile = (((EmptyIdx - 1) % 7) + 1);
+                    If (Count1 == 3)
+                    {
+                        EvalRes += 15;
+                        If ((EmptyRank % 2) == 0)
+                        {
+                            If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                            {
+                                List.ReplaceItem(WinEndgameRanks, EmptyFile, EmptyRank);
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If (Count2 == 3)
+                        {
+                            EvalRes += -15;
+                            If ((EmptyRank % 2) == 1)
+                            {
+                                If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
+                                {
+                                    List.ReplaceItem(WinEndgameRanks, EmptyFile, (0 - EmptyRank));
+                                }
+                            }
+                        }
+                    }
+                }
+                If (Count3 == 2)
+                {
+                    If (Count1 == 2)
+                    {
+                        EvalRes += 5;
+                    }
+                    Else
+                    {
+                        If (Count2 == 2)
+                        {
+                            EvalRes += -5;
+                        }
+                    }
+                }
+                Exp = IdxToExp[(Idx - 18)];
+                If ((Board1 % (Exp * 2)) > (Exp - 1))
+                {
+                    Count1 += -1;
+                }
+                Else
+                {
+                    If ((Board2 % (Exp * 2)) > (Exp - 1))
+                    {
+                        Count2 += -1;
+                    }
+                    Else
+                    {
+                        Count3 += -1;
+                    }
+                }
+            }
+            Idx += 6;
+        }
+        Count += 1;
+        If (Count < 4)
+        {
+            Idx = (Count + 4);
+        }
+        Else
+        {
+            If (Count > 4)
+            {
+                Idx = ((Count - 4) * 7);
+            }
+            Else
+            {
+                Idx = 7;
+            }
+        }
+    }
+    BestRank = 0;
+    Idx = 1;
+    Repeat (7)
+    {
+        Rank = WinEndgameRanks[Idx];
+        If (Not ((Rank == 0)))
+        {
+            If (1 == 0)
+            {
+                If (Rank > 0)
+                {
+                    EvalRes += 15;
+                }
+                Else
+                {
+                    EvalRes += -15;
+                }
+            }
+            If (abs(Rank) > abs(BestRank))
+            {
+                BestRank = Rank;
+            }
+        }
+        Idx += 1;
+    }
+    If (BestRank > 0)
+    {
+        EvalRes += 40;
+    }
+    Else
+    {
+        If (BestRank < 0)
+        {
+            EvalRes += -40;
+        }
+    }
+    Call TTStore(Board1)(Board2)(EvalRes)("")("")("")("")("");
+}
+
+Define EvaluateWin(string Board)(string Move) (warp=true)
+{
+    EvalRes = 0;
+    dX = 1;
+    Repeat (2)
+    {
+        dY = 1;
+        Repeat (2)
+        {
+            If ((dX == 0) And (dY == 0))
+            {
+                dXLoc = 1;
+                dYLoc = -1;
+            }
+            Else
+            {
+                dXLoc = dX;
+                dYLoc = dY;
+            }
+            Count = 1;
+            Repeat (2)
+            {
+                Done = 0;
+                I = 1;
+                Idx = Move;
+                Repeat Until ((Done == 1) Or (I == 4))
+                {
+                    If ((((Not ((dXLoc == -1))) Or (Not (((Idx % 7) == 1)))) And ((Not ((dXLoc == 1))) Or (Not (((Idx % 7) == 0))))) And (((Not ((dYLoc == -1))) Or (Idx > 7)) And ((Not ((dYLoc == 1))) Or (Idx < 36))))
+                    {
+                        Idx += ((dYLoc * 7) + dXLoc);
+                        Exp = IdxToExp[Idx];
+                        If ((Board % (Exp * 2)) > (Exp - 1))
+                        {
+                            Count += 1;
+                            If (Count == 4)
+                            {
+                                EvalRes = 1;
+                                Stop(this script);
+                            }
+                        }
+                        Else
+                        {
+                            Done = 1;
+                        }
+                    }
+                    Else
+                    {
+                        Done = 1;
+                    }
+                    I += 1;
+                }
+                dXLoc = (0 - dXLoc);
+                dYLoc = (0 - dYLoc);
+            }
+            dY += -1;
+        }
+        dX += -1;
+    }
+}
+
+Define EvaluateWinOptionCreation(string PlayerIdx)(string Move) (warp=true)
+{
+    If (PlayerIdx == 1)
+    {
+        TmpBoard1 = Board1;
+        TmpBoard2 = Board2;
+    }
+    Else
+    {
+        TmpBoard1 = Board2;
+        TmpBoard2 = Board1;
+    }
+    EvalRes = 0;
+    dX = 1;
+    Repeat (2)
+    {
+        dY = 1;
+        Repeat (2)
+        {
+            If ((dX == 0) And (dY == 0))
+            {
+                dXLoc = 1;
+                dYLoc = -1;
+            }
+            Else
+            {
+                dXLoc = dX;
+                dYLoc = dY;
+            }
+            Count1 = 1;
+            Count2 = 0;
+            Count3 = 0;
+            Repeat (2)
+            {
+                Done = 0;
+                I = 1;
+                Idx = Move;
+                Repeat Until ((Done == 1) Or (I == 4))
+                {
+                    If ((((Not ((dXLoc == -1))) Or (Not (((Idx % 7) == 1)))) And ((Not ((dXLoc == 1))) Or (Not (((Idx % 7) == 0))))) And (((Not ((dYLoc == -1))) Or (Idx > 7)) And ((Not ((dYLoc == 1))) Or (Idx < 36))))
+                    {
+                        Idx += ((dYLoc * 7) + dXLoc);
+                        Exp = IdxToExp[Idx];
+                        If ((TmpBoard1 % (Exp * 2)) > (Exp - 1))
+                        {
+                            Count1 += 1;
+                        }
+                        Else
+                        {
+                            If ((TmpBoard2 % (Exp * 2)) > (Exp - 1))
+                            {
+                                Count2 += 1;
+                            }
+                            Else
+                            {
+                                Count3 += 1;
+                            }
+                        }
+                        If ((Count1 + (Count2 + Count3)) == 4)
+                        {
+                            If ((Count1 == 3) And (Count3 == 1))
+                            {
+                                EvalRes += 2;
+                            }
+                            If ((Count1 == 2) And (Count3 == 2))
+                            {
+                                EvalRes += 1;
+                            }
+                            If ((Count1 == 1) And (Count2 == 2))
+                            {
+                                EvalRes += 2;
+                            }
+                            If (I == 4)
+                            {
+                                Idx2 = Idx;
+                            }
+                            Else
+                            {
+                                Idx2 = (Idx - (3 * ((dYLoc * 7) + dXLoc)));
+                            }
+                            Exp = IdxToExp[Idx2];
+                            If ((TmpBoard1 % (Exp * 2)) > (Exp - 1))
+                            {
+                                Count1 += -1;
+                            }
+                            Else
+                            {
+                                If ((TmpBoard2 % (Exp * 2)) > (Exp - 1))
+                                {
+                                    Count2 += -1;
+                                }
+                                Else
+                                {
+                                    Count3 += -1;
+                                }
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        Done = 1;
+                    }
+                    I += 1;
+                }
+                dXLoc = (0 - dXLoc);
+                dYLoc = (0 - dYLoc);
+            }
+            dY += -1;
+        }
+        dX += -1;
+    }
+}
+
+Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
+{
+    List.DeleteAll(Tmp1);
+    List.DeleteAll(Tmp2);
+    List.DeleteAll(Tmp3);
+    List.DeleteAll(Tmp);
+    List.ReplaceItem(MovesCount, Depth, 0);
+    If (Depth > 0)
+    {
+        Call TTProbe(Board1)(Board2);
+        If (Not ((TT.Move == "")))
+        {
+            If ((6 - ColumnHeight[(((TT.Move - 1) % 7) + 1)]) == (floor(((TT.Move - 1) / 7)) + 1))
+            {
+                List.Add(Tmp1, TT.Move);
+                List.Add(Tmp, TT.Move);
+            }
+        }
+    }
+    If (List.Length(Tmp) == 0)
+    {
+        If (Depth < (MaxDepth - 0))
+        {
+            Flip = 1;
+            Repeat (2)
+            {
+                Idx3 = 1;
+                Repeat (7)
+                {
+                    If (ColumnHeight[Idx3] < 6)
+                    {
+                        Idx2 = (((5 - ColumnHeight[Idx3]) * 7) + Idx3);
+                        If (Flip == 1)
+                        {
+                            If ((Depth % 2) == 1)
+                            {
+                                Call EvaluateWin(Board1)(Idx2);
+                            }
+                            Else
+                            {
+                                Call EvaluateWin(Board2)(Idx2);
+                            }
+                        }
+                        Else
+                        {
+                            If ((Depth % 2) == 1)
+                            {
+                                Call EvaluateWin(Board2)(Idx2);
+                            }
+                            Else
+                            {
+                                Call EvaluateWin(Board1)(Idx2);
+                            }
+                        }
+                        If (EvalRes == 1)
+                        {
+                            List.ReplaceItem(Moves, (((Depth - 1) * 10) + 1), Idx2);
+                            List.ReplaceItem(MovesCount, Depth, 1);
+                            Stop(this script);
+                        }
+                    }
+                    Idx3 += 1;
+                }
+                Flip += 1;
+            }
+        }
+    }
+    Delta = 0;
+    Repeat (4)
+    {
+        Repeat (3)
+        {
+            If (ColumnHeight[(4 + Delta)] < 6)
+            {
+                Val = (((5 - ColumnHeight[(4 + Delta)]) * 7) + (4 + Delta));
+                If (Not (List.ContainsItem(Tmp, Val)))
+                {
+                    List.Add(Tmp, Val);
+                    If ((Depth < (MaxDepth - 1)) And ((PieceCount > 11) And (List.Length(Tmp1) == 0)))
+                    {
+                        Call EvaluateWinOptionCreation((2 - (Depth % 2)))(Val);
+                        If (EvalRes > 2)
+                        {
+                            List.Add(Tmp1, Val);
+                        }
+                        Else
+                        {
+                            If (EvalRes > 1)
+                            {
+                                List.Add(Tmp2, Val);
+                            }
+                            Else
+                            {
+                                List.Add(Tmp3, Val);
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        List.Add(Tmp3, Val);
+                    }
+                }
+            }
+            Delta = (0 - Delta);
+        }
+        Delta = (abs(Delta) + 1);
+    }
+    Count = 0;
+    Idx = 1;
+    Repeat (List.Length(Tmp1))
+    {
+        Count += 1;
+        List.ReplaceItem(Moves, (((Depth - 1) * 10) + Count), Tmp1[Idx]);
+        Idx += 1;
+    }
+    Idx = 1;
+    Repeat (List.Length(Tmp2))
+    {
+        Count += 1;
+        List.ReplaceItem(Moves, (((Depth - 1) * 10) + Count), Tmp2[Idx]);
+        Idx += 1;
+    }
+    Idx = 1;
+    Repeat (List.Length(Tmp3))
+    {
+        Count += 1;
+        List.ReplaceItem(Moves, (((Depth - 1) * 10) + Count), Tmp3[Idx]);
+        Idx += 1;
+    }
+    List.ReplaceItem(MovesCount, Depth, Count);
+}
+
+Define Init (warp=true)
+{
+    List.Hide(Console);
+    List.DeleteAll(Alphas);
+    List.DeleteAll(Betas);
+    List.DeleteAll(Moves);
+    List.DeleteAll(MovesCount);
+    List.DeleteAll(MovesIdx);
+    List.DeleteAll(Eval);
+    List.DeleteAll(Console);
+    List.DeleteAll(IdxToExp);
+    List.DeleteAll(Board);
+    List.DeleteAll(ColumnHeight);
+    List.DeleteAll(TT.Board1);
+    List.DeleteAll(TT.Board2);
+    List.DeleteAll(TT.Eval);
+    List.DeleteAll(TT.Move);
+    List.DeleteAll(TT.MoveHorizon);
+    List.DeleteAll(TT.NodeEval);
+    List.DeleteAll(TT.NodeHorizon);
+    List.DeleteAll(TT.NodeType);
+    Board1 = 0;
+    Board2 = 0;
+    Repeat (1000000)
+    {
+        List.Add(TT.Board1, 0);
+        List.Add(TT.Board2, 0);
+        List.Add(TT.Eval, "");
+        List.Add(TT.Move, "");
+        List.Add(TT.MoveHorizon, "");
+        List.Add(TT.NodeEval, "");
+        List.Add(TT.NodeHorizon, "");
+        List.Add(TT.NodeType, "");
+    }
+    Repeat (7)
+    {
+        List.Add(ColumnHeight, 0);
+    }
+    Idx = 1;
+    Repeat (42)
+    {
+        List.Add(Board, 0);
+        List.Add(Alphas, 0);
+        List.Add(Betas, 0);
+        List.Add(Eval, 0);
+        Repeat (10)
+        {
+            List.Add(Moves, 0);
+        }
+        List.Add(MovesCount, 0);
+        List.Add(MovesIdx, 0);
+        List.Add(IdxToExp, Operator.Round(e ^(((42 - Idx) * ln(2)))));
+        Idx += 1;
+    }
+    PieceCount = 0;
+    If (1 == 0)
+    {
+        Variable.Show(Depth);
+        Variable.Show(Nodes);
+        Variable.Show(NPS);
+        Variable.Show(Search.Eval);
+        List.Show(Console);
+    }
+    NPS = "";
+    Nodes = "";
+    Depth = "";
+    Search.Eval = "";
+    Debug = 0;
+    Variable.Hide(Depth);
+    Variable.Hide(Nodes);
+    Variable.Hide(NPS);
+    Variable.Hide(Search.Eval);
+    PrevSearchDepth = "";
+}
+
+Define RevertMove(string Depth) (warp=true)
+{
+    Move = Moves[(((Depth - 1) * 10) + MovesIdx[Depth])];
+    Idx = (((Move - 1) % 7) + 1);
+    List.ReplaceItem(ColumnHeight, Idx, (ColumnHeight[Idx] - 1));
+    If ((Depth % 2) == 1)
+    {
+        Board1 += (0 - IdxToExp[Move]);
+    }
+    Else
+    {
+        Board2 += (0 - IdxToExp[Move]);
+    }
+    PieceCount += -1;
+}
+
+Define Search(string Depth)(string MaxDepth) (warp=true)
+{
+    If (Depth == 1)
+    {
+        Depth = (MaxDepth - 1);
+        NodesCount = 0;
+        NPS = "";
+        Nodes = "";
+        Search.BestMove = "";
+        Search.Eval = "";
+        List.ReplaceItem(Alphas, Depth, -100000);
+        List.ReplaceItem(Betas, Depth, 100000);
+    }
+    If (Depth > 1)
+    {
+        Call TTProbe(Board1)(Board2);
+        If ((Not ((TT.NodeEval == ""))) And (Not ((TT.NodeHorizon < (MaxDepth - Depth)))))
+        {
+            If ((TT.NodeType == "E") Or (((TT.NodeType == "A") And (Not ((TT.NodeEval > Alphas[Depth])))) Or ((TT.NodeType == "B") And (Not ((TT.NodeEval < Betas[Depth]))))))
+            {
+                List.ReplaceItem(Eval, Depth, TT.NodeEval);
+                Stop(this script);
+            }
+        }
+    }
+    If (Depth > 1)
+    {
+        Call Evaluate1((Depth - 1));
+        If (abs(EvalRes) > 900)
+        {
+            List.ReplaceItem(Eval, Depth, EvalRes);
+            Stop(this script);
+        }
+        If (Depth == MaxDepth)
+        {
+            Call Evaluate2((Depth - 1));
+            List.ReplaceItem(Eval, Depth, EvalRes);
+            Stop(this script);
+        }
+    }
+    List.ReplaceItem(BestMoves, Depth, "");
+    List.ReplaceItem(Eval, Depth, "");
+    Call GenerateMoves(Depth)(MaxDepth);
+    If (MovesCount[Depth] == 0)
+    {
+        List.ReplaceItem(Eval, Depth, 0);
+        Stop(this script);
+    }
+    List.ReplaceItem(MovesIdx, Depth, 1);
+    Repeat (MovesCount[Depth])
+    {
+        Call ApplyMove(Depth);
+        List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+        List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+        Call Search((Depth + 1))(MaxDepth);
+        Score = Eval[(Depth + 1)];
+        Call RevertMove(Depth);
+        If ((Depth % 2) == 1)
+        {
+            If (Score > Alphas[Depth])
+            {
+                List.ReplaceItem(Alphas, Depth, Score);
+                List.ReplaceItem(BestMoves, Depth, Moves[(((Depth - 1) * 10) + MovesIdx[Depth])]);
+                If (Depth == 1)
+                {
+                    Search.BestMove = Moves[MovesIdx[1]];
+                    Search.Eval = Score;
+                }
+                If (Not ((Score < Betas[Depth])))
+                {
+                    If (Not ((Depth == 1)))
+                    {
+                        List.ReplaceItem(Eval, Depth, Betas[Depth]);
+                        Call TTStore(Board1)(Board2)("")(Moves[(((Depth - 1) * 10) + MovesIdx[Depth])])((MaxDepth - Depth))(Eval[Depth])((MaxDepth - Depth))("B");
+                        Stop(this script);
+                    }
+                }
+            }
+        }
+        Else
+        {
+            If (Score < Betas[Depth])
+            {
+                List.ReplaceItem(BestMoves, Depth, Moves[(((Depth - 1) * 10) + MovesIdx[Depth])]);
+                List.ReplaceItem(Betas, Depth, Score);
+                If (Not ((Score > Alphas[Depth])))
+                {
+                    List.ReplaceItem(Eval, Depth, Alphas[Depth]);
+                    Call TTStore(Board1)(Board2)("")(Moves[(((Depth - 1) * 10) + MovesIdx[Depth])])((MaxDepth - Depth))(Eval[Depth])((MaxDepth - Depth))("A");
+                    Stop(this script);
+                }
+            }
+        }
+        List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
+    }
+    If ((Depth % 2) == 1)
+    {
+        List.ReplaceItem(Eval, Depth, Alphas[Depth]);
+    }
+    Else
+    {
+        List.ReplaceItem(Eval, Depth, Betas[Depth]);
+    }
+    Call TTStore(Board1)(Board2)("")(BestMoves[Depth])((MaxDepth - Depth))(Eval[Depth])((MaxDepth - Depth))("E");
+}
+
+Define TTProbe(string Board1)(string Board2) (warp=true)
+{
+    TT.Eval = "";
+    TT.Move = "";
+    TT.NodeEval = "";
+    TT.NodeHorizon = "";
+    TT.NodeType = "";
+    Idx = ((((Board1 * 31) + (4398046511104 - Board2)) % List.Length(TT.Board1)) + 1);
+    If ((TT.Board1[Idx] == Board1) And (TT.Board2[Idx] == Board2))
+    {
+        TT.Eval = TT.Eval[Idx];
+        TT.Move = TT.Move[Idx];
+        TT.NodeEval = TT.NodeEval[Idx];
+        TT.NodeHorizon = TT.NodeHorizon[Idx];
+        TT.NodeType = TT.NodeType[Idx];
+    }
+}
+
+Define TTStore(string Board1)(string Board2)(string Eval)(string Move)(string MoveHorizon)(string NodeEval)(string NodeHorizon)(string NodeType) (warp=true)
+{
+    Idx = ((((Board1 * 31) + (4398046511104 - Board2)) % List.Length(TT.Board1)) + 1);
+    If ((Not ((TT.Board1[Idx] == Board1))) Or (Not ((TT.Board2[Idx] == Board2))))
+    {
+        List.ReplaceItem(TT.Board1, Idx, Board1);
+        List.ReplaceItem(TT.Board2, Idx, Board2);
+        List.ReplaceItem(TT.Eval, Idx, Eval);
+        List.ReplaceItem(TT.Move, Idx, Move);
+        List.ReplaceItem(TT.MoveHorizon, Idx, MoveHorizon);
+        List.ReplaceItem(TT.NodeEval, Idx, NodeEval);
+        List.ReplaceItem(TT.NodeHorizon, Idx, NodeHorizon);
+        List.ReplaceItem(TT.NodeType, Idx, NodeType);
+    }
+    Else
+    {
+        If (Not ((Eval == "")))
+        {
+            List.ReplaceItem(TT.Eval, Idx, Eval);
+        }
+        If (Not ((Move == "")))
+        {
+            If ((TT.Move[Idx] == "") Or (TT.MoveHorizon[Idx] < MoveHorizon))
+            {
+                List.ReplaceItem(TT.Move, Idx, Move);
+                List.ReplaceItem(TT.MoveHorizon, Idx, MoveHorizon);
+            }
+        }
+        If (Not ((NodeEval == "")))
+        {
+            If ((TT.NodeEval[Idx] == "") Or (TT.NodeHorizon[Idx] < NodeHorizon))
+            {
+                List.ReplaceItem(TT.NodeEval, Idx, NodeEval);
+                List.ReplaceItem(TT.NodeHorizon, Idx, NodeHorizon);
+                List.ReplaceItem(TT.NodeType, Idx, NodeType);
+            }
+        }
+    }
+}
+
+Define _ClearLists (warp=true)
+{
+    List.DeleteAll(Alphas);
+    List.DeleteAll(Betas);
+    List.DeleteAll(Moves);
+    List.DeleteAll(MovesCount);
+    List.DeleteAll(MovesIdx);
+    List.DeleteAll(Eval);
+    List.DeleteAll(Console);
+    List.DeleteAll(IdxToExp);
+    List.DeleteAll(Board);
+    List.DeleteAll(ColumnHeight);
+    List.DeleteAll(TT.Board1);
+    List.DeleteAll(TT.Board2);
+    List.DeleteAll(TT.Eval);
+    List.DeleteAll(TT.Move);
+    List.DeleteAll(TT.NodeHorizon);
+    List.DeleteAll(TT.NodeEval);
+    List.DeleteAll(TT.NodeType);
+    List.DeleteAll(TT.MoveHorizon);
+}
