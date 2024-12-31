@@ -71,7 +71,7 @@ WhenBroadcastReceived(C4_EngineMove)
     PieceCount += 1;
     C4_EngineMove.Column = (((Search.BestMove - 1) % 7) + 1);
     C4_EngineMove.Result = 0;
-    Call EvaluateWin(Board1)(Search.BestMove);
+    Call EvaluateWinImpl(Board1)(Search.BestMove);
     If (EvalRes == 1)
     {
         C4_EngineMove.Result = 1;
@@ -101,7 +101,7 @@ WhenBroadcastReceived(C4_PlayerMove)
         Board2 += IdxToExp[Move];
         PieceCount += 1;
         C4_PlayerMove.Result = 0;
-        Call EvaluateWin(Board2)(Move);
+        Call EvaluateWinImpl(Board2)(Move);
         If (EvalRes == 1)
         {
             C4_PlayerMove.Result = 2;
@@ -142,31 +142,7 @@ Define ApplyMove(string Depth) (warp=true)
     NodesCount += 1;
 }
 
-Define Evaluate1(string Depth) (warp=true)
-{
-    EvalRes = "";
-    Move = Moves[(((Depth - 1) * 10) + MovesIdx[Depth])];
-    If ((Depth % 2) == 1)
-    {
-        Call EvaluateWin(Board1)(Move);
-        If (EvalRes == 1)
-        {
-            EvalRes = (1000 - Depth);
-            Stop(this script);
-        }
-    }
-    Else
-    {
-        Call EvaluateWin(Board2)(Move);
-        If (EvalRes == 1)
-        {
-            EvalRes = (-1000 + Depth);
-            Stop(this script);
-        }
-    }
-}
-
-Define Evaluate2(string Depth) (warp=true)
+Define EvaluatePosition(string Depth) (warp=true)
 {
     Call TTProbe(Board1)(Board2);
     If (Not ((TT.Eval == "")))
@@ -645,7 +621,31 @@ Define Evaluate2(string Depth) (warp=true)
     Call TTStore(Board1)(Board2)(EvalRes)("")("")("")("")("");
 }
 
-Define EvaluateWin(string Board)(string Move) (warp=true)
+Define EvaluateWin(string Depth) (warp=true)
+{
+    EvalRes = "";
+    Move = Moves[(((Depth - 1) * 10) + MovesIdx[Depth])];
+    If ((Depth % 2) == 1)
+    {
+        Call EvaluateWinImpl(Board1)(Move);
+        If (EvalRes == 1)
+        {
+            EvalRes = (1000 - Depth);
+            Stop(this script);
+        }
+    }
+    Else
+    {
+        Call EvaluateWinImpl(Board2)(Move);
+        If (EvalRes == 1)
+        {
+            EvalRes = (-1000 + Depth);
+            Stop(this script);
+        }
+    }
+}
+
+Define EvaluateWinImpl(string Board)(string Move) (warp=true)
 {
     EvalRes = 0;
     dX = 1;
@@ -767,15 +767,11 @@ Define EvaluateWinOptionCreation(string PlayerIdx)(string Move) (warp=true)
                         {
                             If ((Count1 == 3) And (Count3 == 1))
                             {
-                                EvalRes += 2;
-                            }
-                            If ((Count1 == 2) And (Count3 == 2))
-                            {
-                                EvalRes += 1;
+                                EvalRes += 10;
                             }
                             If ((Count1 == 1) And (Count2 == 2))
                             {
-                                EvalRes += 2;
+                                EvalRes += 4;
                             }
                             If (I == 4)
                             {
@@ -854,22 +850,22 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
                         {
                             If ((Depth % 2) == 1)
                             {
-                                Call EvaluateWin(Board1)(Idx2);
+                                Call EvaluateWinImpl(Board1)(Idx2);
                             }
                             Else
                             {
-                                Call EvaluateWin(Board2)(Idx2);
+                                Call EvaluateWinImpl(Board2)(Idx2);
                             }
                         }
                         Else
                         {
                             If ((Depth % 2) == 1)
                             {
-                                Call EvaluateWin(Board2)(Idx2);
+                                Call EvaluateWinImpl(Board2)(Idx2);
                             }
                             Else
                             {
-                                Call EvaluateWin(Board1)(Idx2);
+                                Call EvaluateWinImpl(Board1)(Idx2);
                             }
                         }
                         If (EvalRes == 1)
@@ -885,6 +881,7 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
             }
         }
     }
+    Flag = (List.Length(Tmp1) > 0);
     Delta = 0;
     Repeat (4)
     {
@@ -893,31 +890,27 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
             If (ColumnHeight[(4 + Delta)] < 6)
             {
                 Val = (((5 - ColumnHeight[(4 + Delta)]) * 7) + (4 + Delta));
-                If (Not (List.ContainsItem(Tmp, Val)))
+                If (Not (List.ContainsItem(Tmp1, Val)))
                 {
-                    List.Add(Tmp, Val);
-                    If ((Depth < (MaxDepth - 1)) And ((PieceCount > 11) And (List.Length(Tmp1) == 0)))
+                    If ((Depth < (MaxDepth - 1)) And ((PieceCount > 11) And (Flag == 0)))
                     {
                         Call EvaluateWinOptionCreation((2 - (Depth % 2)))(Val);
-                        If (EvalRes > 2)
+                        If (EvalRes == 0)
                         {
-                            List.Add(Tmp1, Val);
+                            EvalRes = (5 - abs(Delta));
                         }
                         Else
                         {
-                            If (EvalRes > 1)
-                            {
-                                List.Add(Tmp2, Val);
-                            }
-                            Else
-                            {
-                                List.Add(Tmp3, Val);
-                            }
+                            EvalRes = (10 + EvalRes);
                         }
+                        Idx3 = 1;
+                        control_while ?? - probably legacy function from Scratch 2.0;
+                        List.InsertItem(Tmp1, Idx3, Val);
+                        List.InsertItem(Tmp2, Idx3, EvalRes);
                     }
                     Else
                     {
-                        List.Add(Tmp3, Val);
+                        List.Add(Tmp1, Val);
                     }
                 }
             }
@@ -931,20 +924,6 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
     {
         Count += 1;
         List.ReplaceItem(Moves, (((Depth - 1) * 10) + Count), Tmp1[Idx]);
-        Idx += 1;
-    }
-    Idx = 1;
-    Repeat (List.Length(Tmp2))
-    {
-        Count += 1;
-        List.ReplaceItem(Moves, (((Depth - 1) * 10) + Count), Tmp2[Idx]);
-        Idx += 1;
-    }
-    Idx = 1;
-    Repeat (List.Length(Tmp3))
-    {
-        Count += 1;
-        List.ReplaceItem(Moves, (((Depth - 1) * 10) + Count), Tmp3[Idx]);
         Idx += 1;
     }
     List.ReplaceItem(MovesCount, Depth, Count);
@@ -1004,6 +983,10 @@ Define Init (warp=true)
         List.Add(IdxToExp, Operator.Round(e ^(((42 - Idx) * ln(2)))));
         Idx += 1;
     }
+    List.DeleteAll(BoardItemToSymbol);
+    List.Add(BoardItemToSymbol, "⚪");
+    List.Add(BoardItemToSymbol, "🟡");
+    List.Add(BoardItemToSymbol, "🔴");
     PieceCount = 0;
     If (1 == 0)
     {
@@ -1068,7 +1051,7 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
     }
     If (Depth > 1)
     {
-        Call Evaluate1((Depth - 1));
+        Call EvaluateWin((Depth - 1));
         If (abs(EvalRes) > 900)
         {
             List.ReplaceItem(Eval, Depth, EvalRes);
@@ -1076,7 +1059,7 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
         }
         If (Depth == MaxDepth)
         {
-            Call Evaluate2((Depth - 1));
+            Call EvaluatePosition((Depth - 1));
             List.ReplaceItem(Eval, Depth, EvalRes);
             Stop(this script);
         }
