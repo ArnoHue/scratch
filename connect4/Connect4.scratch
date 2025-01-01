@@ -163,57 +163,48 @@ Define EvalClusterOfFour(bool PostProcess)(string Delta) (warp=true)
     }
     If PostProcess
     {
+        ThreeMatchState = 0;
         If (Count3 == 1)
         {
-            EmptyRank = (floor((EmptyIdx / 7)) + 1);
+            EmptyRank = (floor(((EmptyIdx - 1) / 7)) + 1);
             EmptyFile = (((EmptyIdx - 1) % 7) + 1);
             If (Count1 == 3)
             {
-                EvalRes += (15 + (30 * (PrevMatchState == 1)));
-                If ((EmptyRank % 2) == 0)
-                {
-                    If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
-                    {
-                        List.ReplaceItem(WinEndgameRanks, EmptyFile, EmptyRank);
-                    }
-                }
-                PrevMatchState = 1;
+                ThreeMatchState = 1;
+                EvalRes += 10;
             }
             Else
             {
                 If (Count2 == 3)
                 {
-                    EvalRes += (0 - (15 + (30 * (PrevMatchState == -1))));
-                    If ((EmptyRank % 2) == 1)
-                    {
-                        If (EmptyRank > abs(WinEndgameRanks[EmptyFile]))
-                        {
-                            List.ReplaceItem(WinEndgameRanks, EmptyFile, (0 - EmptyRank));
-                        }
-                    }
-                    PrevMatchState = -1;
+                    ThreeMatchState = -1;
+                    EvalRes += -10;
                 }
-                Else
+            }
+            If (Not ((ThreeMatchState == 0)))
+            {
+                Rank = WinOptionRank[EmptyFile];
+                If (abs(EmptyRank) > abs(Rank))
                 {
-                    PrevMatchState = 0;
+                    List.ReplaceItem(WinOptionRank, EmptyFile, (EmptyRank * ThreeMatchState));
+                    List.ReplaceItem(WinOptionIsDoubleRank, EmptyFile, ((Not ((Rank == 0))) And (abs(((EmptyRank * ThreeMatchState) - Rank)) == 1)));
+                    List.ReplaceItem(WinOptionIsExtendedLength, EmptyFile, (PrevThreeMatchState == ThreeMatchState));
+                    List.ReplaceItem(WinOptionIsEndgameForced, EmptyFile, ((((EmptyRank % 2) == 1) And (ThreeMatchState == -1)) Or (((EmptyRank % 2) == 0) And (ThreeMatchState == 1))));
                 }
             }
         }
-        Else
-        {
-            PrevMatchState = 0;
-        }
+        PrevThreeMatchState = ThreeMatchState;
         If (Count3 == 2)
         {
             If (Count1 == 2)
             {
-                EvalRes += 10;
+                EvalRes += 5;
             }
             Else
             {
                 If (Count2 == 2)
                 {
-                    EvalRes += -10;
+                    EvalRes += -5;
                 }
             }
         }
@@ -244,10 +235,16 @@ Define EvaluatePosition(string Depth) (warp=true)
         EvalRes = TT.Eval;
         Stop(this script);
     }
-    List.DeleteAll(WinEndgameRanks);
+    List.DeleteAll(WinOptionRank);
+    List.DeleteAll(WinOptionIsDoubleRank);
+    List.DeleteAll(WinOptionIsExtendedLength);
+    List.DeleteAll(WinOptionIsEndgameForced);
     Repeat (7)
     {
-        List.Add(WinEndgameRanks, 0);
+        List.Add(WinOptionRank, 0);
+        List.Add(WinOptionIsDoubleRank, 0);
+        List.Add(WinOptionIsExtendedLength, 0);
+        List.Add(WinOptionIsEndgameForced, 0);
     }
     EmptyCompletions1 = 0;
     EmptyCompletions2 = 0;
@@ -258,7 +255,7 @@ Define EvaluatePosition(string Depth) (warp=true)
     {
         Repeat (3)
         {
-            Rank = (floor((Idx / 7)) + 1);
+            Rank = (floor(((Idx - 1) / 7)) + 1);
             Exp = IdxToExp[Idx];
             Val = (5 + (15 * (((Rank == 4) Or (Rank == 5)) + (5 * ((Idx % 7) == 4)))));
             If ((Board1 % (Exp * 2)) > (Exp - 1))
@@ -282,7 +279,7 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevMatchState = 0;
+        PrevThreeMatchState = 0;
         Repeat (7)
         {
             Call EvalClusterOfFour(((((Idx - 1) % 7) + 1) > 3))(1);
@@ -296,7 +293,7 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevMatchState = 0;
+        PrevThreeMatchState = 0;
         Repeat (6)
         {
             Call EvalClusterOfFour((Idx > 21))(7);
@@ -311,7 +308,7 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevMatchState = 0;
+        PrevThreeMatchState = 0;
         Repeat Until (((Idx % 7) == 0) Or (Idx > 35))
         {
             Call EvalClusterOfFour((((((Idx - 1) % 7) + 1) > 3) And (Idx > 21)))(8);
@@ -341,7 +338,7 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevMatchState = 0;
+        PrevThreeMatchState = 0;
         Repeat Until (((((Idx - 1) % 7) + 1) == 1) Or (Idx > 35))
         {
             Call EvalClusterOfFour((((((Idx - 1) % 7) + 1) < 5) And (Idx > 21)))(6);
@@ -367,19 +364,20 @@ Define EvaluatePosition(string Depth) (warp=true)
     Idx = 1;
     Repeat (7)
     {
-        Rank = WinEndgameRanks[Idx];
-        If (Rank > 0)
+        Rank = WinOptionRank[Idx];
+        If (Not ((Rank == 0)))
         {
-            EvalRes += 100;
-        }
-        Else
-        {
-            If (Rank < 0)
+            Val = (10 + ((((WinOptionIsDoubleRank[Idx] == 1) Or (WinOptionIsEndgameForced[Idx] == 1)) * 40) + (WinOptionIsExtendedLength[Idx] * 10)));
+            If (Rank > 0)
             {
-                EvalRes += -100;
+                EvalRes += Val;
             }
+            Else
+            {
+                EvalRes += (0 - Val);
+            }
+            Idx += 1;
         }
-        Idx += 1;
     }
     Call TTStore(Board1)(Board2)(EvalRes)("")("")("")("")("");
 }
