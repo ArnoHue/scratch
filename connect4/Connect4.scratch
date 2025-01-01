@@ -57,7 +57,7 @@ WhenBroadcastReceived(C4_EngineMove)
         SearchDepth = (42 - PieceCount);
     }
     Timer = (Sensing.DaysSince2000() * 86400);
-    Repeat Until ((((Sensing.DaysSince2000() * 86400) - Timer) > 2.5) Or (SearchDepth > (42 - PieceCount)))
+    Repeat Until ((((Sensing.DaysSince2000() * 86400) - Timer) > 2) Or (SearchDepth > (42 - PieceCount)))
     {
         Call Search(1)((SearchDepth + 1));
         PrevSearchDepth = SearchDepth;
@@ -241,6 +241,114 @@ Define EvalPositionPattern(string Idx)(string StepIdxDelta)(bool PostProcess) (w
     }
 }
 
+Define EvaluateMove(string Player)(string Move) (warp=true)
+{
+    If (Player == 1)
+    {
+        TmpBoard1 = Board1;
+        TmpBoard2 = Board2;
+    }
+    Else
+    {
+        TmpBoard1 = Board2;
+        TmpBoard2 = Board1;
+    }
+    EvalRes = 0;
+    dX = 1;
+    Repeat (2)
+    {
+        dY = 1;
+        Repeat (2)
+        {
+            If ((dX == 0) And (dY == 0))
+            {
+                dXLoc = 1;
+                dYLoc = -1;
+            }
+            Else
+            {
+                dXLoc = dX;
+                dYLoc = dY;
+            }
+            Count1 = 1;
+            Count2 = 0;
+            Count3 = 0;
+            Repeat (2)
+            {
+                Done = 0;
+                SlotCount = 1;
+                Idx = Move;
+                Repeat Until ((Done == 1) Or (SlotCount == 4))
+                {
+                    If ((((Not ((dXLoc == -1))) Or (Not (((Idx % 7) == 1)))) And ((Not ((dXLoc == 1))) Or (Not (((Idx % 7) == 0))))) And (((Not ((dYLoc == -1))) Or (Idx > 7)) And ((Not ((dYLoc == 1))) Or (Idx < 36))))
+                    {
+                        Idx += ((dYLoc * 7) + dXLoc);
+                        Exp = IdxToExp[Idx];
+                        If ((TmpBoard1 % (Exp * 2)) > (Exp - 1))
+                        {
+                            Count1 += 1;
+                        }
+                        Else
+                        {
+                            If ((TmpBoard2 % (Exp * 2)) > (Exp - 1))
+                            {
+                                Count2 += 1;
+                            }
+                            Else
+                            {
+                                Count3 += 1;
+                            }
+                        }
+                        If ((Count1 + (Count2 + Count3)) == 4)
+                        {
+                            If ((Count1 == 3) And (Count3 == 1))
+                            {
+                                EvalRes += 10;
+                            }
+                            If ((Count1 == 1) And (Count2 == 2))
+                            {
+                                EvalRes += 4;
+                            }
+                            If (SlotCount == 4)
+                            {
+                                Exp = IdxToExp[Idx];
+                            }
+                            Else
+                            {
+                                Exp = IdxToExp[(Idx - (3 * ((dYLoc * 7) + dXLoc)))];
+                            }
+                            If ((TmpBoard1 % (Exp * 2)) > (Exp - 1))
+                            {
+                                Count1 += -1;
+                            }
+                            Else
+                            {
+                                If ((TmpBoard2 % (Exp * 2)) > (Exp - 1))
+                                {
+                                    Count2 += -1;
+                                }
+                                Else
+                                {
+                                    Count3 += -1;
+                                }
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        Done = 1;
+                    }
+                    SlotCount += 1;
+                }
+                dXLoc = (0 - dXLoc);
+                dYLoc = (0 - dYLoc);
+            }
+            dY += -1;
+        }
+        dX += -1;
+    }
+}
+
 Define EvaluatePosition(string Depth) (warp=true)
 {
     Call TTProbe(Board1)(Board2);
@@ -250,15 +358,9 @@ Define EvaluatePosition(string Depth) (warp=true)
         Stop(this script);
     }
     List.DeleteAll(WinPatternEmptyRank);
-    List.DeleteAll(WinPatternIsDoubleRank);
-    List.DeleteAll(WinPatternIsExtendedLength);
-    List.DeleteAll(WinPatternIsEndgameForced);
     Repeat (7)
     {
         List.Add(WinPatternEmptyRank, 0);
-        List.Add(WinPatternIsDoubleRank, 0);
-        List.Add(WinPatternIsExtendedLength, 0);
-        List.Add(WinPatternIsEndgameForced, 0);
     }
     EmptyCompletions1 = 0;
     EmptyCompletions2 = 0;
@@ -479,114 +581,6 @@ Define EvaluateWinImpl(string Board)(string Move) (warp=true)
     }
 }
 
-Define EvaluateWinPatternDiff(string Player)(string Move) (warp=true)
-{
-    If (Player == 1)
-    {
-        TmpBoard1 = Board1;
-        TmpBoard2 = Board2;
-    }
-    Else
-    {
-        TmpBoard1 = Board2;
-        TmpBoard2 = Board1;
-    }
-    EvalRes = 0;
-    dX = 1;
-    Repeat (2)
-    {
-        dY = 1;
-        Repeat (2)
-        {
-            If ((dX == 0) And (dY == 0))
-            {
-                dXLoc = 1;
-                dYLoc = -1;
-            }
-            Else
-            {
-                dXLoc = dX;
-                dYLoc = dY;
-            }
-            Count1 = 1;
-            Count2 = 0;
-            Count3 = 0;
-            Repeat (2)
-            {
-                Done = 0;
-                SlotCount = 1;
-                Idx = Move;
-                Repeat Until ((Done == 1) Or (SlotCount == 4))
-                {
-                    If ((((Not ((dXLoc == -1))) Or (Not (((Idx % 7) == 1)))) And ((Not ((dXLoc == 1))) Or (Not (((Idx % 7) == 0))))) And (((Not ((dYLoc == -1))) Or (Idx > 7)) And ((Not ((dYLoc == 1))) Or (Idx < 36))))
-                    {
-                        Idx += ((dYLoc * 7) + dXLoc);
-                        Exp = IdxToExp[Idx];
-                        If ((TmpBoard1 % (Exp * 2)) > (Exp - 1))
-                        {
-                            Count1 += 1;
-                        }
-                        Else
-                        {
-                            If ((TmpBoard2 % (Exp * 2)) > (Exp - 1))
-                            {
-                                Count2 += 1;
-                            }
-                            Else
-                            {
-                                Count3 += 1;
-                            }
-                        }
-                        If ((Count1 + (Count2 + Count3)) == 4)
-                        {
-                            If ((Count1 == 3) And (Count3 == 1))
-                            {
-                                EvalRes += 10;
-                            }
-                            If ((Count1 == 1) And (Count2 == 2))
-                            {
-                                EvalRes += 4;
-                            }
-                            If (SlotCount == 4)
-                            {
-                                Exp = IdxToExp[Idx];
-                            }
-                            Else
-                            {
-                                Exp = IdxToExp[(Idx - (3 * ((dYLoc * 7) + dXLoc)))];
-                            }
-                            If ((TmpBoard1 % (Exp * 2)) > (Exp - 1))
-                            {
-                                Count1 += -1;
-                            }
-                            Else
-                            {
-                                If ((TmpBoard2 % (Exp * 2)) > (Exp - 1))
-                                {
-                                    Count2 += -1;
-                                }
-                                Else
-                                {
-                                    Count3 += -1;
-                                }
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        Done = 1;
-                    }
-                    SlotCount += 1;
-                }
-                dXLoc = (0 - dXLoc);
-                dYLoc = (0 - dYLoc);
-            }
-            dY += -1;
-        }
-        dX += -1;
-    }
-}
-
 Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
 {
     List.DeleteAll(Tmp1);
@@ -667,7 +661,7 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
                 {
                     If ((Depth < (MaxDepth - 1)) And ((PieceCount > 11) And (Flag == 0)))
                     {
-                        Call EvaluateWinPatternDiff((2 - (Depth % 2)))(Val);
+                        Call EvaluateMove((2 - (Depth % 2)))(Val);
                         If (EvalRes == 0)
                         {
                             EvalRes = (5 - abs(Delta));
@@ -827,7 +821,6 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
         Call EvaluateWin((Depth - 1));
         If (abs(EvalRes) > 900)
         {
-            Call TTStore(Board1)(Board2)("")("")("")(EvalRes)(99)("E");
             List.ReplaceItem(Eval, Depth, EvalRes);
             Stop(this script);
         }
