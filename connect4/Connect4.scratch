@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Variable.Hide(Depth);
+    Variable.Hide(SearchDepth);
     Variable.Hide(Nodes);
     Variable.Hide(NPS);
     Variable.Hide(Search.Eval);
@@ -16,7 +16,7 @@ WhenKeyPressed(d)
     If (Debug == 0)
     {
         Debug = 1;
-        Variable.Show(Depth);
+        Variable.Show(SearchDepth);
         Variable.Show(Nodes);
         Variable.Show(NPS);
         Variable.Show(Search.Eval);
@@ -24,7 +24,7 @@ WhenKeyPressed(d)
     Else
     {
         Debug = 0;
-        Variable.Hide(Depth);
+        Variable.Hide(SearchDepth);
         Variable.Hide(Nodes);
         Variable.Hide(NPS);
         Variable.Hide(Search.Eval);
@@ -63,6 +63,7 @@ WhenBroadcastReceived(C4_EngineMove)
         PrevSearchDepth = SearchDepth;
         SearchDepth += 1;
     }
+    SearchDepth += -1;
     NPS = Operator.Join(Operator.Round(((NodesCount / ((Sensing.DaysSince2000() * 86400) - Timer)) / 1000)), "k");
     Nodes = Operator.Join(Operator.Round((NodesCount / 1000)), "k");
     List.ReplaceItem(Board, Search.BestMove, 1);
@@ -142,7 +143,7 @@ Define ApplyMove(string Depth) (warp=true)
     NodesCount += 1;
 }
 
-Define EvalClusterOfFour(bool PostProcess)(string Delta) (warp=true)
+Define EvalPositionPattern(string Idx)(string StepIdxDelta)(bool PostProcess) (warp=true)
 {
     Exp = IdxToExp[Idx];
     If ((Board1 % (Exp * 2)) > (Exp - 1))
@@ -163,7 +164,7 @@ Define EvalClusterOfFour(bool PostProcess)(string Delta) (warp=true)
     }
     If PostProcess
     {
-        ThreeMatchState = 0;
+        WinPattern = 0;
         Flag = 0;
         If (Count3 == 1)
         {
@@ -171,7 +172,7 @@ Define EvalClusterOfFour(bool PostProcess)(string Delta) (warp=true)
             EmptyFile = (((EmptyIdx - 1) % 7) + 1);
             If (Count1 == 3)
             {
-                ThreeMatchState = 1;
+                WinPattern = 1;
                 If ((EmptyRank % 2) == 0)
                 {
                     Flag = 1;
@@ -181,32 +182,32 @@ Define EvalClusterOfFour(bool PostProcess)(string Delta) (warp=true)
             {
                 If (Count2 == 3)
                 {
-                    ThreeMatchState = -1;
+                    WinPattern = -1;
                     If ((EmptyRank % 2) == 1)
                     {
                         Flag = 1;
                     }
                 }
             }
-            If (Not ((ThreeMatchState == 0)))
+            If (Not ((WinPattern == 0)))
             {
-                EvalRes += ((10 + (25 * Flag)) * ThreeMatchState);
-                Rank = WinOptionRank[EmptyFile];
+                EvalRes += ((10 + (25 * Flag)) * WinPattern);
+                Rank = WinPatternEmptyRank[EmptyFile];
                 If ((abs(EmptyRank) > abs(Rank)) And (Flag == 1))
                 {
-                    List.ReplaceItem(WinOptionRank, EmptyFile, (EmptyRank * ThreeMatchState));
+                    List.ReplaceItem(WinPatternEmptyRank, EmptyFile, (EmptyRank * WinPattern));
                 }
-                If ((Not ((Rank == 0))) And (abs(((EmptyRank * ThreeMatchState) - Rank)) == 1))
+                If ((Not ((Rank == 0))) And (abs(((EmptyRank * WinPattern) - Rank)) == 1))
                 {
-                    EvalRes += (10 * ThreeMatchState);
+                    EvalRes += (10 * WinPattern);
                 }
-                If (PrevThreeMatchState == ThreeMatchState)
+                If (PrevWinPattern == WinPattern)
                 {
-                    EvalRes += (10 * ThreeMatchState);
+                    EvalRes += (10 * WinPattern);
                 }
             }
         }
-        PrevThreeMatchState = ThreeMatchState;
+        PrevWinPattern = WinPattern;
         If (Count3 == 2)
         {
             If (Count1 == 2)
@@ -221,7 +222,7 @@ Define EvalClusterOfFour(bool PostProcess)(string Delta) (warp=true)
                 }
             }
         }
-        Exp = IdxToExp[(Idx - (3 * Delta))];
+        Exp = IdxToExp[(Idx - (3 * StepIdxDelta))];
         If ((Board1 % (Exp * 2)) > (Exp - 1))
         {
             Count1 += -1;
@@ -248,16 +249,16 @@ Define EvaluatePosition(string Depth) (warp=true)
         EvalRes = TT.Eval;
         Stop(this script);
     }
-    List.DeleteAll(WinOptionRank);
-    List.DeleteAll(WinOptionIsDoubleRank);
-    List.DeleteAll(WinOptionIsExtendedLength);
-    List.DeleteAll(WinOptionIsEndgameForced);
+    List.DeleteAll(WinPatternEmptyRank);
+    List.DeleteAll(WinPatternIsDoubleRank);
+    List.DeleteAll(WinPatternIsExtendedLength);
+    List.DeleteAll(WinPatternIsEndgameForced);
     Repeat (7)
     {
-        List.Add(WinOptionRank, 0);
-        List.Add(WinOptionIsDoubleRank, 0);
-        List.Add(WinOptionIsExtendedLength, 0);
-        List.Add(WinOptionIsEndgameForced, 0);
+        List.Add(WinPatternEmptyRank, 0);
+        List.Add(WinPatternIsDoubleRank, 0);
+        List.Add(WinPatternIsExtendedLength, 0);
+        List.Add(WinPatternIsEndgameForced, 0);
     }
     EmptyCompletions1 = 0;
     EmptyCompletions2 = 0;
@@ -292,10 +293,10 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevThreeMatchState = 0;
+        PrevWinPattern = 0;
         Repeat (7)
         {
-            Call EvalClusterOfFour(((((Idx - 1) % 7) + 1) > 3))(1);
+            Call EvalPositionPattern(Idx)(1)(((((Idx - 1) % 7) + 1) > 3));
             Idx += 1;
         }
         Idx += 1;
@@ -306,10 +307,10 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevThreeMatchState = 0;
+        PrevWinPattern = 0;
         Repeat (6)
         {
-            Call EvalClusterOfFour((Idx > 21))(7);
+            Call EvalPositionPattern(Idx)(7)((Idx > 21));
             Idx += 7;
         }
         Idx += -41;
@@ -321,10 +322,10 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevThreeMatchState = 0;
+        PrevWinPattern = 0;
         Repeat Until (((Idx % 7) == 0) Or (Idx > 35))
         {
-            Call EvalClusterOfFour((((((Idx - 1) % 7) + 1) > 3) And (Idx > 21)))(8);
+            Call EvalPositionPattern(Idx)(8)((((((Idx - 1) % 7) + 1) > 3) And (Idx > 21)));
             Idx += 8;
         }
         Count += 1;
@@ -351,10 +352,10 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevThreeMatchState = 0;
+        PrevWinPattern = 0;
         Repeat Until (((((Idx - 1) % 7) + 1) == 1) Or (Idx > 35))
         {
-            Call EvalClusterOfFour((((((Idx - 1) % 7) + 1) < 5) And (Idx > 21)))(6);
+            Call EvalPositionPattern(Idx)(6)((((((Idx - 1) % 7) + 1) < 5) And (Idx > 21)));
             Idx += 6;
         }
         Count += 1;
@@ -377,7 +378,7 @@ Define EvaluatePosition(string Depth) (warp=true)
     Idx = 1;
     Repeat (7)
     {
-        Rank = WinOptionRank[Idx];
+        Rank = WinPatternEmptyRank[Idx];
         If (Rank > 0)
         {
             EvalRes += 50;
@@ -441,9 +442,9 @@ Define EvaluateWinImpl(string Board)(string Move) (warp=true)
             Repeat (2)
             {
                 Done = 0;
-                I = 1;
+                SlotCount = 1;
                 Idx = Move;
-                Repeat Until ((Done == 1) Or (I == 4))
+                Repeat Until ((Done == 1) Or (SlotCount == 4))
                 {
                     If ((((Not ((dXLoc == -1))) Or (Not (((Idx % 7) == 1)))) And ((Not ((dXLoc == 1))) Or (Not (((Idx % 7) == 0))))) And (((Not ((dYLoc == -1))) Or (Idx > 7)) And ((Not ((dYLoc == 1))) Or (Idx < 36))))
                     {
@@ -467,7 +468,7 @@ Define EvaluateWinImpl(string Board)(string Move) (warp=true)
                     {
                         Done = 1;
                     }
-                    I += 1;
+                    SlotCount += 1;
                 }
                 dXLoc = (0 - dXLoc);
                 dYLoc = (0 - dYLoc);
@@ -478,9 +479,9 @@ Define EvaluateWinImpl(string Board)(string Move) (warp=true)
     }
 }
 
-Define EvaluateWinOptionCreation(string PlayerIdx)(string Move) (warp=true)
+Define EvaluateWinPatternDiff(string Player)(string Move) (warp=true)
 {
-    If (PlayerIdx == 1)
+    If (Player == 1)
     {
         TmpBoard1 = Board1;
         TmpBoard2 = Board2;
@@ -513,9 +514,9 @@ Define EvaluateWinOptionCreation(string PlayerIdx)(string Move) (warp=true)
             Repeat (2)
             {
                 Done = 0;
-                I = 1;
+                SlotCount = 1;
                 Idx = Move;
-                Repeat Until ((Done == 1) Or (I == 4))
+                Repeat Until ((Done == 1) Or (SlotCount == 4))
                 {
                     If ((((Not ((dXLoc == -1))) Or (Not (((Idx % 7) == 1)))) And ((Not ((dXLoc == 1))) Or (Not (((Idx % 7) == 0))))) And (((Not ((dYLoc == -1))) Or (Idx > 7)) And ((Not ((dYLoc == 1))) Or (Idx < 36))))
                     {
@@ -546,15 +547,14 @@ Define EvaluateWinOptionCreation(string PlayerIdx)(string Move) (warp=true)
                             {
                                 EvalRes += 4;
                             }
-                            If (I == 4)
+                            If (SlotCount == 4)
                             {
-                                Idx2 = Idx;
+                                Exp = IdxToExp[Idx];
                             }
                             Else
                             {
-                                Idx2 = (Idx - (3 * ((dYLoc * 7) + dXLoc)));
+                                Exp = IdxToExp[(Idx - (3 * ((dYLoc * 7) + dXLoc)))];
                             }
-                            Exp = IdxToExp[Idx2];
                             If ((TmpBoard1 % (Exp * 2)) > (Exp - 1))
                             {
                                 Count1 += -1;
@@ -576,7 +576,7 @@ Define EvaluateWinOptionCreation(string PlayerIdx)(string Move) (warp=true)
                     {
                         Done = 1;
                     }
-                    I += 1;
+                    SlotCount += 1;
                 }
                 dXLoc = (0 - dXLoc);
                 dYLoc = (0 - dYLoc);
@@ -613,42 +613,42 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
             Flip = 1;
             Repeat (2)
             {
-                Idx3 = 1;
+                IdxOuter2 = 1;
                 Repeat (7)
                 {
-                    If (ColumnHeight[Idx3] < 6)
+                    If (ColumnHeight[IdxOuter2] < 6)
                     {
-                        Idx2 = (((5 - ColumnHeight[Idx3]) * 7) + Idx3);
+                        IdxOuter1 = (((5 - ColumnHeight[IdxOuter2]) * 7) + IdxOuter2);
                         If (Flip == 1)
                         {
                             If ((Depth % 2) == 1)
                             {
-                                Call EvaluateWinImpl(Board1)(Idx2);
+                                Call EvaluateWinImpl(Board1)(IdxOuter1);
                             }
                             Else
                             {
-                                Call EvaluateWinImpl(Board2)(Idx2);
+                                Call EvaluateWinImpl(Board2)(IdxOuter1);
                             }
                         }
                         Else
                         {
                             If ((Depth % 2) == 1)
                             {
-                                Call EvaluateWinImpl(Board2)(Idx2);
+                                Call EvaluateWinImpl(Board2)(IdxOuter1);
                             }
                             Else
                             {
-                                Call EvaluateWinImpl(Board1)(Idx2);
+                                Call EvaluateWinImpl(Board1)(IdxOuter1);
                             }
                         }
                         If (EvalRes == 1)
                         {
-                            List.ReplaceItem(Moves, (((Depth - 1) * 10) + 1), Idx2);
+                            List.ReplaceItem(Moves, (((Depth - 1) * 10) + 1), IdxOuter1);
                             List.ReplaceItem(MovesCount, Depth, 1);
                             Stop(this script);
                         }
                     }
-                    Idx3 += 1;
+                    IdxOuter2 += 1;
                 }
                 Flip += 1;
             }
@@ -667,7 +667,7 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
                 {
                     If ((Depth < (MaxDepth - 1)) And ((PieceCount > 11) And (Flag == 0)))
                     {
-                        Call EvaluateWinOptionCreation((2 - (Depth % 2)))(Val);
+                        Call EvaluateWinPatternDiff((2 - (Depth % 2)))(Val);
                         If (EvalRes == 0)
                         {
                             EvalRes = (5 - abs(Delta));
@@ -676,10 +676,10 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
                         {
                             EvalRes = (10 + EvalRes);
                         }
-                        Idx3 = 1;
+                        IdxOuter2 = 1;
                         control_while ?? - probably legacy function from Scratch 2.0;
-                        List.InsertItem(Tmp1, Idx3, Val);
-                        List.InsertItem(Tmp2, Idx3, EvalRes);
+                        List.InsertItem(Tmp1, IdxOuter2, Val);
+                        List.InsertItem(Tmp2, IdxOuter2, EvalRes);
                     }
                     Else
                     {
