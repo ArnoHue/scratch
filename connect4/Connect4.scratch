@@ -57,9 +57,10 @@ WhenBroadcastReceived(C4_EngineMove)
         SearchDepth = (42 - PieceCount);
     }
     Timer = (Sensing.DaysSince2000() * 86400);
-    Repeat Until ((((Sensing.DaysSince2000() * 86400) - Timer) > 3) Or (SearchDepth > (42 - PieceCount)))
+    Repeat Until ((((Sensing.DaysSince2000() * 86400) - Timer) > 2) Or ((SearchDepth > (42 - PieceCount)) Or (abs(Search.Eval) > 900)))
     {
         Call Search(1)((SearchDepth + 1));
+        Call ​​log​​(Operator.Join(SearchDepth, Operator.Join(" : ", Operator.Join(Search.Eval, Operator.Join(" : ", Operator.Join(Search.BestMove, ""))))));
         PrevSearchDepth = SearchDepth;
         SearchDepth += 1;
     }
@@ -164,7 +165,7 @@ Define EvalPositionPattern(string Idx)(string StepIdxDelta)(bool PostProcess) (w
     }
     If PostProcess
     {
-        WinPattern = 0;
+        WinPatternSide = 0;
         Flag = 0;
         If (Count3 == 1)
         {
@@ -172,53 +173,76 @@ Define EvalPositionPattern(string Idx)(string StepIdxDelta)(bool PostProcess) (w
             EmptyFile = (((EmptyIdx - 1) % 7) + 1);
             If (Count1 == 3)
             {
-                WinPattern = 1;
+                WinPatternSide = 1;
+                Refutable = 0;
                 If ((EmptyRank % 2) == 0)
                 {
                     Flag = 1;
+                }
+                If (ColumnHeight[EmptyFile] == (6 - EmptyRank))
+                {
+                    Refutable = 1;
+                    If (WinCols1[EmptyFile] == 0)
+                    {
+                        WinCount1 += 1;
+                        List.ReplaceItem(WinCols1, EmptyFile, 1);
+                    }
                 }
             }
             Else
             {
                 If (Count2 == 3)
                 {
-                    WinPattern = -1;
+                    WinPatternSide = -1;
                     If ((EmptyRank % 2) == 1)
                     {
                         Flag = 1;
                     }
+                    If (ColumnHeight[EmptyFile] == (6 - EmptyRank))
+                    {
+                        Refutable = 1;
+                        If (WinCols2[EmptyFile] == 0)
+                        {
+                            WinCount2 += 1;
+                            List.ReplaceItem(WinCols2, EmptyFile, 1);
+                        }
+                    }
                 }
             }
-            If (Not ((WinPattern == 0)))
+            If (Not ((WinPatternSide == 0)))
             {
-                EvalRes += ((25 + (15 * Flag)) * WinPattern);
-                Rank = WinPatternEmptyRank[EmptyFile];
-                If ((abs(EmptyRank) > abs(Rank)) And (Flag == 1))
+                EvalRes += ((15 + ((15 * Flag) - (10 * (1 - Refutable)))) * WinPatternSide);
+                If (1 == 0)
                 {
-                    List.ReplaceItem(WinPatternEmptyRank, EmptyFile, (EmptyRank * WinPattern));
-                }
-                If ((Not ((Rank == 0))) And (abs(((EmptyRank * WinPattern) - Rank)) == 1))
-                {
-                    EvalRes += (100 * WinPattern);
-                }
-                If (PrevWinPattern == WinPattern)
-                {
-                    EvalRes += (100 * WinPattern);
+                    Rank = WinPatternBestRank[EmptyFile];
+                    If ((EmptyRank > abs(Rank)) And ((Flag == 1) And (Refutable == 0)))
+                    {
+                        List.ReplaceItem(WinPatternBestRank, EmptyFile, (EmptyRank * WinPatternSide));
+                    }
+                    If ((Not ((Rank == 0))) And (abs(((EmptyRank * WinPatternSide) - Rank)) == 1))
+                    {
+                        EvalRes += (20 * WinPatternSide);
+                    }
+                    If (PrevWinPatternSide == WinPatternSide)
+                    {
+                        EvalRes += (20 * WinPatternSide);
+                    }
                 }
             }
         }
-        PrevWinPattern = WinPattern;
+        PrevWinPatternSide = WinPatternSide;
         If (Count3 == 2)
         {
+            Val = 5;
             If (Count1 == 2)
             {
-                EvalRes += 15;
+                EvalRes += Val;
             }
             Else
             {
                 If (Count2 == 2)
                 {
-                    EvalRes += -15;
+                    EvalRes += (0 - Val);
                 }
             }
         }
@@ -357,23 +381,27 @@ Define EvaluatePosition(string Depth) (warp=true)
         EvalRes = TT.Eval;
         Stop(this script);
     }
-    List.DeleteAll(WinPatternEmptyRank);
+    EvalRes = 0;
+    List.DeleteAll(WinPatternBestRank);
+    List.DeleteAll(WinCols1);
+    List.DeleteAll(WinCols2);
     Repeat (7)
     {
-        List.Add(WinPatternEmptyRank, 0);
+        List.Add(WinPatternBestRank, 0);
+        List.Add(WinCols1, 0);
+        List.Add(WinCols2, 0);
     }
-    EmptyCompletions1 = 0;
-    EmptyCompletions2 = 0;
-    EvalRes = 0;
     Count = 0;
-    Idx = 3;
-    Repeat (6)
+    WinCount1 = 0;
+    WinCount2 = 0;
+    Idx = 10;
+    Repeat (4)
     {
         Repeat (3)
         {
             Rank = (floor(((Idx - 1) / 7)) + 1);
             Exp = IdxToExp[Idx];
-            Val = (5 + (10 * (((Rank == 3) Or (Rank == 4)) + (10 * ((Idx % 7) == 4)))));
+            Val = ((0 * ((Rank == 3) Or (Rank == 4))) + (50 * ((Idx % 7) == 4)));
             If ((Board1 % (Exp * 2)) > (Exp - 1))
             {
                 EvalRes += Val;
@@ -395,13 +423,12 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevWinPattern = 0;
+        PrevWinPatternSide = 0;
         Repeat (7)
         {
             Call EvalPositionPattern(Idx)(1)(((((Idx - 1) % 7) + 1) > 3));
             Idx += 1;
         }
-        Idx += 1;
     }
     Idx = 1;
     Repeat (7)
@@ -409,7 +436,7 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevWinPattern = 0;
+        PrevWinPatternSide = 0;
         Repeat (6)
         {
             Call EvalPositionPattern(Idx)(7)((Idx > 21));
@@ -424,7 +451,7 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevWinPattern = 0;
+        PrevWinPatternSide = 0;
         Repeat Until (((Idx % 7) == 0) Or (Idx > 35))
         {
             Call EvalPositionPattern(Idx)(8)((((((Idx - 1) % 7) + 1) > 3) And (Idx > 21)));
@@ -454,7 +481,7 @@ Define EvaluatePosition(string Depth) (warp=true)
         Count1 = 0;
         Count2 = 0;
         Count3 = 0;
-        PrevWinPattern = 0;
+        PrevWinPatternSide = 0;
         Repeat Until (((((Idx - 1) % 7) + 1) == 1) Or (Idx > 35))
         {
             Call EvalPositionPattern(Idx)(6)((((((Idx - 1) % 7) + 1) < 5) And (Idx > 21)));
@@ -477,22 +504,56 @@ Define EvaluatePosition(string Depth) (warp=true)
             }
         }
     }
-    Idx = 1;
-    Repeat (7)
+    If (1 == 0)
     {
-        Rank = WinPatternEmptyRank[Idx];
-        If (Rank > 0)
+        If ((PieceCount - Depth) > 6)
         {
-            EvalRes += 50;
+            Idx = 1;
+            Repeat (7)
+            {
+                Rank = WinPatternBestRank[Idx];
+                If (Rank > 0)
+                {
+                    EvalRes += 60;
+                }
+                Else
+                {
+                    If (Rank < 0)
+                    {
+                        EvalRes += -60;
+                    }
+                }
+                Idx += 1;
+            }
+        }
+    }
+    If ((Depth % 2) == 1)
+    {
+        If (WinCount2 > 0)
+        {
+            EvalRes = (0 - (1000 - (PieceCount + 1)));
         }
         Else
         {
-            If (Rank < 0)
+            If (WinCount1 > 1)
             {
-                EvalRes += -50;
+                EvalRes = (1000 - (PieceCount + 2));
             }
         }
-        Idx += 1;
+    }
+    Else
+    {
+        If (WinCount1 > 0)
+        {
+            EvalRes = (1000 - (PieceCount + 1));
+        }
+        Else
+        {
+            If (WinCount2 > 1)
+            {
+                EvalRes = (0 - (1000 - (PieceCount + 2)));
+            }
+        }
     }
     Call TTStore(Board1)(Board2)(EvalRes)("")("")("")("")("");
 }
@@ -602,51 +663,6 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
     }
     If (List.Length(Tmp) == 0)
     {
-        If (Depth < (MaxDepth - 0))
-        {
-            Flip = 1;
-            Repeat (2)
-            {
-                IdxOuter2 = 1;
-                Repeat (7)
-                {
-                    If (ColumnHeight[IdxOuter2] < 6)
-                    {
-                        IdxOuter1 = (((5 - ColumnHeight[IdxOuter2]) * 7) + IdxOuter2);
-                        If (Flip == 1)
-                        {
-                            If ((Depth % 2) == 1)
-                            {
-                                Call EvaluateWinImpl(Board1)(IdxOuter1);
-                            }
-                            Else
-                            {
-                                Call EvaluateWinImpl(Board2)(IdxOuter1);
-                            }
-                        }
-                        Else
-                        {
-                            If ((Depth % 2) == 1)
-                            {
-                                Call EvaluateWinImpl(Board2)(IdxOuter1);
-                            }
-                            Else
-                            {
-                                Call EvaluateWinImpl(Board1)(IdxOuter1);
-                            }
-                        }
-                        If (EvalRes == 1)
-                        {
-                            List.ReplaceItem(Moves, (((Depth - 1) * 10) + 1), IdxOuter1);
-                            List.ReplaceItem(MovesCount, Depth, 1);
-                            Stop(this script);
-                        }
-                    }
-                    IdxOuter2 += 1;
-                }
-                Flip += 1;
-            }
-        }
     }
     Flag = (List.Length(Tmp1) > 0);
     Delta = 0;
@@ -705,6 +721,7 @@ Define Init (warp=true)
     List.DeleteAll(MovesCount);
     List.DeleteAll(MovesIdx);
     List.DeleteAll(Eval);
+    List.DeleteAll(SearchState);
     List.DeleteAll(Console);
     List.DeleteAll(IdxToExp);
     List.DeleteAll(Board);
@@ -741,6 +758,7 @@ Define Init (warp=true)
         List.Add(Alphas, 0);
         List.Add(Betas, 0);
         List.Add(Eval, 0);
+        List.Add(SearchState, 0);
         Repeat (10)
         {
             List.Add(Moves, 0);
@@ -750,10 +768,6 @@ Define Init (warp=true)
         List.Add(IdxToExp, Operator.Round(e ^(((42 - Idx) * ln(2)))));
         Idx += 1;
     }
-    List.DeleteAll(BoardItemToSymbol);
-    List.Add(BoardItemToSymbol, "⚪");
-    List.Add(BoardItemToSymbol, "🟡");
-    List.Add(BoardItemToSymbol, "🔴");
     PieceCount = 0;
     If (1 == 0)
     {
@@ -824,9 +838,9 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
             List.ReplaceItem(Eval, Depth, EvalRes);
             Stop(this script);
         }
-        If (Depth == MaxDepth)
+        Call EvaluatePosition((Depth - 1));
+        If ((Depth == MaxDepth) Or (abs(EvalRes) > 900))
         {
-            Call EvaluatePosition((Depth - 1));
             List.ReplaceItem(Eval, Depth, EvalRes);
             Stop(this script);
         }
@@ -843,10 +857,34 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
     Repeat (MovesCount[Depth])
     {
         Call ApplyMove(Depth);
-        List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-        List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-        Call Search((Depth + 1))(MaxDepth);
-        Score = Eval[(Depth + 1)];
+        List.ReplaceItem(SearchState, Depth, 0);
+        If ((MovesIdx[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1))
+        {
+            List.ReplaceItem(SearchState, Depth, 1);
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+            }
+            Else
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+            }
+            Call Search((Depth + 1))(MaxDepth);
+            Score = Eval[(Depth + 1)];
+            If ((Score > Alphas[Depth]) And (Score < Betas[Depth]))
+            {
+                List.ReplaceItem(SearchState, Depth, 0);
+            }
+        }
+        If (SearchState[Depth] == 0)
+        {
+            List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+            List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+            Call Search((Depth + 1))(MaxDepth);
+            Score = Eval[(Depth + 1)];
+        }
         Call RevertMove(Depth);
         If ((Depth % 2) == 1)
         {
@@ -894,7 +932,19 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
     {
         List.ReplaceItem(Eval, Depth, Betas[Depth]);
     }
-    Call TTStore(Board1)(Board2)("")(BestMoves[Depth])((MaxDepth - Depth))(Eval[Depth])((MaxDepth - Depth))("E");
+    Val = "E";
+    If (((Betas[Depth] - Alphas[Depth]) == 1) Or (BestMoves[Depth] == ""))
+    {
+        If ((Depth % 2) == 1)
+        {
+            Val = "A";
+        }
+        Else
+        {
+            Val = "B";
+        }
+    }
+    Call TTStore(Board1)(Board2)("")(BestMoves[Depth])((MaxDepth - Depth))(Eval[Depth])((MaxDepth - Depth))(Val);
 }
 
 Define TTProbe(string Board1)(string Board2) (warp=true)
@@ -966,6 +1016,7 @@ Define _ClearLists (warp=true)
     List.DeleteAll(Console);
     List.DeleteAll(IdxToExp);
     List.DeleteAll(Board);
+    List.DeleteAll(SearchState);
     List.DeleteAll(ColumnHeight);
     List.DeleteAll(TT.Board1);
     List.DeleteAll(TT.Board2);
