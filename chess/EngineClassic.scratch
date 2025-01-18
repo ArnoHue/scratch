@@ -117,7 +117,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.742 (18.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.743 (18.01.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -2714,6 +2714,58 @@ Define CalcBoardStats (warp=true)
     List.ReplaceItem(CastlingState, 2, CastlingState[1]);
 }
 
+Define CalculateMaterialImbalance(string Depth) (warp=true)
+{
+    MaterialImbalanceRes = 0;
+    List.DeleteAll(TmpList1);
+    List.DeleteAll(TmpList2);
+    If (BlackBishopCountLocal == 2)
+    {
+        List.Add(TmpList1, 1);
+    }
+    Else
+    {
+        List.Add(TmpList1, 0);
+    }
+    List.Add(TmpList1, BlackPawnCountLocal);
+    List.Add(TmpList1, (BlackMinorCountLocal - (BlackRookCountLocal + BlackBishopCountLocal)));
+    List.Add(TmpList1, BlackBishopCountLocal);
+    List.Add(TmpList1, BlackRookCountLocal);
+    List.Add(TmpList1, BlackQueenCountLocal);
+    If (WhiteBishopCountLocal == 2)
+    {
+        List.Add(TmpList2, 1);
+    }
+    Else
+    {
+        List.Add(TmpList2, 0);
+    }
+    List.Add(TmpList2, WhitePawnCountLocal);
+    List.Add(TmpList2, (WhiteMinorCountLocal - (WhiteRookCountLocal + WhiteBishopCountLocal)));
+    List.Add(TmpList2, WhiteBishopCountLocal);
+    List.Add(TmpList2, WhiteRookCountLocal);
+    List.Add(TmpList2, WhiteQueenCountLocal);
+    Idx = 1;
+    Repeat (6)
+    {
+        CurrentValue = 0;
+        If ((((Depth % 2) == 1) And (List.Length(TmpList1) > 0)) Or (((Depth % 2) == 0) And (List.Length(TmpList2) > 0)))
+        {
+            IdxSub = 1;
+            control_while ?? - probably legacy function from Scratch 2.0;
+            If ((Depth % 2) == 1)
+            {
+                MaterialImbalanceRes += (TmpList1[Idx] * CurrentValue);
+            }
+            Else
+            {
+                MaterialImbalanceRes += (TmpList2[Idx] * CurrentValue);
+            }
+        }
+        Idx += 1;
+    }
+}
+
 Define ClearBoardAttackedByMove(num Depth) (warp=true)
 {
     If ((Depth % 2) == 1)
@@ -4503,11 +4555,11 @@ Define GetBestMoveMedDiff (warp=false)
     {
         If (IsEndgame2 == 0)
         {
-            ThinkTimeLimit = 15;
+            ThinkTimeLimit = 10;
         }
         Else
         {
-            ThinkTimeLimit = 15;
+            ThinkTimeLimit = 10;
         }
     }
     Else
@@ -5811,6 +5863,7 @@ Define InitBoardPhase2 (warp=true)
     Call InitMobilityBonusLookup;
     Call InitKingSafety;
     Call InitPieceSquareTables;
+    Call InitImbalanceLookup;
     Call CalcBoardStats;
     Call InitMovePosLookup((1 == 1));
     Call InitOpeningBook;
@@ -5871,6 +5924,21 @@ Define InitHashLookup (warp=true)
         List.Add(PosPieceHashLookup, Operator.Random((1 - ((65536 * 65536) * (65536 * 1))) , ((65536 * 65536) * (65536 * 1))));
     }
     Call ClearTT;
+}
+
+Define InitImbalanceLookup (warp=true)
+{
+    List.DeleteAll(ImbalanceSameSide);
+    List.DeleteAll(ImbalanceOppSide);
+    List.DeleteAll(ImbalanceFactor);
+    Call LoadList("42, 0,  0,  0, 0, 0, 1, 1,  0,  0, 0, 0, 1, 7, -1,  0, 0, 0, 0, 3,  0,  0, 0, 0, -1, 1,  3, -6, 0, 0, -5, 3,  4, -4, 0, 0")("ImbalanceSameSide");
+    Call LoadList("0, 0,  0,  0, 0, 0,  1, 0,  0,  0, 0, 0, 0, 2,  0,  0, 0, 0, 2, 2,  1,  0, 0, 0,1, 1,  1, -1, 0, 0, 3, 3, -1,  4, 9, 0")("ImbalanceOppSide");
+    If (1 == 0)
+    {
+        Call LoadList("7, 7, 7, 7, 7, 7, 39, 2, 7, 7, 7, 7, 35, 271, -4, 7, 7, 7, 7, 25, 4, 7, 7, 7, -27, -2, 46, 100, 56, 7, 58, 29, 83, 148, -3, -25")("ImbalanceSameSide");
+        Call LoadList("41, 41, 41, 41, 41, 41, 37, 41, 41, 41, 41, 41, 10, 62, 41, 41, 41, 41, 57, 64, 39, 41, 41, 41, 50, 40, 23, -22, 41, 41, 106, 101, 3, 151, 171, 41")("ImbalanceOppSide");
+        Call LoadList("1617, -162, -1172, -190, 105, 26")("ImbalanceFactor");
+    }
 }
 
 Define InitKingSafety (warp=true)
@@ -7306,6 +7374,18 @@ Define LoadList(string Data)(string ListName) (warp=true)
             {
                 List.Add(PawnShelter, Operator.Round((CurrentValue * 1.5)));
             }
+            If (ListName == "ImbalanceSameSide")
+            {
+                List.Add(ImbalanceSameSide, CurrentValue);
+            }
+            If (ListName == "ImbalanceOppSide")
+            {
+                List.Add(ImbalanceOppSide, CurrentValue);
+            }
+            If (ListName == "ImbalanceFactor")
+            {
+                List.Add(ImbalanceFactor, CurrentValue);
+            }
             CurrentValue = "";
         }
         IdxString += 1;
@@ -7487,6 +7567,11 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
             }
         }
         ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (BlackMobBonus[Depth] - WhiteMobBonus[Depth])));
+        Call CalculateMaterialImbalance(1);
+        CountOuter1 = MaterialImbalanceRes;
+        Call CalculateMaterialImbalance(2);
+        CountOuter2 = MaterialImbalanceRes;
+        ScoreCalcRes += Operator.Round(((CountOuter1 - CountOuter2) / 1));
         If (1 == 0)
         {
             CurrentValue = ((GoK_BlackRook + GoK_BlackPawn) - (GoK_BlackKnight + GoK_BlackBishop));
