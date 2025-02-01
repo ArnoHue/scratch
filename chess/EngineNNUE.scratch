@@ -118,7 +118,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.227 (07.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.230 (01.02.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -3137,8 +3137,15 @@ Define GetBestMoveMedDiff (warp=false)
             {
                 IsEvalStable = 0;
                 IsSearchTimeout = 0;
-                AWAlpha = -100000;
-                AWBeta = 100000;
+                AWDelta = (2 * AWDelta);
+                If (Not ((SearchEvalResults[1] > AWAlpha)))
+                {
+                    AWAlpha += (0 - AWDelta);
+                }
+                Else
+                {
+                    AWBeta += AWDelta;
+                }
                 TT.CurrentAge += -1;
             }
             Else
@@ -7537,16 +7544,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
         If Quiescence
         {
-            CurrentValue = 0;
-            If (CheckedState[(Depth - 1)] == 1)
-            {
-                Call IsQuiescentCheckCond(Depth);
-                If (IsQuiescentCheckRes == 1)
-                {
-                    CurrentValue = 1;
-                }
-            }
-            Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth])(CurrentValue);
+            Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth])(0);
         }
         Else
         {
@@ -7859,41 +7857,38 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
 {
     Call //("Late move reduction preparation");
     Search.LmrNonPV.IsReSearchRequired = 1;
-    If ((Not (Quiescence)) And (IsSearchTimeout == 0))
+    If (((Not (Quiescence)) And (Horizon > 2)) And (IsSearchTimeout == 0))
     {
-        If ((((BlackQueenCount + BlackMinorCount) > 0) And ((WhiteQueenCount + WhiteMinorCount) > 0)) And (Horizon > 2))
+        If (((BlackQueenCount + BlackMinorCount) > 0) And ((WhiteQueenCount + WhiteMinorCount) > 0))
         {
             Reduction = 0;
-            If ((PickedMoveCount[Depth] > 1) And (SearchExtension[Depth] == 0))
+            If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
             {
-                If (TargetPieces[Depth] == 0)
-                {
-                    Reduction = ceiling(((log(Horizon) * log(PickedMoveCount[Depth])) / 2));
-                    If ((Betas[Depth] - Alphas[Depth]) == 1)
-                    {
-                        Reduction += 1;
-                    }
-                    Else
-                    {
-                        Reduction += -1;
-                    }
-                    If (CheckedState[Depth] == 1)
-                    {
-                        Reduction += -1;
-                    }
-                    If (Reduction > 2)
-                    {
-                        Reduction = 2;
-                    }
-                    If (Reduction > (Horizon - 1))
-                    {
-                        Reduction = (Horizon - 1);
-                    }
-                    If (Reduction < 0)
-                    {
-                        Reduction = 0;
-                    }
-                }
+                Reduction = floor((1.35 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.75)));
+            }
+            Else
+            {
+                Reduction = floor((0.2 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 3.35)));
+            }
+            If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
+            {
+                Reduction += -1;
+            }
+            If (CheckedState[Depth] == 1)
+            {
+                Reduction += -1;
+            }
+            If (Reduction > 2)
+            {
+                Reduction = 2;
+            }
+            If (Reduction > (Horizon - 1))
+            {
+                Reduction = (Horizon - 1);
+            }
+            If (Reduction < 0)
+            {
+                Reduction = 0;
             }
             Call //("LMR search");
             If (Reduction > 0)
@@ -7913,32 +7908,32 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                 Search.LmrNonPV.IsReSearchRequired = 0;
             }
-            Call //("Non-PV search");
-            If (IsSearchTimeout == 0)
+        }
+        Call //("Non-PV search");
+        If (IsSearchTimeout == 0)
+        {
+            If (((Search.LmrNonPV.IsReSearchRequired == 0) And ((((Depth % 2) == 1) And (Eval > Alphas[Depth])) Or (((Depth % 2) == 0) And (Eval < Betas[Depth])))) Or ((Search.LmrNonPV.IsReSearchRequired == 1) And (((Betas[Depth] - Alphas[Depth]) == 1) Or (PickedMoveCount[Depth] > 1))))
             {
-                If (((Search.LmrNonPV.IsReSearchRequired == 0) And ((((Depth % 2) == 1) And (Eval > Alphas[Depth])) Or (((Depth % 2) == 0) And (Eval < Betas[Depth])))) Or ((Search.LmrNonPV.IsReSearchRequired == 1) And (((Betas[Depth] - Alphas[Depth]) == 1) Or (PickedMoveCount[Depth] > 1))))
+                If ((Depth % 2) == 1)
                 {
-                    If ((Depth % 2) == 1)
-                    {
-                        List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                        List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-                    }
-                    Else
-                    {
-                        List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                        List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    }
-                    Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(((Horizon + SearchExtension[Depth]) - 1));
-                    Eval = SearchEvalResults[(Depth + 1)];
-                    EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
-                    If ((Eval > Alphas[Depth]) And (Eval < Betas[Depth]))
-                    {
-                        Search.LmrNonPV.IsReSearchRequired = 1;
-                    }
-                    Else
-                    {
-                        Search.LmrNonPV.IsReSearchRequired = 0;
-                    }
+                    List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                    List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+                }
+                Else
+                {
+                    List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                    List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+                }
+                Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(((Horizon + SearchExtension[Depth]) - 1));
+                Eval = SearchEvalResults[(Depth + 1)];
+                EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
+                If ((Eval > Alphas[Depth]) And (Eval < Betas[Depth]))
+                {
+                    Search.LmrNonPV.IsReSearchRequired = 1;
+                }
+                Else
+                {
+                    Search.LmrNonPV.IsReSearchRequired = 0;
                 }
             }
         }
@@ -8109,16 +8104,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
         Call TTProbeNode(CurrentBoardHash)(Depth);
         If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
         {
-            CurrentValue = 0;
-            If (CheckedState[(Depth - 1)] == 1)
-            {
-                Call IsQuiescentCheckCond(Depth);
-                If (IsQuiescentCheckRes == 1)
-                {
-                    CurrentValue = 1;
-                }
-            }
-            If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And ((TTProbeNode.QSMeta == "") Or (Not ((TTProbeNode.QSMeta < CurrentValue)))))))
+            If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (CheckedState[(Depth - 1)] == 0))))
             {
                 If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
                 {
