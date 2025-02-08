@@ -117,7 +117,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.819 (07.02.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.820 (07.02.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -3489,74 +3489,167 @@ Define EvaluateBoardExtended2Impl(string Depth) (warp=true)
 
 Define EvaluateBoardExtended3(string Depth) (warp=true)
 {
-    CountOuter2 = (CurrentBoardHash - CurrentBoardHash2);
-    Call GetPiecePosHash(GoK_BlackKing)(BlackKingIdx);
-    CountOuter2 += PiecePosHash;
-    Call GetPiecePosHash(GoK_WhiteKing)(WhiteKingIdx);
-    CountOuter2 += PiecePosHash;
-    Call TTProbeBoard(CountOuter2);
+    Call TTProbeBoard(CurrentBoardHash);
     If ((TTProbeRes == 1) And (Not ((TTProbeBoardScore3Res == ""))))
     {
         EvalExtendedResult3 = TTProbeBoardScore3Res;
         Stop(this script);
     }
     Call EvaluateBoardExtended3Impl(Depth);
-    Call TTStoreBoard(CountOuter2)("")("")(EvalExtendedResult3)("");
+    CountOuter1 = ((WhiteQueenCountLocal * 9) + (WhiteMinorCountLocal * 4));
+    CountOuter2 = ((BlackQueenCountLocal * 9) + (BlackMinorCountLocal * 4));
+    If (CountOuter1 > CountOuter2)
+    {
+        CountOuter1 = CountOuter2;
+    }
+    If ((IsEndgame == 1) Or (CountOuter1 < 10))
+    {
+        EvalExtendedResult3 = Operator.Round((EvalExtendedResult3 / 16));
+    }
+    Else
+    {
+        CountOuter1 += -9;
+        EvalExtendedResult3 = Operator.Round(((((EvalExtendedResult3 * EvalExtendedResult3) / 2048) * (CountOuter1 / 24)) + ((EvalExtendedResult3 / 16) * ((24 - CountOuter1) / 24))));
+    }
+    Call TTStoreBoard(CurrentBoardHash)("")("")(EvalExtendedResult3)("");
 }
 
 Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
 {
-    Call //("Positional evaluation: king tropism");
     EvalExtendedResult3 = 0;
-    If (IsEndgame == 1)
-    {
-        Stop(this script);
-    }
+    Call ClearBoardAttackedByMove((Depth + 1));
     SourceIdx = 1;
     Repeat (64)
     {
-        CurrentPiece2 = Board[(SourceIdx + 0)];
-        CurrentPiece = abs(CurrentPiece2);
-        If ((CurrentPiece > GoK_BlackPawn) And (CurrentPiece < GoK_BlackKing))
+        CurrentPiece = Board[SourceIdx];
+        If ((abs(CurrentPiece) > GoK_BlackPawn) And ((Depth % 2) == (CurrentPiece > 0)))
         {
-            If (CurrentPiece2 > 0)
-            {
-                TargetIdx = WhiteKingIdx;
-            }
-            Else
-            {
-                TargetIdx = BlackKingIdx;
-            }
-            CurrentValue = (14 - (abs((IdxToFile[SourceIdx] - IdxToFile[TargetIdx])) + abs((IdxToRank[SourceIdx] - IdxToRank[TargetIdx]))));
-            If ((CurrentPiece == GoK_BlackRook) Or (CurrentPiece == GoK_BlackBishop))
-            {
-                CurrentValue = Operator.Round((CurrentValue * 2));
-            }
-            Else
-            {
-                If (CurrentPiece == GoK_BlackKnight)
-                {
-                    CurrentValue = Operator.Round((CurrentValue * 2.5));
-                }
-                Else
-                {
-                    If (CurrentPiece == GoK_BlackQueen)
-                    {
-                        CurrentValue = (CurrentValue * 3);
-                    }
-                }
-            }
-            If (CurrentPiece2 > 0)
-            {
-                EvalExtendedResult3 += CurrentValue;
-            }
-            Else
-            {
-                EvalExtendedResult3 += (0 - CurrentValue);
-            }
+            Call GenerateMovesForSource((Depth + 1))(SourceIdx)((1 == 1))((1 == 0));
         }
         SourceIdx += 1;
     }
+    Call ClearBoardAttackedByMove((Depth + 2));
+    SourceIdx = 1;
+    Repeat (64)
+    {
+        CurrentPiece = Board[SourceIdx];
+        If ((abs(CurrentPiece) > GoK_BlackPawn) And (Not (((Depth % 2) == (CurrentPiece > 0)))))
+        {
+            Call GenerateMovesForSource((Depth + 2))(SourceIdx)((1 == 1))((1 == 0));
+        }
+        SourceIdx += 1;
+    }
+    List.DeleteAll(KingRingAttackersCount);
+    List.DeleteAll(KingRingAttacksCount);
+    List.DeleteAll(KingRingAttacksWeight);
+    List.DeleteAll(KingRingAttacksOnWeakCount);
+    List.DeleteAll(KingRingAttacksBishopDefenders);
+    List.DeleteAll(KingRingAttacksKnightDefenders);
+    Repeat (2)
+    {
+        List.Add(KingRingAttackersCount, 0);
+        List.Add(KingRingAttacksCount, 0);
+        List.Add(KingRingAttacksWeight, 0);
+        List.Add(KingRingAttacksOnWeakCount, 0);
+        List.Add(KingRingAttacksBishopDefenders, 0);
+        List.Add(KingRingAttacksKnightDefenders, 0);
+    }
+    List.DeleteAll(AttacksWeight);
+    List.Add(AttacksWeight, 0);
+    List.Add(AttacksWeight, 36);
+    List.Add(AttacksWeight, 26);
+    List.Add(AttacksWeight, 21);
+    List.Add(AttacksWeight, 5);
+    List.Add(AttacksWeight, 0);
+    Side = 1;
+    Repeat (2)
+    {
+        List.DeleteAll(TmpList1);
+        Rank = -1;
+        Repeat (3)
+        {
+            File = -1;
+            Repeat (3)
+            {
+                If (Side == 1)
+                {
+                    Idx = BlackKingIdx;
+                }
+                Else
+                {
+                    Idx = WhiteKingIdx;
+                }
+                If (Not ((((((IdxToFile[Idx] == 1) And (File == -1)) Or ((IdxToFile[Idx] == 8) And (File == 1))) Or (((IdxToRank[Idx] == 1) And (Rank == -1)) Or ((IdxToRank[Idx] == 8) And (Rank == 1)))) Or ((File == 0) And (Rank == 0)))))
+                {
+                    IsWeak = 0;
+                    Idx = (Idx + ((Rank * 8) + File));
+                    If (Side == 1)
+                    {
+                        Count = BoardAttackedByWhite[Idx];
+                        IdxSub = BoardAttackedByWhitePiece[Idx];
+                        DefenderPiece = Board[BoardAttackedByBlackPiece[Idx]];
+                        If ((BoardAttackedByBlack[Idx] < 2) Or (DefenderPiece == GoK_BlackQueen))
+                        {
+                            IsWeak = 1;
+                        }
+                    }
+                    Else
+                    {
+                        Count = BoardAttackedByBlack[Idx];
+                        IdxSub = BoardAttackedByBlackPiece[Idx];
+                        DefenderPiece = Board[BoardAttackedByWhitePiece[Idx]];
+                        If ((BoardAttackedByWhite[Idx] < 2) Or (DefenderPiece == GoK_WhiteQueen))
+                        {
+                            IsWeak = 1;
+                        }
+                    }
+                    If (Count > 0)
+                    {
+                        List.ReplaceItem(KingRingAttacksCount, Side, (KingRingAttacksCount[Side] + 1));
+                        List.ReplaceItem(KingRingAttacksWeight, Side, (KingRingAttacksWeight[Side] + AttacksWeight[PieceIdxLookup[abs(Board[IdxSub])]]));
+                        If (IsWeak == 1)
+                        {
+                            List.ReplaceItem(KingRingAttacksOnWeakCount, Side, (KingRingAttacksOnWeakCount[Side] + 1));
+                        }
+                        If (Not (List.ContainsItem(TmpList1, IdxSub)))
+                        {
+                            List.ReplaceItem(KingRingAttackersCount, Side, (KingRingAttackersCount[Side] + 1));
+                            List.Add(TmpList1, IdxSub);
+                        }
+                        If (abs(DefenderPiece) == GoK_BlackBishop)
+                        {
+                            List.ReplaceItem(KingRingAttacksBishopDefenders, Side, (KingRingAttacksBishopDefenders[Side] + 1));
+                        }
+                        Else
+                        {
+                            If (abs(DefenderPiece) == GoK_BlackKnight)
+                            {
+                                List.ReplaceItem(KingRingAttacksKnightDefenders, Side, (KingRingAttacksKnightDefenders[Side] + 1));
+                            }
+                        }
+                    }
+                }
+                File += 1;
+            }
+            Rank += 1;
+        }
+        CurrentValue = 0;
+        CurrentValue += (KingRingAttacksWeight[Side] * KingRingAttackersCount[Side]);
+        CurrentValue += (32 * KingRingAttacksCount[Side]);
+        CurrentValue += (86 * KingRingAttacksOnWeakCount[Side]);
+        CurrentValue += (47 * KingRingAttacksKnightDefenders[Side]);
+        CurrentValue += (18 * KingRingAttacksBishopDefenders[Side]);
+        If (Side == 1)
+        {
+            EvalExtendedResult3 += (0 - CurrentValue);
+        }
+        Else
+        {
+            EvalExtendedResult3 += CurrentValue;
+        }
+        Side += 1;
+    }
+    EvalExtendedResult3 += (300 * (BlackQueenCountLocal - WhiteQueenCountLocal));
 }
 
 Define ExecuteEngineMove (warp=false)
@@ -9288,3 +9381,4 @@ Define _ClearLists (warp=true)
     List.DeleteItem(TTNodeCheckedAttackLines, all);
     List.DeleteItem(TTNodeScoreIsDynamic, all);
 }
+
