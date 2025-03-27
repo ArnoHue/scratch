@@ -117,7 +117,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9047 (26.03.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9048 (26.03.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -1420,7 +1420,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 IsReductionAndDone = 0;
                 If (((Not (Quiescence)) And (((MaxDepth + PlyExtension[Depth]) - Depth) > 2)) And (IsMinMaxTimeout == 0))
                 {
-                    If ((((MaxDepth - Depth) > 2) And ((1 == 1) Or (((WhiteQueenCount > 0) Or (WhiteMinorCount > 1)) Or ((BlackQueenCount > 0) Or (BlackMinorCount > 1))))) And (PlyExtension[Depth] == 0))
+                    If ((((MaxDepth - Depth) > 2) And ((1 == 0) Or (((WhiteQueenCount > 0) Or (WhiteMinorCount > 1)) Or ((BlackQueenCount > 0) Or (BlackMinorCount > 1))))) And (PlyExtension[Depth] == 0))
                     {
                         Reduction = 0;
                         Idx = 0;
@@ -2997,6 +2997,7 @@ Define ClearTTImpl(string Size) (warp=true)
     List.DeleteItem(TTBoardAge, all);
     List.DeleteItem(TTBoardHash, all);
     List.DeleteItem(TTBoardScore1, all);
+    List.DeleteItem(TTBoardScore1Eg, all);
     List.DeleteItem(TTBoardScore2, all);
     List.DeleteItem(TTBoardScore3, all);
     List.DeleteItem(TTBoardScoreSum, all);
@@ -3022,6 +3023,7 @@ Define ClearTTImpl(string Size) (warp=true)
         List.Add(TTBoardAge, 0);
         List.Add(TTBoardHash, 0);
         List.Add(TTBoardScore1, "");
+        List.Add(TTBoardScore1Eg, "");
         List.Add(TTBoardScore2, "");
         List.Add(TTBoardScore3, "");
         List.Add(TTBoardScoreSum, "");
@@ -3092,20 +3094,24 @@ Define EvaluateBoard (warp=true)
 Define EvaluateBoardExtended1(string Depth) (warp=true)
 {
     Call //("Positional evaluation: king and pawn structure");
-    Call TTProbeBoard(CurrentBoardHash2);
-    If ((TTProbeRes == 1) And (Not ((TTProbeBoardScore1Res == ""))))
+    Call TTProbeBoard((CurrentBoardHash2 + ((((WhiteQueenCountLocal > 0) * 2) + (BlackQueenCountLocal > 0)) * floor((List.Length(TTBoardHash) / 4)))));
+    If ((TTProbeRes == 1) And ((Not ((TTProbeBoardScore1Res == ""))) And (Not ((TTProbeBoardScore1EgRes == "")))))
     {
-        EvalExtendedResult1 = TTProbeBoardScore1Res;
-        Stop(this script);
+        EvalResult = TTProbeBoardScore1Res;
+        EvalExtendedResult1 = TTProbeBoardScore1EgRes;
     }
-    Call //("Tapered evaluation, interpolating between midgame and game");
-    TmpOuter = IsEndgame;
-    IsEndgame = 0;
-    Call EvaluateBoardExtended1Impl(Depth);
-    EvalResult = EvalExtendedResult1;
-    IsEndgame = 1;
-    Call EvaluateBoardExtended1Impl(Depth);
-    IsEndgame = TmpOuter;
+    Else
+    {
+        Call //("Tapered evaluation, interpolating between midgame and game");
+        TmpOuter = IsEndgame;
+        IsEndgame = 0;
+        Call EvaluateBoardExtended1Impl(Depth);
+        EvalResult = EvalExtendedResult1;
+        IsEndgame = 1;
+        Call EvaluateBoardExtended1Impl(Depth);
+        IsEndgame = TmpOuter;
+        Call TTStoreBoard((CurrentBoardHash2 + ((((WhiteQueenCountLocal > 0) * 2) + (BlackQueenCountLocal > 0)) * floor((List.Length(TTBoardHash) / 4)))))(EvalResult)("")("")("")(EvalExtendedResult1);
+    }
     CountOuter1 = (((WhiteQueenCountLocal * 14) + ((WhiteRookCountLocal * 6) + ((WhiteMinorCountLocal - WhiteRookCountLocal) * 3))) + ((BlackQueenCountLocal * 14) + ((BlackRookCountLocal * 6) + ((BlackMinorCountLocal - BlackRookCountLocal) * 3))));
     If (CountOuter1 > 76)
     {
@@ -3117,7 +3123,6 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
     }
     CountOuter1 += -8;
     EvalExtendedResult1 = Operator.Round(((EvalResult * (CountOuter1 / 68)) + (EvalExtendedResult1 * ((68 - CountOuter1) / 68))));
-    Call TTStoreBoard(CurrentBoardHash2)(EvalExtendedResult1)("")("")("");
 }
 
 Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
@@ -3260,7 +3265,8 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
                     }
                 }
             }
-            Blocked = (Board[(((WhitePawnForwardRank - 1) * 8) + (Idx - 8))] == GoK_BlackPawn);
+            CurrentPiece = Board[(((WhitePawnForwardRank - 1) * 8) + (Idx - 8))];
+            Blocked = ((CurrentPiece == GoK_BlackPawn) Or ((IsEndgame == 1) And (CurrentPiece == GoK_BlackBishop)));
             EvalExtendedResult1 += (10 * Blocked);
             If (((Idx == 1) Or (WhitePawnCount[(Idx - 1)] == 0)) And ((Idx == 8) Or (WhitePawnCount[(Idx + 1)] == 0)))
             {
@@ -3326,7 +3332,8 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
                     }
                 }
             }
-            Blocked = (Board[(((BlackPawnForwardRank - 1) * 8) + (Idx + 8))] == GoK_WhitePawn);
+            CurrentPiece = Board[(((BlackPawnForwardRank - 1) * 8) + (Idx + 8))];
+            Blocked = ((CurrentPiece == GoK_WhitePawn) Or ((IsEndgame == 1) And (CurrentPiece == GoK_WhiteBishop)));
             EvalExtendedResult1 += (-10 * Blocked);
             If (((Idx == 1) Or (BlackPawnCount[(Idx - 1)] == 0)) And ((Idx == 8) Or (BlackPawnCount[(Idx + 1)] == 0)))
             {
@@ -3380,7 +3387,7 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
                 }
             }
         }
-        EvalExtendedResult1 += Operator.Round((CurrentValue2 * ((0.5 + (WhiteQueenCountLocal * 0.5)) * 1)));
+        EvalExtendedResult1 += Operator.Round((CurrentValue2 * ((0.4 + (WhiteQueenCountLocal * 0.6)) * 1)));
         Call GetKingProtection(WhiteKingIdx)((1 == 0));
         CurrentValue2 = KingProtection;
         If ((Operator.LetterOf(CastlingState[Depth], 5) == 0) And (Operator.LetterOf(CastlingState[Depth], 6) == 0))
@@ -3404,7 +3411,7 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
                 }
             }
         }
-        EvalExtendedResult1 += (0 - Operator.Round((CurrentValue2 * ((0.5 + (BlackQueenCountLocal * 0.5)) * 1))));
+        EvalExtendedResult1 += (0 - Operator.Round((CurrentValue2 * ((0.4 + (BlackQueenCountLocal * 0.6)) * 1))));
     }
 }
 
@@ -3439,7 +3446,7 @@ Define EvaluateBoardExtended2(string Depth) (warp=true)
     }
     CountOuter1 += -8;
     EvalExtendedResult2 = Operator.Round(((EvalResult * (CountOuter1 / 68)) + (EvalExtendedResult2 * ((68 - CountOuter1) / 68))));
-    Call TTStoreBoard(CurrentBoardHash)("")(EvalExtendedResult2)("")("");
+    Call TTStoreBoard(CurrentBoardHash)("")(EvalExtendedResult2)("")("")("");
 }
 
 Define EvaluateBoardExtended2Impl(string Depth) (warp=true)
@@ -3632,19 +3639,19 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
             CurrentValue = (14 - (abs((IdxToFile[SourceIdx] - IdxToFile[TargetIdx])) + abs((IdxToRank[SourceIdx] - IdxToRank[TargetIdx]))));
             If ((CurrentPiece == GoK_BlackRook) Or (CurrentPiece == GoK_BlackBishop))
             {
-                CurrentValue = Operator.Round((CurrentValue * 1.5));
+                CurrentValue = Operator.Round((CurrentValue * 2.5));
             }
             Else
             {
                 If (CurrentPiece == GoK_BlackKnight)
                 {
-                    CurrentValue = Operator.Round((CurrentValue * 2));
+                    CurrentValue = Operator.Round((CurrentValue * 3));
                 }
                 Else
                 {
                     If (CurrentPiece == GoK_BlackQueen)
                     {
-                        CurrentValue = Operator.Round((CurrentValue * 2.5));
+                        CurrentValue = Operator.Round((CurrentValue * 3.5));
                     }
                 }
             }
@@ -3670,7 +3677,7 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
     }
     CountOuter1 += -8;
     EvalExtendedResult3 = Operator.Round(((EvalExtendedResult3 * 0.5) + ((EvalExtendedResult3 * (CountOuter1 / 68)) * 0.5)));
-    Call TTStoreBoard(CurrentBoardHash)("")("")(EvalExtendedResult3)("");
+    Call TTStoreBoard(CurrentBoardHash)("")("")(EvalExtendedResult3)("")("");
 }
 
 Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
@@ -5033,7 +5040,7 @@ Define GetBestMoveMedDiff (warp=false)
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 25);
-    List.Add(AWSize, 35);
+    List.Add(AWSize, 30);
     List.Add(AWSize, 100);
     List.Add(AWSize, 325);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
@@ -6726,6 +6733,7 @@ Define InitMovePosLookup(bool Init) (warp=true)
             Repeat (List.Length(TTBoardScoreSum))
             {
                 List.ReplaceItem(TTBoardScore1, IdxOuter, "");
+                List.ReplaceItem(TTBoardScore1Eg, IdxOuter, "");
                 List.ReplaceItem(TTBoardScore2, IdxOuter, "");
                 List.ReplaceItem(TTBoardScore3, IdxOuter, "");
                 List.ReplaceItem(TTBoardScoreSum, IdxOuter, "");
@@ -7311,7 +7319,7 @@ Define IsReachableForRook(string FromIdx)(string ToIdx) (warp=true)
     Repeat (MovePathDelta[((FromIdx * 100) + ToIdx)])
     {
         TargetIdx += IdxInc;
-        If (Not ((Board[TargetIdx] == 0)))
+        If ((abs(Board[TargetIdx]) == GoK_BlackKing) Or (abs(Board[TargetIdx]) == GoK_BlackPawn))
         {
             Stop(this script);
         }
@@ -7340,7 +7348,7 @@ Define IsTrappedRook(string RookIdx) (warp=true)
                 IsTrapped = 0;
                 Stop(this script);
             }
-            If (Not ((Board[(RookIdx + 8)] == 0)))
+            If (Board[(RookIdx + 8)] == 0)
             {
                 IsTrapped = 0;
                 Stop(this script);
@@ -7365,7 +7373,7 @@ Define IsTrappedRook(string RookIdx) (warp=true)
                 IsTrapped = 0;
                 Stop(this script);
             }
-            If ((Not ((Board[(RookIdx + 8)] == 0))) And (Not ((Board[(RookIdx + 16)] == 0))))
+            If ((Board[(RookIdx + 8)] == 0) And (Board[(RookIdx + 16)] == 0))
             {
                 IsTrapped = 0;
                 Stop(this script);
@@ -7398,7 +7406,7 @@ Define IsTrappedRook(string RookIdx) (warp=true)
                 IsTrapped = 0;
                 Stop(this script);
             }
-            If (Not ((Board[(RookIdx - 8)] == 0)))
+            If (Board[(RookIdx - 8)] == 0)
             {
                 IsTrapped = 0;
                 Stop(this script);
@@ -7423,7 +7431,7 @@ Define IsTrappedRook(string RookIdx) (warp=true)
                 IsTrapped = 0;
                 Stop(this script);
             }
-            If ((Not ((Board[(RookIdx - 8)] == 0))) And (Not ((Board[(RookIdx - 16)] == 0))))
+            If ((Board[(RookIdx - 8)] == 0) And (Board[(RookIdx - 16)] == 0))
             {
                 IsTrapped = 0;
                 Stop(this script);
@@ -7717,7 +7725,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         {
             List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
         }
-        If (((SourcePieceOuter == GoK_BlackPawn) Or (SourcePieceOuter == GoK_BlackKing)) Or ((abs(TargetPieces[Depth]) == GoK_BlackPawn) Or (Not ((PromotionPieces[Depth] == 0)))))
+        If ((((SourcePieceOuter == GoK_BlackPawn) Or (SourcePieceOuter == GoK_BlackKing)) Or (SourcePieceOuter == GoK_BlackRook)) Or (((abs(TargetPieces[Depth]) == GoK_BlackPawn) Or ((abs(TargetPieces[Depth]) == GoK_BlackRook) Or (abs(TargetPieces[Depth]) == GoK_BlackQueen))) Or (Not ((PromotionPieces[Depth] == 0)))))
         {
             Call EvaluateBoardExtended1(Depth);
             List.ReplaceItem(EvalExtended1, Depth, EvalExtendedResult1);
@@ -7774,7 +7782,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
             }
         }
         Call OnScoreCalcPostProcess(Depth);
-        Call TTStoreBoard(CurrentBoardHash)("")("")("")(ScoreCalcRes);
+        Call TTStoreBoard(CurrentBoardHash)("")("")("")(ScoreCalcRes)("");
         Call OnScoreCaldPostProcessFixups(Depth);
     }
     If (IsBlockProfilerEnabled == 1)
@@ -7914,11 +7922,11 @@ Define OnScoreCaldPostProcessFixups(string Depth) (warp=true)
     Call //("Tempo");
     If ((Depth % 2) == 1)
     {
-        ScoreCalcRes += -5;
+        ScoreCalcRes += -9;
     }
     Else
     {
-        ScoreCalcRes += 5;
+        ScoreCalcRes += 9;
     }
 }
 
@@ -9042,6 +9050,7 @@ Define TTProbeBoard(string BoardHash) (warp=true)
     }
     TTProbeRes = 1;
     TTProbeBoardScore1Res = TTBoardScore1[HashBucket];
+    TTProbeBoardScore1EgRes = TTBoardScore1Eg[HashBucket];
     TTProbeBoardScore2Res = TTBoardScore2[HashBucket];
     TTProbeBoardScore3Res = TTBoardScore3[HashBucket];
     TTProbeBoardScoreSumRes = TTBoardScoreSum[HashBucket];
@@ -9092,7 +9101,7 @@ Define TTProbeNodeImpl(string BoardHash) (warp=true)
     TTProbeNodeAgeRes = TTNodeAge[HashBucket];
 }
 
-Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum) (warp=true)
+Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum)(string BoardScore1Eg) (warp=true)
 {
     HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
     Idx = 1;
@@ -9120,6 +9129,7 @@ Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(st
         List.ReplaceItem(TTBoardAge, HashBucket, TTCurrentAge);
         List.ReplaceItem(TTBoardHash, HashBucket, BoardHash);
         List.ReplaceItem(TTBoardScore1, HashBucket, BoardScore1);
+        List.ReplaceItem(TTBoardScore1Eg, HashBucket, BoardScore1Eg);
         List.ReplaceItem(TTBoardScore2, HashBucket, BoardScore2);
         List.ReplaceItem(TTBoardScore3, HashBucket, BoardScore3);
         List.ReplaceItem(TTBoardScoreSum, HashBucket, BoardScoreSum);
@@ -9129,6 +9139,10 @@ Define TTStoreBoard(string BoardHash)(string BoardScore1)(string BoardScore2)(st
         If (Not ((BoardScore1 == "")))
         {
             List.ReplaceItem(TTBoardScore1, HashBucket, BoardScore1);
+        }
+        If (Not ((BoardScore1Eg == "")))
+        {
+            List.ReplaceItem(TTBoardScore1Eg, HashBucket, BoardScore1Eg);
         }
         If (Not ((BoardScore2 == "")))
         {
@@ -9436,6 +9450,7 @@ Define _ClearLists (warp=true)
     List.DeleteItem(TTBoardAge, all);
     List.DeleteItem(TTBoardHash, all);
     List.DeleteItem(TTBoardScore1, all);
+    List.DeleteItem(TTBoardScore1Eg, all);
     List.DeleteItem(TTBoardScore2, all);
     List.DeleteItem(TTBoardScore3, all);
     List.DeleteItem(TTBoardScoreSum, all);
