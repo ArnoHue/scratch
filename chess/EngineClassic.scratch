@@ -117,7 +117,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9086 (29.03.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9089 (29.03.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -504,6 +504,10 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
                 IsWhiteChecked = 1;
                 List.Add(KingAttackLines, SourceIdx);
             }
+            If ((Not ((Board[TargetIdx] > 0))) And (BoardAttackedByWhite[TargetIdx] == 0))
+            {
+                List.ReplaceItem(PieceMobility, SourceIdx, (PieceMobility[SourceIdx] + 1));
+            }
         }
         Else
         {
@@ -519,6 +523,10 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             {
                 IsBlackChecked = 1;
                 List.Add(KingAttackLines, SourceIdx);
+            }
+            If ((Not ((Board[TargetIdx] < 0))) And (BoardAttackedByBlack[TargetIdx] == 0))
+            {
+                List.ReplaceItem(PieceMobility, SourceIdx, (PieceMobility[SourceIdx] + 1));
             }
         }
         Stop(this script);
@@ -552,26 +560,6 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             Call AddSpecialMove((CurrentMove + 0.3))(Depth);
             Call AddSpecialMove((CurrentMove + 0.4))(Depth);
             Stop(this script);
-        }
-    }
-    Else
-    {
-        If (Not (CapturesOnly))
-        {
-            If ((Depth % 2) == 1)
-            {
-                If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[Depth], TargetIdx) == 0)
-                {
-                    List.ReplaceItem(PieceMobility, SourceIdx, (PieceMobility[SourceIdx] + 1));
-                }
-            }
-            Else
-            {
-                If (Operator.LetterOf(BoardAttackedByBlackSnapshot[Depth], TargetIdx) == 0)
-                {
-                    List.ReplaceItem(PieceMobility, SourceIdx, (PieceMobility[SourceIdx] + 1));
-                }
-            }
         }
     }
     List.Add(CalcMovesMoveList, CurrentMove);
@@ -1108,7 +1096,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(BoardAttackedCalculated, 1, 1);
         Call GenerateMovesImplWrapper(1)((1 == 0))((1 == 0));
         Call GenerateMovesImplWrapper(2)((1 == 0))((1 == 0));
-        List.ReplaceItem(WhiteMobBonus, 1, WhiteMobBonus[2]);
         List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
     }
     Else
@@ -1120,8 +1107,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
         List.ReplaceItem(CheckedStateAttackLines, Depth, "");
-        List.ReplaceItem(BlackMobBonus, Depth, BlackMobBonus[(Depth - 1)]);
-        List.ReplaceItem(WhiteMobBonus, Depth, WhiteMobBonus[(Depth - 1)]);
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
     }
     List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
@@ -1387,7 +1372,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
                 If (Not ((FutilityMargin == "")))
                 {
-                    ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[(Depth - 1)] + EvalExtended2[(Depth - 1)]) + EvalExtended3[(Depth - 1)])) + (((PosScoreDeltaSum[(Depth - 1)] + PosScoreDelta[(Depth + 0)]) - (CapturesDeltaSum[(Depth - 1)] + (TargetPieces[(Depth + 0)] - PromotionPieces[(Depth + 0)]))) + (BlackMobBonus[(Depth + 0)] - WhiteMobBonus[(Depth + 0)])));
+                    ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[(Depth - 1)] + EvalExtended2[(Depth - 1)]) + EvalExtended3[(Depth - 1)])) + (((PosScoreDeltaSum[(Depth - 1)] + PosScoreDelta[(Depth + 0)]) - (CapturesDeltaSum[(Depth - 1)] + (TargetPieces[(Depth + 0)] - PromotionPieces[(Depth + 0)]))) + 0));
                     If ((((Depth % 2) == 1) And (Not (((ScoreCalcRes + FutilityMargin) > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not (((ScoreCalcRes - FutilityMargin) < Betas[(Depth + 0)])))))
                     {
                         IsFutile = 1;
@@ -3596,14 +3581,31 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
     }
     Call //("Tapered evaluation, interpolating between midgame and game");
     Call EvaluateBoardExtended3Impl(Depth);
+    If ((((WhiteQueenCount + WhiteMinorCount) + (BlackQueenCount + BlackMinorCount)) < 3) And ((WhiteQueenCount == 0) Or (BlackQueenCount == 0)))
+    {
+        If ((BlackQueenCountLocal + BlackMinorCountLocal) < (WhiteQueenCountLocal + WhiteMinorCountLocal))
+        {
+            EvalExtendedResult3 += (PieceMobility[SourceIdx] * 10);
+        }
+        If ((WhiteQueenCountLocal + WhiteMinorCountLocal) < (BlackQueenCountLocal + BlackMinorCountLocal))
+        {
+            EvalExtendedResult3 += (PieceMobility[SourceIdx] * -10);
+        }
+    }
     Call TTStoreBoard(CurrentBoardHash)("")("")(EvalExtendedResult3)("")("");
 }
 
 Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
 {
     Call TaperedEval.Init;
+    List.DeleteAll(PieceMobility);
+    Repeat (64)
+    {
+        List.Add(PieceMobility, 0);
+    }
     Call CalcBoardAttackedByMove((Depth + 1));
     Call CalcBoardAttackedByMove((Depth + 2));
+    Call CalcBoardAttackedByMove((Depth + 1));
     Idx = 1;
     Repeat (64)
     {
@@ -3815,11 +3817,12 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
         SourceIdx = 1;
         Repeat (64)
         {
-            CurrentPiece2 = Board[(SourceIdx + 0)];
-            CurrentPiece = abs(CurrentPiece2);
-            If ((CurrentPiece > GoK_BlackPawn) And (CurrentPiece < GoK_BlackKing))
+            CurrentPiece = Board[(SourceIdx + 0)];
+            CurrentPieceAbs = abs(CurrentPiece);
+            If ((CurrentPieceAbs > GoK_BlackPawn) And (CurrentPieceAbs < GoK_BlackKing))
             {
-                If (CurrentPiece2 > 0)
+                Factor = (((CurrentPiece > 0) * 2) - 1);
+                If (CurrentPiece > 0)
                 {
                     TargetIdx = WhiteKingIdx;
                 }
@@ -3828,31 +3831,34 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                     TargetIdx = BlackKingIdx;
                 }
                 CurrentValue = (14 - (abs((IdxToFile[SourceIdx] - IdxToFile[TargetIdx])) + abs((IdxToRank[SourceIdx] - IdxToRank[TargetIdx]))));
-                If ((CurrentPiece == GoK_BlackRook) Or (CurrentPiece == GoK_BlackBishop))
+                If (CurrentPieceAbs == GoK_BlackRook)
                 {
-                    CurrentValue = Operator.Round((CurrentValue * 2.5));
+                    Call TaperedEval.Add(Operator.Round(((CurrentValue * 2) * Factor)))(0);
+                    Call TaperedEval.Add((RookMobilityBonus[((PieceMobility[SourceIdx] * 2) + 1)] * Factor))((RookMobilityBonus[((PieceMobility[SourceIdx] * 2) + 2)] * Factor));
                 }
                 Else
                 {
-                    If (CurrentPiece == GoK_BlackKnight)
+                    If (CurrentPieceAbs == GoK_BlackBishop)
                     {
-                        CurrentValue = Operator.Round((CurrentValue * 3));
+                        Call TaperedEval.Add(Operator.Round(((CurrentValue * 2) * Factor)))(0);
+                        Call TaperedEval.Add((BishopMobilityBonus[((PieceMobility[SourceIdx] * 2) + 1)] * Factor))((BishopMobilityBonus[((PieceMobility[SourceIdx] * 2) + 2)] * Factor));
                     }
                     Else
                     {
-                        If (CurrentPiece == GoK_BlackQueen)
+                        If (CurrentPieceAbs == GoK_BlackKnight)
                         {
-                            CurrentValue = Operator.Round((CurrentValue * 3.5));
+                            Call TaperedEval.Add(Operator.Round(((CurrentValue * 2.5) * Factor)))(0);
+                            Call TaperedEval.Add((KnightMobilityBonus[((PieceMobility[SourceIdx] * 2) + 1)] * Factor))((KnightMobilityBonus[((PieceMobility[SourceIdx] * 2) + 2)] * Factor));
+                        }
+                        Else
+                        {
+                            If (CurrentPieceAbs == GoK_BlackQueen)
+                            {
+                                Call TaperedEval.Add(Operator.Round(((CurrentValue * 3) * Factor)))(0);
+                                Call TaperedEval.Add((QueenMobilityBonus[((PieceMobility[SourceIdx] * 2) + 1)] * Factor))((QueenMobilityBonus[((PieceMobility[SourceIdx] * 2) + 2)] * Factor));
+                            }
                         }
                     }
-                }
-                If (CurrentPiece2 > 0)
-                {
-                    Call TaperedEval.Add(CurrentValue)(0);
-                }
-                Else
-                {
-                    Call TaperedEval.Add((0 - CurrentValue))(0);
                 }
             }
             SourceIdx += 1;
@@ -4791,19 +4797,6 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
                 }
             }
         }
-        If IsBlackMove
-        {
-            List.ReplaceItem(BlackMobBonus, Depth, 0);
-        }
-        Else
-        {
-            List.ReplaceItem(WhiteMobBonus, Depth, 0);
-        }
-        List.DeleteAll(PieceMobility);
-        Repeat (64)
-        {
-            List.Add(PieceMobility, 0);
-        }
     }
     List.DeleteAll(CalcMovesScoreList);
     List.DeleteAll(CalcMovesMoveList);
@@ -4818,47 +4811,6 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
             If (CurrentPiece > 0)
             {
                 Call GenerateMovesForSource(Depth)(SourceIdxOuter2)(CalcAttackState)(CapturesOnly);
-                If (((Not (CalcAttackState)) And (Not (CapturesOnly))) And (Not ((CurrentPiece == GoK_BlackPawn))))
-                {
-                    If (CurrentPiece == GoK_BlackKing)
-                    {
-                        If ((IsEndgame2 == 1) And ((BlackQueenCountLocal + BlackMinorCountLocal) < (WhiteQueenCountLocal + WhiteMinorCountLocal)))
-                        {
-                            List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + (PieceMobility[SourceIdxOuter2] * 10)));
-                        }
-                    }
-                    If (IsEndgame == 0)
-                    {
-                        If (1 == 0)
-                        {
-                            If (CurrentPiece == GoK_BlackRook)
-                            {
-                                List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + RookMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                            }
-                            Else
-                            {
-                                If (CurrentPiece == GoK_BlackBishop)
-                                {
-                                    List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + BishopMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                }
-                                Else
-                                {
-                                    If (CurrentPiece == GoK_BlackKnight)
-                                    {
-                                        List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + KnightMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                    }
-                                    Else
-                                    {
-                                        If (CurrentPiece == GoK_BlackQueen)
-                                        {
-                                            List.ReplaceItem(BlackMobBonus, Depth, (BlackMobBonus[Depth] + QueenMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
             SourceIdxOuter2 += 1;
         }
@@ -4872,47 +4824,6 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
             If (CurrentPiece < 0)
             {
                 Call GenerateMovesForSource(Depth)(SourceIdxOuter2)(CalcAttackState)(CapturesOnly);
-                If (((Not (CalcAttackState)) And (Not (CapturesOnly))) And (Not ((CurrentPiece == GoK_WhitePawn))))
-                {
-                    If (IsEndgame == 0)
-                    {
-                        If (1 == 0)
-                        {
-                            If (CurrentPiece == GoK_WhiteRook)
-                            {
-                                List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + RookMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                            }
-                            Else
-                            {
-                                If (CurrentPiece == GoK_WhiteBishop)
-                                {
-                                    List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + BishopMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                }
-                                Else
-                                {
-                                    If (CurrentPiece == GoK_WhiteKnight)
-                                    {
-                                        List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + KnightMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                    }
-                                    Else
-                                    {
-                                        If (CurrentPiece == GoK_WhiteQueen)
-                                        {
-                                            List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + QueenMobilityBonus[(PieceMobility[SourceIdxOuter2] + 1)]));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        If ((CurrentPiece == GoK_WhiteKing) And ((IsEndgame2 == 1) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) < (BlackQueenCountLocal + BlackMinorCountLocal))))
-                        {
-                            List.ReplaceItem(WhiteMobBonus, Depth, (WhiteMobBonus[Depth] + (PieceMobility[SourceIdxOuter2] * 10)));
-                        }
-                    }
-                }
             }
             SourceIdxOuter2 += -1;
         }
@@ -6596,10 +6507,10 @@ Define InitMobilityBonusLookup (warp=true)
     List.DeleteItem(BishopMobilityBonus, all);
     List.DeleteItem(RookMobilityBonus, all);
     List.DeleteItem(KnightMobilityBonus, all);
-    Call LoadList("-15,-10,0,0,1,2,3,4,4,5,5,6,6,7,7,7,8,8,9,9,10,11,11,11,12,12,12,13")("QueenMobilityBonus");
-    Call LoadList("-6,-2,2,3,4,5,5,6,7,7,8,8,9,10")("BishopMobilityBonus");
-    Call LoadList("-8,-6,-1,-1,0,0,1,1,2,2,3,3,4,5,6")("RookMobilityBonus");
-    Call LoadList("-8,-6,-1,0,1,2,2,3,4")("KnightMobilityBonus");
+    Call LoadList("-25, -40, -8, -2, 0, 6, 1, 9, 5, 18, 8, 23, 12, 28, 15, 32, 16, 34, 19, 38, 21, 42, 24, 45, 25, 46, 27, 46, 27, 49, 28, 51, 29, 52, 30, 54, 32, 56, 34, 58, 35, 62, 39, 66, 40, 70, 40, 75, 41, 79, 43, 81, 44, 83, 45, 84")("QueenMobilityBonus");
+    Call LoadList("-21, -32, -9, -11, 8, 1, 12, 6, 17, 11, 21, 16, 24, 23, 29, 27, 30, 31, 32, 34, 37, 36, 38, 39, 41, 40, 44, 43")("BishopMobilityBonus");
+    Call LoadList("-27, -36, -13, -8, -7, 12, -4, 19, -3, 25, -1, 36, 4, 45, 8, 47, 12, 53, 12, 57, 14, 63, 15, 65, 17, 67, 20, 68, 23, 68")("RookMobilityBonus");
+    Call LoadList("-29, -35, -22, -25, -5, -12, -2, -6, 2, 4, 6, 8, 9, 11, 12, 14, 14, 15")("KnightMobilityBonus");
 }
 
 Define InitMoveLookup (warp=true)
@@ -7690,19 +7601,19 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "KnightMobilityBonus")
             {
-                List.Add(KnightMobilityBonus, (CurrentValue * 1));
+                List.Add(KnightMobilityBonus, (CurrentValue * 0.75));
             }
             If (ListName == "BishopMobilityBonus")
             {
-                List.Add(BishopMobilityBonus, (CurrentValue * 1));
+                List.Add(BishopMobilityBonus, (CurrentValue * 0.75));
             }
             If (ListName == "RookMobilityBonus")
             {
-                List.Add(RookMobilityBonus, (CurrentValue * 1));
+                List.Add(RookMobilityBonus, (CurrentValue * 0.75));
             }
             If (ListName == "QueenMobilityBonus")
             {
-                List.Add(QueenMobilityBonus, (CurrentValue * 1));
+                List.Add(QueenMobilityBonus, (CurrentValue * 0.75));
             }
             If (ListName == "PawnStorm")
             {
@@ -7901,7 +7812,7 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
                 Stop(this script);
             }
         }
-        ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + (BlackMobBonus[Depth] - WhiteMobBonus[Depth])));
+        ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + 0));
         If (1 == 0)
         {
             Call CalculateMaterialImbalance(1);
@@ -8116,20 +8027,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             List.ReplaceItem(BoardAttackedByBlackPieceSnapshot, Depth, TTProbeBoardAttackedByOppPiece);
                         }
                         List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-                    }
-                }
-                If ((Depth % 2) == 1)
-                {
-                    If (Not ((TTProbeBlackMobRes == "")))
-                    {
-                        List.ReplaceItem(BlackMobBonus, Depth, TTProbeBlackMobRes);
-                    }
-                }
-                Else
-                {
-                    If (Not ((TTProbeWhiteMobRes == "")))
-                    {
-                        List.ReplaceItem(WhiteMobBonus, Depth, TTProbeWhiteMobRes);
                     }
                 }
                 If (Not ((TTProbeBestMoveRes == "")))
@@ -8398,17 +8295,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             Call StoreAttackInfo((Depth + 1))(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
             Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
-        }
-        If (Not (Quiescence))
-        {
-            If ((Depth % 2) == 1)
-            {
-                Call TTStoreNode(CurrentBoardHash)(Depth)("")("")("")("")("")(BlackMobBonus[Depth])("")("")("")("")("")("");
-            }
-            Else
-            {
-                Call TTStoreNode(CurrentBoardHash)(Depth)("")("")("")("")("")("")(WhiteMobBonus[Depth])("")("")("")("")("");
-            }
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
