@@ -117,7 +117,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9091 (31.03.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9092 (31.03.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -489,44 +489,44 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
 {
     If CalcAttackState
     {
-        If (Board[SourceIdx] > 0)
+        SourcePiece = Board[SourceIdx];
+        TargetPiece = Board[TargetIdx];
+        IdxSub2 = (((SourceIdx - 1) * 32) + 1);
+        Count2 = (PieceMobilityPrep[IdxSub2] + 1);
+        List.ReplaceItem(PieceMobilityPrep, IdxSub2, Count2);
+        List.ReplaceItem(PieceMobilityPrep, (IdxSub2 + Count2), TargetIdx);
+        If (SourcePiece > 0)
         {
-            If (BoardAttackedByBlack[TargetIdx] < 9)
-            {
-                List.ReplaceItem(BoardAttackedByBlack, TargetIdx, (BoardAttackedByBlack[TargetIdx] + 1));
-            }
-            If ((BoardAttackedByBlackPiece[TargetIdx] == 0) Or (Board[BoardAttackedByBlackPiece[TargetIdx]] > Board[SourceIdx]))
+            Attacked = BoardAttackedByBlack[TargetIdx];
+            If ((Attacked == 0) Or (Board[BoardAttackedByBlackPiece[TargetIdx]] > SourcePiece))
             {
                 List.ReplaceItem(BoardAttackedByBlackPiece, TargetIdx, SourceIdx);
             }
-            If (Board[TargetIdx] == GoK_WhiteKing)
+            If (Attacked < 9)
+            {
+                List.ReplaceItem(BoardAttackedByBlack, TargetIdx, (Attacked + 1));
+            }
+            If (TargetPiece == GoK_WhiteKing)
             {
                 IsWhiteChecked = 1;
                 List.Add(KingAttackLines, SourceIdx);
             }
-            If ((Not ((Board[TargetIdx] > 0))) And (BoardAttackedByWhite[TargetIdx] == 0))
-            {
-                List.ReplaceItem(PieceMobility, SourceIdx, (PieceMobility[SourceIdx] + 1));
-            }
         }
         Else
         {
-            If (BoardAttackedByWhite[TargetIdx] < 9)
-            {
-                List.ReplaceItem(BoardAttackedByWhite, TargetIdx, (BoardAttackedByWhite[TargetIdx] + 1));
-            }
-            If ((BoardAttackedByWhitePiece[TargetIdx] == 0) Or (Board[BoardAttackedByWhitePiece[TargetIdx]] < Board[SourceIdx]))
+            Attacked = BoardAttackedByWhite[TargetIdx];
+            If ((Attacked == 0) Or (Board[BoardAttackedByWhitePiece[TargetIdx]] < SourcePiece))
             {
                 List.ReplaceItem(BoardAttackedByWhitePiece, TargetIdx, SourceIdx);
             }
-            If (Board[TargetIdx] == GoK_BlackKing)
+            If (Attacked < 9)
             {
-                IsBlackChecked = 1;
-                List.Add(KingAttackLines, SourceIdx);
+                List.ReplaceItem(BoardAttackedByWhite, TargetIdx, (Attacked + 1));
             }
-            If ((Not ((Board[TargetIdx] < 0))) And (BoardAttackedByBlack[TargetIdx] == 0))
+            If (TargetPiece == GoK_BlackKing)
             {
-                List.ReplaceItem(PieceMobility, SourceIdx, (PieceMobility[SourceIdx] + 1));
+                IsWhiteChecked = 1;
+                List.Add(KingAttackLines, SourceIdx);
             }
         }
         Stop(this script);
@@ -3598,19 +3598,46 @@ Define EvaluateBoardExtended3(string Depth) (warp=true)
 Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
 {
     Call TaperedEval.Init;
-    List.DeleteAll(PieceMobility);
+    Idx = 1;
     Repeat (64)
     {
-        List.Add(PieceMobility, 0);
+        List.ReplaceItem(PieceMobility, Idx, 0);
+        List.ReplaceItem(PieceMobilityPrep, (((Idx - 1) * 32) + 1), 0);
+        Idx += 1;
     }
     Call CalcBoardAttackedByMove((Depth + 1));
-    List.DeleteAll(PieceMobility);
-    Repeat (64)
-    {
-        List.Add(PieceMobility, 0);
-    }
     Call CalcBoardAttackedByMove((Depth + 2));
-    Call CalcBoardAttackedByMove((Depth + 1));
+    Idx = 1;
+    Repeat (64)
+    {
+        CurrentPiece = Board[Idx];
+        If (Not ((CurrentPiece == 0)))
+        {
+            IdxSub = (((Idx - 1) * 32) + 1);
+            Count1 = PieceMobilityPrep[IdxSub];
+            IdxSub += 1;
+            Repeat (Count1)
+            {
+                TargetIdx = PieceMobilityPrep[IdxSub];
+                If (CurrentPiece > 0)
+                {
+                    If ((BoardAttackedByWhite[TargetIdx] == 0) And (Not ((Board[TargetIdx] > 0))))
+                    {
+                        List.ReplaceItem(PieceMobility, Idx, (PieceMobility[Idx] + 1));
+                    }
+                }
+                Else
+                {
+                    If ((BoardAttackedByBlack[TargetIdx] == 0) And (Not ((Board[TargetIdx] < 0))))
+                    {
+                        List.ReplaceItem(PieceMobility, Idx, (PieceMobility[Idx] + 1));
+                    }
+                }
+                IdxSub += 1;
+            }
+        }
+        Idx += 1;
+    }
     Idx = 1;
     Repeat (64)
     {
@@ -5125,7 +5152,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         AWIdx = 1;
         AWDelta = AWSize[1];
-        If ((((1 == 1) And (IdxDeepening > 5)) And (IsEvalStable == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If ((((1 == 1) And (IdxDeepening > (5 - IsScratch3))) And (IsEvalStable == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -6079,6 +6106,7 @@ Define ImportBoardImpl(string ImpBoard) (warp=true)
 Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
 {
     IsInNullMove = 0;
+    CalcAttackStateLight = 0;
     IsMinMaxTimeout = 0;
     If InitialDeepening
     {
@@ -6369,6 +6397,16 @@ Define InitBoard (warp=true)
     Repeat ((MaxMovesPerGeneration * MaxSearchDepthStackFrames))
     {
         List.Add(Moves, "");
+    }
+    List.DeleteAll(PieceMobility);
+    Repeat (64)
+    {
+        List.Add(PieceMobility, 0);
+    }
+    List.DeleteAll(PieceMobilityPrep);
+    Repeat ((64 * 32))
+    {
+        List.Add(PieceMobilityPrep, 0);
     }
 }
 
@@ -7320,22 +7358,25 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
-    If ((IsScratch3 == 1) Or (1 == 0))
+    If (Level > 4)
     {
-        If (Quiescence[(Depth - 1)] == 0)
+        If ((IsScratch3 == 1) Or (1 == 0))
         {
-            If (CheckedState[(Depth - 1)] == 1)
+            If (Quiescence[(Depth - 1)] == 0)
             {
-                IsQuiescentCheckRes = 1;
-                Stop(this script);
+                If (CheckedState[(Depth - 1)] == 1)
+                {
+                    IsQuiescentCheckRes = 1;
+                    Stop(this script);
+                }
             }
-        }
-        If (Quiescence[(Depth - 2)] == 0)
-        {
-            If (CheckedState[(Depth - 1)] == 1)
+            If (Quiescence[(Depth - 2)] == 0)
             {
-                IsQuiescentCheckRes = 1;
-                Stop(this script);
+                If (CheckedState[(Depth - 1)] == 1)
+                {
+                    IsQuiescentCheckRes = 1;
+                    Stop(this script);
+                }
             }
         }
     }
@@ -7346,19 +7387,6 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
             If (Quiescence[2] == 1)
             {
                 If ((Depth == 2) Or ((Depth < (8 - (IsScratch3 * 2))) And (CheckedState[(Depth - 1)] == 1)))
-                {
-                    IsQuiescentCheckRes = 1;
-                    Stop(this script);
-                }
-            }
-            If (IsScratch3 == 1)
-            {
-                If (Quiescence[(Depth - 1)] == 0)
-                {
-                    IsQuiescentCheckRes = 1;
-                    Stop(this script);
-                }
-                If (Quiescence[(Depth - 2)] == 0)
                 {
                     IsQuiescentCheckRes = 1;
                     Stop(this script);
