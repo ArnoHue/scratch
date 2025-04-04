@@ -119,7 +119,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9097 (02.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9100 (03.04.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -679,7 +679,7 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     }
     If (Piece > 0)
     {
-        If (MovePosLookupBlack[((PieceIdxLookup[Piece] * 10000) + ((TargetIdx * 100) + WhiteKingIdx))] == MagicEval)
+        If (MovePosLookupBlackLegal[((PieceIdxLookup[Piece] * 10000) + ((TargetIdx * 100) + WhiteKingIdx))] == 0)
         {
             Stop(this script);
         }
@@ -701,7 +701,7 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     }
     Else
     {
-        If (MovePosLookupWhite[((PieceIdxLookup[(0 - Piece)] * 10000) + ((TargetIdx * 100) + BlackKingIdx))] == MagicEval)
+        If (MovePosLookupWhiteLegal[((PieceIdxLookup[(0 - Piece)] * 10000) + ((TargetIdx * 100) + BlackKingIdx))] == 0)
         {
             Stop(this script);
         }
@@ -847,7 +847,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     {
         List.ReplaceItem(Quiescence, Depth, 0);
     }
-    If ((Depth > 1) And (IsInNullMove == 0))
+    If (((Depth > 1) And (Not (Quiescence))) And (IsInNullMove == 0))
     {
         Call //("Rule of 50 moves, but acting already at 25");
         If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > (99 - 50))
@@ -1321,7 +1321,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         {
                             If (abs(SourcePieceOuter2) < abs(Board[TargetIdxOuter2]))
                             {
-                                If ((((Depth % 2) == 1) And (Not ((MovePosLookupBlack[(IdxOuter2 + TargetIdxOuter2)] == MagicEval)))) Or (((Depth % 2) == 0) And (Not ((MovePosLookupWhite[(IdxOuter2 + TargetIdxOuter2)] == MagicEval)))))
+                                If ((((Depth % 2) == 1) And (MovePosLookupBlackLegal[(IdxOuter2 + TargetIdxOuter2)] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupWhiteLegal[(IdxOuter2 + TargetIdxOuter2)] == 1)))
                                 {
                                     CountOuter1 += 1;
                                 }
@@ -1845,6 +1845,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
 
 Define ApplyMove(num Depth) (warp=true)
 {
+    Call TaperedEval.Init;
     List.ReplaceItem(PosScoreDelta, Depth, 0);
     List.ReplaceItem(SourcePieces, Depth, 0);
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
@@ -1883,7 +1884,11 @@ Define ApplyMove(num Depth) (warp=true)
         If (SourcePiece > 0)
         {
             IdxSub = ((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx));
-            List.ReplaceItem(PosScoreDelta, Depth, MovePosLookupBlack[IdxSub]);
+            If (Not (((SourcePiece == GoK_BlackKing) And (((BlackQueenCountLocal + BlackMinorCountLocal) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)))))
+            {
+                Call TaperedEval.GetScalarResult(MovePosLookupBlackMg[IdxSub])(MovePosLookupBlackEg[IdxSub])(TaperedEval.ScaleFactor);
+                List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + TaparedEval.ScalarResult));
+            }
             CurrentBoardHash += MoveHashLookupBlack[IdxSub];
             If (SourcePiece == GoK_BlackPawn)
             {
@@ -1969,7 +1974,11 @@ Define ApplyMove(num Depth) (warp=true)
         Else
         {
             IdxSub = ((PieceIdxLookup[(0 - SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx));
-            List.ReplaceItem(PosScoreDelta, Depth, MovePosLookupWhite[IdxSub]);
+            If (Not (((SourcePiece == GoK_WhiteKing) And (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) > 0)))))
+            {
+                Call TaperedEval.GetScalarResult(MovePosLookupWhiteMg[IdxSub])(MovePosLookupWhiteEg[IdxSub])(TaperedEval.ScaleFactor);
+                List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + TaparedEval.ScalarResult));
+            }
             CurrentBoardHash += MoveHashLookupWhite[IdxSub];
             If (SourcePiece == GoK_WhitePawn)
             {
@@ -2055,7 +2064,8 @@ Define ApplyMove(num Depth) (warp=true)
         If (TargetPiece > 0)
         {
             IdxSub = ((PieceIdxLookup[TargetPiece] * 10000) + (TargetIdx * 100));
-            List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + MovePosLookupBlack[IdxSub]));
+            Call TaperedEval.GetScalarResult(MovePosLookupBlackMg[IdxSub])(MovePosLookupBlackEg[IdxSub])(TaperedEval.ScaleFactor);
+            List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + TaparedEval.ScalarResult));
             CurrentBoardHash += MoveHashLookupBlack[IdxSub];
             If ((TargetPiece == GoK_BlackPawn) Or (TargetPiece == GoK_BlackKing))
             {
@@ -2097,7 +2107,8 @@ Define ApplyMove(num Depth) (warp=true)
             If (TargetPiece < 0)
             {
                 IdxSub = ((PieceIdxLookup[(0 - TargetPiece)] * 10000) + (TargetIdx * 100));
-                List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + MovePosLookupWhite[IdxSub]));
+                Call TaperedEval.GetScalarResult(MovePosLookupWhiteMg[IdxSub])(MovePosLookupWhiteEg[IdxSub])(TaperedEval.ScaleFactor);
+                List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + TaparedEval.ScalarResult));
                 CurrentBoardHash += MoveHashLookupWhite[IdxSub];
                 If ((TargetPiece == GoK_WhitePawn) Or (TargetPiece == GoK_WhiteKing))
                 {
@@ -2211,6 +2222,7 @@ Define ApplyMove(num Depth) (warp=true)
 
 Define ApplyMoveLight(string Depth) (warp=true)
 {
+    Call TaperedEval.Init;
     List.ReplaceItem(PreviousBoardHash, Depth, CurrentBoardHash);
     Call GetCurrentMove(Depth);
     List.ReplaceItem(AppliedMove, Depth, CurrentMove);
@@ -2742,14 +2754,14 @@ Define CalcKingRingAttacks(bool AttackerPass) (warp=true)
                         Found = 0;
                         If (CurrentPiece > 0)
                         {
-                            If (Not ((MovePosLookupBlack[(Prefix + TargetIdx)] == MagicEval)))
+                            If (MovePosLookupBlackLegal[(Prefix + TargetIdx)] == 1)
                             {
                                 Found = 1;
                             }
                         }
                         Else
                         {
-                            If (Not ((MovePosLookupWhite[(Prefix + TargetIdx)] == MagicEval)))
+                            If (MovePosLookupWhiteLegal[(Prefix + TargetIdx)] == 1)
                             {
                                 Found = 1;
                             }
@@ -3063,6 +3075,7 @@ Define EnterExecution (warp=false)
 
 Define EvaluateBoard (warp=true)
 {
+    Call TaperedEval.Init;
     EvalResult = 0;
     Idx = 1;
     Repeat (64)
@@ -3071,8 +3084,8 @@ Define EvaluateBoard (warp=true)
         If (Not ((CurrentPiece == 0)))
         {
             EvalResult += CurrentPiece;
-            Call GetPiecePosScore(CurrentPiece)(Idx);
-            EvalResult += PosScoreRes;
+            Call TaperedEval.GetPiecePosResult(CurrentPiece)(Idx);
+            EvalResult += TaperedEval.PiecePosResult;
         }
         Idx += 1;
     }
@@ -3097,6 +3110,25 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
         IsEndgame = 1;
         Call EvaluateBoardExtended1Impl(Depth);
         IsEndgame = TmpOuter;
+        If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) Or ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
+        {
+            Delta = abs((IdxToRank[WhiteKingIdx] - IdxToRank[BlackKingIdx]));
+            Delta2 = abs((IdxToFile[WhiteKingIdx] - IdxToFile[BlackKingIdx]));
+            If (Delta < Delta2)
+            {
+                Delta = Delta2;
+            }
+            If ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0)
+            {
+                EvalExtendedResult1 += (-20 * (Delta - 1));
+                EvalResult += (-20 * (Delta - 1));
+            }
+            If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+            {
+                EvalExtendedResult1 += (20 * (Delta - 1));
+                EvalResult += (20 * (Delta - 1));
+            }
+        }
         Call TTStoreBoard((CurrentBoardHash2 + ((((WhiteQueenCountLocal > 0) * 2) + (BlackQueenCountLocal > 0)) * floor((List.Length(TTBoardHash) / 4)))))(EvalResult)("")("")("")(EvalExtendedResult1);
     }
     CountOuter1 = (((WhiteQueenCountLocal * 14) + ((WhiteRookCountLocal * 6) + ((WhiteMinorCountLocal - WhiteRookCountLocal) * 3))) + ((BlackQueenCountLocal * 14) + ((BlackRookCountLocal * 6) + ((BlackMinorCountLocal - BlackRookCountLocal) * 3))));
@@ -3224,13 +3256,12 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
             }
             If (WhitePawnCount[Idx] > 1)
             {
-                EvalExtendedResult1 += (12 * ((WhitePawnCount[Idx] - 1) * (1 + (IsEndgame * 2))));
+                EvalExtendedResult1 += (12 * (WhitePawnCount[Idx] - 1));
             }
             If ((IsPawnShelter == 0) Or (IsEndgame == 1))
             {
                 If (WhitePawnForwardRank > 0)
                 {
-                    EvalExtendedResult1 += (0 - (1 * ((9 - WhitePawnForwardRank) * (9 - WhitePawnForwardRank))));
                     If ((WhitePawnForwardRank < BlackPawnBackwardRank) Or (BlackPawnBackwardRank == 0))
                     {
                         EvalExtendedResult1 += -10;
@@ -3291,13 +3322,12 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
             }
             If (BlackPawnCount[Idx] > 1)
             {
-                EvalExtendedResult1 += (-12 * ((BlackPawnCount[Idx] - 1) * (1 + (IsEndgame * 2))));
+                EvalExtendedResult1 += (-12 * BlackPawnCount[Idx]);
             }
             If ((IsPawnShelter == 0) Or (IsEndgame == 1))
             {
                 If (BlackPawnForwardRank > 0)
                 {
-                    EvalExtendedResult1 += (1 * ((BlackPawnForwardRank - 0) * (BlackPawnForwardRank - 0)));
                     If (BlackPawnForwardRank > WhitePawnBackwardRank)
                     {
                         EvalExtendedResult1 += 10;
@@ -3352,7 +3382,6 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
 
 Define EvaluateBoardExtended2(string Depth) (warp=true)
 {
-    EvalExtendedResult2 = 0;
     If (1 == 1)
     {
         Call TTProbeBoard(CurrentBoardHash);
@@ -3473,39 +3502,39 @@ Define EvaluateBoardExtended2Impl(string Depth) (warp=true)
     Call //("Evaluate early castling > enabled castling > possible castling > impossible castling");
     If (Operator.LetterOf(CastlingState[Depth], 1) == 0)
     {
-        Call TaperedEval.Add(-30)(-10);
+        Call TaperedEval.Add(-30)(0);
         If (Operator.LetterOf(CastlingState[Depth], 2) == 1)
         {
-            Call TaperedEval.Add(-60)(-20);
+            Call TaperedEval.Add(-60)(0);
         }
         Else
         {
             If (Operator.LetterOf(CastlingState[Depth], 3) == 1)
             {
-                Call TaperedEval.Add(-42)(-14);
+                Call TaperedEval.Add(-42)(0);
             }
             If (Operator.LetterOf(CastlingState[Depth], 4) == 1)
             {
-                Call TaperedEval.Add(-18)(-6);
+                Call TaperedEval.Add(-18)(0);
             }
         }
     }
     If (Operator.LetterOf(CastlingState[Depth], 5) == 0)
     {
-        Call TaperedEval.Add(30)(10);
+        Call TaperedEval.Add(30)(0);
         If (Operator.LetterOf(CastlingState[Depth], 6) == 1)
         {
-            Call TaperedEval.Add(60)(20);
+            Call TaperedEval.Add(60)(0);
         }
         Else
         {
             If (Operator.LetterOf(CastlingState[Depth], 7) == 1)
             {
-                Call TaperedEval.Add(42)(14);
+                Call TaperedEval.Add(42)(0);
             }
             If (Operator.LetterOf(CastlingState[Depth], 8) == 1)
             {
-                Call TaperedEval.Add(18)(6);
+                Call TaperedEval.Add(18)(0);
             }
         }
     }
@@ -3517,8 +3546,8 @@ Define EvaluateBoardExtended2Impl(string Depth) (warp=true)
     {
         Call TaperedEval.Add(-15)(-15);
     }
-    Call TaperedEval.GetResult;
-    EvalExtendedResult2 = TaperedEval.Result;
+    Call TaperedEval.GetSumResult;
+    EvalExtendedResult2 = TaperedEval.SumResult;
 }
 
 Define EvaluateBoardExtended3(string Depth) (warp=true)
@@ -3647,7 +3676,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
             If (Attacked > 0)
             {
                 IsWeak = ((abs(AttackerPiece) == GoK_BlackPawn) Or ((Attacked > 1) And (Not ((Defended > 1)))));
-                Hanging = ((IsWeak == 1) And ((Defended == 0) Or (CurrentPieceAbs > GoK_BlackPawn)));
+                Hanging = ((IsWeak == 1) And ((Defended == 0) Or ((CurrentPieceAbs > GoK_BlackPawn) And (Attacked > 1))));
                 If (CurrentPiece > 0)
                 {
                     StrongAttacker = ((Board[BoardAttackedByWhitePiece[AttackerIdx]] == GoK_WhitePawn) Or ((BoardAttackedByWhite[AttackerIdx] > 1) And (Not ((BoardAttackedByBlack[AttackerIdx] > 1)))));
@@ -3991,7 +4020,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                             Else
                             {
                                 CurrentMove = ((Idx * 100) + WhiteKingIdx);
-                                If (MovePosLookupWhiteLegal[(((PieceIdxLookup[CurrentPieceAbs] + 0) * 10000) + CurrentMove)] == 1)
+                                If (MovePosLookupBlackLegal[(((PieceIdxLookup[CurrentPieceAbs] + 0) * 10000) + CurrentMove)] == 1)
                                 {
                                     Found = 1;
                                 }
@@ -4131,9 +4160,9 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
         }
         Side += 1;
     }
-    Call TaperedEval.GetResult;
-    EvalExtendedResult3 = TaperedEval.Result;
-    If (1 == 1)
+    Call TaperedEval.GetSumResult;
+    EvalExtendedResult3 = TaperedEval.SumResult;
+    If (1 == 0)
     {
         If (EvalExtendedResult3 > 500)
         {
@@ -5281,7 +5310,7 @@ Define GetKingProtection(string KingIdx)(bool IsBlack) (warp=true)
             {
                 KingProtection += PawnShelter[(((File - 1) * 8) + 1)];
             }
-            If ((abs((IdxToFile[WhiteKingIdx] - File)) > 1) Or (1 == 1))
+            If ((abs((IdxToFile[WhiteKingIdx] - File)) > 1) Or (1 == 0))
             {
                 If ((WhitePawnForwardRank > 0) And (KingRank < WhitePawnForwardRank))
                 {
@@ -5581,212 +5610,89 @@ Define GetPiecePosHash(string Piece)(string Pos) (warp=true)
     }
 }
 
-Define GetPiecePosScore(string Piece)(string Idx) (warp=true)
+Define GetPiecePosScoreRaw(string Piece)(string Idx) (warp=true)
 {
-    PosScoreRes = 0;
+    PiecePosScoreRes.Mg = 0;
+    PiecePosScoreRes.Eg = 0;
     If ((Idx == 0) Or (Piece == 0))
     {
         Stop(this script);
     }
-    If (Piece == GoK_BlackPawn)
-    {
-        If (IsEndgame == 0)
-        {
-            If (IsBlackCastlingPossible == 1)
-            {
-                PosScoreRes = PawnPieceSquarePreCastling[(65 - Idx)];
-            }
-            Else
-            {
-                PosScoreRes = PawnPieceSquare[(65 - Idx)];
-            }
-        }
-        Else
-        {
-            PosScoreRes = PawnPieceSquareEndgame[(65 - Idx)];
-        }
-        Stop(this script);
-    }
-    If (Piece == GoK_WhitePawn)
-    {
-        If (IsEndgame == 0)
-        {
-            If (IsWhiteCastlingPossible == 1)
-            {
-                PosScoreRes = (0 - PawnPieceSquarePreCastling[Idx]);
-            }
-            Else
-            {
-                PosScoreRes = (0 - PawnPieceSquare[Idx]);
-            }
-        }
-        Else
-        {
-            PosScoreRes = (0 - PawnPieceSquareEndgame[Idx]);
-        }
-        Stop(this script);
-    }
-    If (IsEndgame == 1)
-    {
-        If (Piece > GoK_BlackBishop)
-        {
-            If (Piece == GoK_BlackKing)
-            {
-                If ((BlackPawnCount == 0) And ((BlackQueenCount + BlackMinorCount) == 0))
-                {
-                    PosScoreRes = Operator.Round((1.33 * KingPieceSquareEndgame[(65 - Idx)]));
-                    Stop(this script);
-                }
-                If ((WhitePawnCount == 0) And ((WhiteQueenCount + WhiteMinorCount) == 0))
-                {
-                    PosScoreRes = Operator.Round((0.67 * KingPieceSquareEndgame[(65 - Idx)]));
-                    Stop(this script);
-                }
-                PosScoreRes = KingPieceSquareEndgame[(65 - Idx)];
-                Stop(this script);
-            }
-            If (IsEndgame2 == 1)
-            {
-                Stop(this script);
-            }
-            If (Piece == GoK_BlackRook)
-            {
-                PosScoreRes = RookPieceSquareEndgame[(65 - Idx)];
-                Stop(this script);
-            }
-            If (Piece == GoK_BlackQueen)
-            {
-                PosScoreRes = QueenPieceSquareEndgame[(65 - Idx)];
-                Stop(this script);
-            }
-        }
-        If (Piece > 0)
-        {
-            If (IsEndgame2 == 1)
-            {
-                Stop(this script);
-            }
-            If (Piece == GoK_BlackKnight)
-            {
-                PosScoreRes = KnightPieceSquareEndgame[(65 - Idx)];
-                Stop(this script);
-            }
-            If (Piece == GoK_BlackBishop)
-            {
-                PosScoreRes = BishopPieceSquareEndgame[(65 - Idx)];
-                Stop(this script);
-            }
-        }
-        If (Piece < GoK_WhiteBishop)
-        {
-            If (Piece == GoK_WhiteKing)
-            {
-                If ((WhitePawnCount == 0) And ((WhiteQueenCount + WhiteMinorCount) == 0))
-                {
-                    PosScoreRes = Operator.Round((1.33 * (0 - KingPieceSquareEndgame[Idx])));
-                    Stop(this script);
-                }
-                If ((BlackPawnCount == 0) And ((BlackQueenCount + BlackMinorCount) == 0))
-                {
-                    PosScoreRes = Operator.Round((0.67 * (0 - KingPieceSquareEndgame[Idx])));
-                    Stop(this script);
-                }
-                PosScoreRes = (0 - KingPieceSquareEndgame[Idx]);
-                Stop(this script);
-            }
-            If (IsEndgame2 == 1)
-            {
-                Stop(this script);
-            }
-            If (Piece == GoK_WhiteRook)
-            {
-                PosScoreRes = (0 - RookPieceSquareEndgame[Idx]);
-                Stop(this script);
-            }
-            If (Piece == GoK_WhiteQueen)
-            {
-                PosScoreRes = (0 - QueenPieceSquareEndgame[Idx]);
-                Stop(this script);
-            }
-        }
-        If (Piece < 0)
-        {
-            If (IsEndgame2 == 1)
-            {
-                Stop(this script);
-            }
-            If (Piece == GoK_WhiteBishop)
-            {
-                PosScoreRes = (0 - BishopPieceSquareEndgame[Idx]);
-                Stop(this script);
-            }
-            If (Piece == GoK_WhiteKnight)
-            {
-                PosScoreRes = (0 - KnightPieceSquareEndgame[Idx]);
-                Stop(this script);
-            }
-        }
-        Stop(this script);
-    }
-    If (Piece > GoK_BlackBishop)
-    {
-        If (Piece == GoK_BlackRook)
-        {
-            PosScoreRes = RookPieceSquare[(65 - Idx)];
-            Stop(this script);
-        }
-        If (Piece == GoK_BlackQueen)
-        {
-            PosScoreRes = QueenPieceSquare[(65 - Idx)];
-            Stop(this script);
-        }
-        If (Piece == GoK_BlackKing)
-        {
-            PosScoreRes = KingPieceSquare[(65 - Idx)];
-            Stop(this script);
-        }
-    }
     If (Piece > 0)
     {
+        If (Piece == GoK_BlackPawn)
+        {
+            PiecePosScoreRes.Mg = PawnPieceSquare[Idx];
+            PiecePosScoreRes.Eg = PawnPieceSquareEndgame[Idx];
+            Stop(this script);
+        }
         If (Piece == GoK_BlackKnight)
         {
-            PosScoreRes = KnightPieceSquare[(65 - Idx)];
+            PiecePosScoreRes.Mg = KnightPieceSquare[Idx];
+            PiecePosScoreRes.Eg = KnightPieceSquareEndgame[Idx];
             Stop(this script);
         }
         If (Piece == GoK_BlackBishop)
         {
-            PosScoreRes = BishopPieceSquare[(65 - Idx)];
+            PiecePosScoreRes.Mg = BishopPieceSquare[Idx];
+            PiecePosScoreRes.Eg = BishopPieceSquareEndgame[Idx];
+            Stop(this script);
+        }
+        If (Piece == GoK_BlackRook)
+        {
+            PiecePosScoreRes.Mg = RookPieceSquare[Idx];
+            PiecePosScoreRes.Eg = RookPieceSquareEndgame[Idx];
+            Stop(this script);
+        }
+        If (Piece == GoK_BlackQueen)
+        {
+            PiecePosScoreRes.Mg = QueenPieceSquare[Idx];
+            PiecePosScoreRes.Eg = QueenPieceSquareEndgame[Idx];
+            Stop(this script);
+        }
+        If (Piece == GoK_BlackKing)
+        {
+            PiecePosScoreRes.Mg = KingPieceSquare[Idx];
+            PiecePosScoreRes.Eg = KingPieceSquareEndgame[Idx];
             Stop(this script);
         }
     }
-    If (Piece < GoK_WhiteBishop)
+    Else
     {
-        If (Piece == GoK_WhiteRook)
+        If (Piece == GoK_WhitePawn)
         {
-            PosScoreRes = (0 - RookPieceSquare[Idx]);
-            Stop(this script);
-        }
-        If (Piece == GoK_WhiteQueen)
-        {
-            PosScoreRes = (0 - QueenPieceSquare[Idx]);
-            Stop(this script);
-        }
-        If (Piece == GoK_WhiteKing)
-        {
-            PosScoreRes = (0 - KingPieceSquare[Idx]);
-            Stop(this script);
-        }
-    }
-    If (Piece < 0)
-    {
-        If (Piece == GoK_WhiteBishop)
-        {
-            PosScoreRes = (0 - BishopPieceSquare[Idx]);
+            PiecePosScoreRes.Mg = (0 - PawnPieceSquare[(65 - Idx)]);
+            PiecePosScoreRes.Eg = (0 - PawnPieceSquareEndgame[(65 - Idx)]);
             Stop(this script);
         }
         If (Piece == GoK_WhiteKnight)
         {
-            PosScoreRes = (0 - KnightPieceSquare[Idx]);
+            PiecePosScoreRes.Mg = (0 - KnightPieceSquare[(65 - Idx)]);
+            PiecePosScoreRes.Eg = (0 - KnightPieceSquareEndgame[(65 - Idx)]);
+            Stop(this script);
+        }
+        If (Piece == GoK_WhiteBishop)
+        {
+            PiecePosScoreRes.Mg = (0 - BishopPieceSquare[(65 - Idx)]);
+            PiecePosScoreRes.Eg = (0 - BishopPieceSquareEndgame[(65 - Idx)]);
+            Stop(this script);
+        }
+        If (Piece == GoK_WhiteRook)
+        {
+            PiecePosScoreRes.Mg = (0 - RookPieceSquare[(65 - Idx)]);
+            PiecePosScoreRes.Eg = (0 - RookPieceSquareEndgame[(65 - Idx)]);
+            Stop(this script);
+        }
+        If (Piece == GoK_WhiteQueen)
+        {
+            PiecePosScoreRes.Mg = (0 - QueenPieceSquare[(65 - Idx)]);
+            PiecePosScoreRes.Eg = (0 - QueenPieceSquareEndgame[(65 - Idx)]);
+            Stop(this script);
+        }
+        If (Piece == GoK_WhiteKing)
+        {
+            PiecePosScoreRes.Mg = (0 - KingPieceSquare[(65 - Idx)]);
+            PiecePosScoreRes.Eg = (0 - KingPieceSquareEndgame[(65 - Idx)]);
             Stop(this script);
         }
     }
@@ -6773,96 +6679,26 @@ Define InitMoveLookup (warp=true)
 
 Define InitMovePosLookup(bool Init) (warp=true)
 {
-    MetaState = Operator.Join(IsBlackCastlingPossible, Operator.Join(IsWhiteCastlingPossible, Operator.Join(IsEndgame, IsEndgame2)));
-    If (BlackQueenCount == 0)
+    If Init
     {
-        MetaState = Operator.Join(MetaState, 0);
-    }
-    Else
-    {
-        MetaState = Operator.Join(MetaState, 1);
-    }
-    If (WhiteQueenCount == 0)
-    {
-        MetaState = Operator.Join(MetaState, 0);
-    }
-    Else
-    {
-        MetaState = Operator.Join(MetaState, 1);
-    }
-    If (BlackMinorCount == 0)
-    {
-        MetaState = Operator.Join(MetaState, 0);
-    }
-    Else
-    {
-        MetaState = Operator.Join(MetaState, 1);
-    }
-    If (WhiteMinorCount == 0)
-    {
-        MetaState = Operator.Join(MetaState, 0);
-    }
-    Else
-    {
-        MetaState = Operator.Join(MetaState, 1);
-    }
-    If (BlackPawnCount == 0)
-    {
-        MetaState = Operator.Join(MetaState, 0);
-    }
-    Else
-    {
-        MetaState = Operator.Join(MetaState, 1);
-    }
-    If (WhitePawnCount == 0)
-    {
-        MetaState = Operator.Join(MetaState, 0);
-    }
-    Else
-    {
-        MetaState = Operator.Join(MetaState, 1);
-    }
-    If (Init Or (Not ((MetaState == PrevMetaState))))
-    {
-        PrevMetaState = MetaState;
-        If (Not (Init))
+        List.DeleteAll(MovePosLookupBlackMg);
+        List.DeleteAll(MovePosLookupWhiteMg);
+        List.DeleteAll(MovePosLookupBlackEg);
+        List.DeleteAll(MovePosLookupWhiteEg);
+        List.DeleteAll(MoveHashLookupBlack);
+        List.DeleteAll(MoveHashLookupWhite);
+        List.DeleteAll(MovePosLookupBlackLegal);
+        List.DeleteAll(MovePosLookupWhiteLegal);
+        Repeat (100000)
         {
-            IdxOuter = 1;
-            Repeat (List.Length(TTNodeScore))
-            {
-                List.ReplaceItem(TTNodeScore, IdxOuter, "");
-                List.ReplaceItem(TTNodeScoreIsDynamic, IdxOuter, "");
-                List.ReplaceItem(TTNodeType, IdxOuter, "");
-                IdxOuter += 1;
-            }
-            IdxOuter = 1;
-            Repeat (List.Length(TTBoardScoreSum))
-            {
-                List.ReplaceItem(TTBoardScore1, IdxOuter, "");
-                List.ReplaceItem(TTBoardScore1Eg, IdxOuter, "");
-                List.ReplaceItem(TTBoardScore2, IdxOuter, "");
-                List.ReplaceItem(TTBoardScore3, IdxOuter, "");
-                List.ReplaceItem(TTBoardScoreSum, IdxOuter, "");
-                IdxOuter += 1;
-            }
-        }
-        If (((Not ((List.Length(MovePosLookupBlack) == 100000))) Or (Not ((List.Length(MovePosLookupWhite) == 100000)))) Or ((Not ((List.Length(MoveHashLookupBlack) == 100000))) Or (Not ((List.Length(MoveHashLookupWhite) == 100000)))))
-        {
-            List.DeleteAll(MovePosLookupBlack);
-            List.DeleteAll(MovePosLookupWhite);
-            List.DeleteAll(MoveHashLookupBlack);
-            List.DeleteAll(MoveHashLookupWhite);
-            List.DeleteAll(MovePosLookupBlackLegal);
-            List.DeleteAll(MovePosLookupWhiteLegal);
-            Repeat (100000)
-            {
-                List.Add(MovePosLookupBlack, MagicEval);
-                List.Add(MovePosLookupWhite, MagicEval);
-                List.Add(MoveHashLookupBlack, "");
-                List.Add(MoveHashLookupWhite, "");
-                List.Add(MovePosLookupBlackLegal, 0);
-                List.Add(MovePosLookupBlackLegal, "");
-            }
+            List.Add(MovePosLookupBlackEg, "");
+            List.Add(MovePosLookupWhiteEg, "");
+            List.Add(MovePosLookupBlackMg, "");
+            List.Add(MovePosLookupWhiteMg, "");
+            List.Add(MoveHashLookupBlack, "");
+            List.Add(MoveHashLookupWhite, "");
+            List.Add(MovePosLookupBlackLegal, 0);
+            List.Add(MovePosLookupWhiteLegal, 0);
         }
         List.DeleteAll(Pieces);
         List.Add(Pieces, GoK_BlackKing);
@@ -6899,8 +6735,9 @@ Define InitMovePosLookup(bool Init) (warp=true)
             {
                 File = IdxToFile[SourceIdx];
                 Rank = IdxToRank[SourceIdx];
-                Call GetPiecePosScore(SourcePiece)(SourceIdx);
-                PosScoreRes2 = PosScoreRes;
+                Call GetPiecePosScoreRaw(SourcePiece)(SourceIdx);
+                PiecePosScoreRes2.Mg = PiecePosScoreRes.Mg;
+                PiecePosScoreRes2.Eg = PiecePosScoreRes.Eg;
                 Call GetPiecePosHash(SourcePiece)(SourceIdx);
                 PiecePosHash2 = PiecePosHash;
                 TargetIdx = 0;
@@ -6991,19 +6828,21 @@ Define InitMovePosLookup(bool Init) (warp=true)
                     }
                     If ((IsLegalMove == 1) Or ((SourceIdx == 0) Or (TargetIdx == 0)))
                     {
-                        Call GetPiecePosScore(SourcePiece)(TargetIdx);
+                        Call GetPiecePosScoreRaw(SourcePiece)(TargetIdx);
                         Call GetPiecePosHash(SourcePiece)(TargetIdx);
                         If (SourcePiece > 0)
                         {
                             IdxOuter2 = ((PieceIdxLookup[SourcePiece] * 10000) + ((SourceIdx * 100) + TargetIdx));
-                            List.ReplaceItem(MovePosLookupBlack, IdxOuter2, (PosScoreRes - PosScoreRes2));
+                            List.ReplaceItem(MovePosLookupBlackMg, IdxOuter2, (PiecePosScoreRes.Mg - PiecePosScoreRes2.Mg));
+                            List.ReplaceItem(MovePosLookupBlackEg, IdxOuter2, (PiecePosScoreRes.Eg - PiecePosScoreRes2.Eg));
                             List.ReplaceItem(MoveHashLookupBlack, IdxOuter2, (PiecePosHash - PiecePosHash2));
                             List.ReplaceItem(MovePosLookupBlackLegal, IdxOuter2, 1);
                         }
                         Else
                         {
                             IdxOuter2 = ((PieceIdxLookup[(0 - SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdx));
-                            List.ReplaceItem(MovePosLookupWhite, IdxOuter2, (PosScoreRes - PosScoreRes2));
+                            List.ReplaceItem(MovePosLookupWhiteMg, IdxOuter2, (PiecePosScoreRes.Mg - PiecePosScoreRes2.Mg));
+                            List.ReplaceItem(MovePosLookupWhiteEg, IdxOuter2, (PiecePosScoreRes.Eg - PiecePosScoreRes2.Eg));
                             List.ReplaceItem(MoveHashLookupWhite, IdxOuter2, (PiecePosHash - PiecePosHash2));
                             List.ReplaceItem(MovePosLookupWhiteLegal, IdxOuter2, 1);
                         }
@@ -7094,32 +6933,30 @@ Define InitOpeningBook (warp=true)
 
 Define InitPieceSquareTables (warp=true)
 {
-    List.DeleteItem(PawnPieceSquarePreCastling, all);
-    Call LoadList("0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 25, 25,  0,  0,  0,  0,  0,  0, 25, 25,  0,  0,  0,  0,  0,  0, 25, 25,  0,  0,  0,  0, -5,-20, 20, 20,-20, -5,  0,  0, -5,-20,  5,  5,-20, -5,  0,  10, 10, 10, 0,  0, 10, 10, 10,  0,  0,  0,  0,  0,  0,  0,  0")("PawnPieceSquarePreCastling");
     List.DeleteItem(PawnPieceSquare, all);
-    Call LoadList("0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 25, 25,  0,  0,  0,  0,  0,  0, 25, 25,  0,  0,  0,  0,  0,  0, 25, 25,  0,  0,  0,  0,  0,  0, 20, 20,  0,  0,  0,  0,  0,  0,  5,  5,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0")("PawnPieceSquare");
+    Call LoadList(" 0,  0,  0,  0,  0,  0,  0,  0, -1,  2,  7,  9,  9,  7,  2, -1, -7, -3,  8, 11, 11,  8, -3, -7, -5, -5,  6, 14, 14,  6, -5, -5,  4, -3, -4,  3,  3, -4, -3,  4, -5, -7, -3,  3,  3, -3, -7, -5, -4,  4, -5, -2, -2, -5,  4, -4,  0,  0,  0,  0,  0,  0,  0,  0")("PawnPieceSquare");
     List.DeleteItem(PawnPieceSquareEndgame, all);
-    Call LoadList("0, 0, 0, 0, 0, 0, 0, 0,   45, 30, 16, 5, 5, 16, 30, 45,   30, 14, 1, -10, -10, 1, 14, 30,   18, 2, -8, -15, -15, -8, 2, 18,   10, -5, -15, -20, -20, -15, -5, 10,   5, -10, -20, -25, -25, -20, -10, 5,   5, -10, -20, -25, -25, -20, -10, 5,   0, 0, 0, 0, 0, 0, 0, 0")("PawnPieceSquareEndgame");
+    Call LoadList(" 0,  0,  0,  0,  0,  0,  0,  0, -7, -2,  4,  5,  5,  4, -2, -7, -3, -4, -2,  2,  2, -2, -4, -3, -1, -3, -5, -4, -4, -5, -3, -1,  4,  4, -1, -6, -6, -1,  4,  4, 10,  6,  7, 14, 14,  7,  6, 10,  2, -2,  8, 11, 11,  8, -2,  2,  0,  0,  0,  0,  0,  0,  0,  0")("PawnPieceSquareEndgame");
     List.DeleteItem(KnightPieceSquare, all);
-    Call LoadList("-50,-40,-50,-30,-30,-50,-40,-50,     -40,-20,  0,  0,  0,  0,-20,-40,      -40,  0, 10, 15, 15, 10,  0,-40,      -30,  5, 15, 20, 20, 15,  5,-30,      -30,  0, 15, 20, 20, 15,  0,-30,      -70,  5, 10, 15, 15, 10,  5,-70,      -40,-20,  0,  5,  5,  0,-20,-40,      -50,-70,-30,-30,-30,-30,-70,-50")("KnightPieceSquare");
+    Call LoadList("-79, -45, -38, -37, -37, -38, -45, -79, -37, -18, -11,  -4,  -4, -11, -18, -37, -30,  -9,   2,   9,   9,   2,  -9, -30, -13,   2,  19,  22,  22,  19,   2, -13, -14,   6,  20,  24,  24,  20,   6, -14,  -5,  13,  30,  26,  26,  30,  13,  -5, -31, -10,   3,  17,  17,   3, -10, -31, -94, -38, -25, -15, -15, -25, -38, -94")("KnightPieceSquare");
     List.DeleteItem(KnightPieceSquareEndgame, all);
-    Call LoadList("-50,-40,-30,-30,-30,-30,-40,-50, -40,-20,  0,  0,  0,  0,-20,-40, -40,  0, 10, 15, 15, 10,  0,-40, -30,  5, 15, 20, 20, 15,  5,-30, -30,  0, 15, 20, 20, 15,  0,-30, -40,  5, 10, 15, 15, 10,  5,-40, -40,-20,  0,  5,  5,  0,-20,-40, -50,-40,-30,-30,-30,-30,-40,-50,")("KnightPieceSquareEndgame");
+    Call LoadList("-49, -35, -22,  -8,  -8, -22, -35, -49, -33, -26,  -7,   3,   3,  -7, -26, -33, -18, -15,  -2,  13,  13,  -2, -15, -18, -17,   0,   6,  16,  16,   6,   0, -17, -19,  -9,   2,  16,  16,   2,  -9, -19, -24, -18,  -8,   9,   9,  -8, -18, -24, -30, -21, -17,   8,   8, -17, -21, -30, -46, -42, -25,  -8,  -8, -25, -42, -46")("KnightPieceSquareEndgame");
     List.DeleteItem(BishopPieceSquare, all);
-    Call LoadList("-20,-18,-16,-14,-14,-16,-18,-20,    -10, 11,  1,  1,  1 , 1, 11 -10,    1, 11, 21, 26, 26, 21, 11, 1,       1, 21, 21, 26, 26, 21, 21, 1,       1,  1, 16, 21, 21, 16,  1, 1,     -25,  6, 16, 11, 11, 16,  6,-25,     -28, 11,  6,  1,  1,  6, 11,-28,     -30,-30,-50,-20,-20,-50,-30,-30")("BishopPieceSquare");
+    Call LoadList(" -21,  -2,  -5, -13, -13,  -5,  -2, -21,   -8,   3,   7,   1,   1,   7,   3,  -8,   -4,  11,  -1,   7,   7,  -1,  11,  -4,    0,   4,  12,  17,  17,  12,   4,   0,   -3,  14,  11,  13,  13,  11,  14,  -3,   -8,   2,   0,   4,   4,   0,   2,  -8,  -10,  -9,   5,  -3,  -3,   5,  -9, -10,  -23,  -1,  -6, -12, -12,  -6,  -1, -23")("BishopPieceSquare");
     List.DeleteItem(BishopPieceSquareEndgame, all);
-    Call LoadList("-38, -18, -8, 2, 2, -8, -18, -38,  -18, -8, 0, 12, 12, 0, -8, -18,  -8, 2, 20, 22, 22, 20, 2, -8,  2, 12, 17, 22, 22, 17, 12, 2,  2, 12, 16, 20, 20, 16, 12, 2,  -8, 2, 10, 12, 12, 10, 2, -8,  -18, -8, 2, 7, 7, 2, -8, -18,  -38, -18, -8, 2, 2, -8, -18, -38")("BishopPieceSquareEndgame");
+    Call LoadList(" -30, -14, -16,  -4,  -4, -16, -14, -30,  -18,  -6,  -7,   0,   0,  -7,  -6, -18,   -8,   0,  -3,   6,   6,  -3,   0,  -8,  -12,  -1,   0,   8,   8,   0,  -1, -12,  -11,  -3,  -5,   8,   8,  -5,  -3, -11,  -12,   1,   0,   8,   8,   0,   1, -12,  -16,  -8,  -3,   4,   4,  -3,  -8, -16,  -24, -19, -18,  -9,  -9, -18, -19, -24")("BishopPieceSquareEndgame");
     List.DeleteItem(RookPieceSquare, all);
-    Call LoadList("-8, -6, 2, 7, 7, 2, -6, -8,  2, 2, 7, 12, 12, 7, 2, 2,  -8, -6, 6, 10, 10, 6, -6, -8,  -8, -6, 6, 8, 8, 6, -6, -8,  -8, -6, 6, 7, 7, 6, -6, -8,  -8, -6, 6, 7, 7, 6, -6, -8,  -8, -6, 2, 7, 7, 2, -6, -8,  -8, -6, 2, 7, 7, 2, -6, -8")("RookPieceSquare");
+    Call LoadList("-11,  -6,  -3,   1,   1,  -3,  -6, -11,  -8,  -5,  -2,   4,   4,  -2,  -5,  -8, -10,  -3,   1,   0,   0,   1,  -3, -10,  -6,  -2,  -2,  -3,  -3,  -2,  -2,  -6, -11,  -6,   0,   3,   3,   0,  -6, -11, -11,  -2,   2,   5,   5,   2,  -2, -11,  -4,   3,   5,   6,   6,   5,   3,  -4, -10, -11,  -3,   2,   2,  -3, -11, -10")("RookPieceSquare");
     List.DeleteItem(RookPieceSquareEndgame, all);
-    Call LoadList("0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0")("RookPieceSquareEndgame");
+    Call LoadList(" -1,  -3,  -1,  -1,  -1,  -1,  -3,  -1,  -5,  -3,   0,   0,   0,   0,  -3,  -5,   5,  -2,   1,  -1,  -1,   1,  -2,   5,  -2,   1,  -4,   4,   4,  -4,   1,  -2,  -4,   2,   2,  -4,  -4,   2,   2,  -4,   1,  -1,  -5,   3,   3,  -5,  -1,   1,   0,   1,   8,  -4,  -4,   8,   1,   0,   6,  -3,   6,   3,   3,   6,  -3,   6")("RookPieceSquareEndgame");
     List.DeleteItem(QueenPieceSquare, all);
-    Call LoadList("4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  -6, -6, -1, 4, 4, -1, -6, -6,  -16, -11, -1, 4, 4, -1, -11, -16,  -26, -16, -6, 4, 4, -6, -16, -26")("QueenPieceSquare");
+    Call LoadList("  1,  -2,  -2,   2,   2,  -2,  -2,   1,  -1,   2,   4,   6,   6,   4,   2,  -1,  -1,   3,   6,   3,   3,   6,   3,  -1,   2,   2,   4,   4,   4,   4,   2,   2,   0,   7,   6,   2,   2,   6,   7,   0,  -2,   5,   3,   4,   4,   3,   5,  -2,  -2,   3,   5,   4,   4,   5,   3,  -2,  -1,  -1,   0,  -1,  -1,   0,  -1,  -1")("QueenPieceSquare");
     List.DeleteItem(QueenPieceSquareEndgame, all);
-    Call LoadList("-26, -6, -1, 4, 4, -1, -6, -26,  -16, 4, 19, 29, 29, 19, 4, -16,  -6, 9, 24, 34, 34, 24, 9, -6,  -6, 9, 24, 34, 34, 24, 9, -6,  -6, 9, 24, 34, 34, 24, 9, -6,  -16, -1, 14, 24, 24, 14, -1, -16,  -31, -26, -16, -6, -6, -16, -26, -31,  -46, -41, -31, -26, -26, -31, -41, -46")("QueenPieceSquareEndgame");
+    Call LoadList("-32, -27, -22, -12, -12, -22, -27, -32, -26, -15, -10,  -2,  -2, -10, -15, -26, -18,  -8,  -4,   1,   1,  -4,  -8, -18, -11,  -1,   6,  11,  11,   6,  -1, -11, -14,  -3,   4,  10,  10,   4,  -3, -14, -18,  -8,  -6,   0,   0,  -6,  -8, -18, -23, -13, -11,  -4,  -4, -11, -13, -23, -35, -24, -20, -17, -17, -20, -24, -35")("QueenPieceSquareEndgame");
     List.DeleteItem(KingPieceSquare, all);
-    Call LoadList("-55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -50, -50, -55, -60, -60, -55, -50, -50,  -40, -40, -45, -50, -50, -45, -40, -40,  -30, -30, -30, -35, -35, -30, -30, -30,  -20, 0, 0, -10, -10, 0, 0, -20")("KingPieceSquare");
+    Call LoadList("128, 153, 128,  89,  89, 128, 153, 128, 130, 143, 112,  86,  86, 112, 143, 130,  93, 119,  79,  56,  56,  79, 119,  93,  79,  90,  64,  51,  51,  64,  90,  79,  68,  83,  53,  32,  32,  53,  83,  68,  56,  75,  40,  17,  17,  40,  75,  56,  41,  56,  30,  12,  12,  30,  56,  41,  30,  41,  23,   0,   0,  23,  41,  30")("KingPieceSquare");
     List.DeleteItem(KingPieceSquareEndgame, all);
-    Call LoadList("-10, 10, 15, 20, 20, 15, 10, -10,  0, 20, 35, 45, 45, 35, 20, 0,  10, 25, 40, 50, 50, 40, 25, 10,  10, 25, 40, 50, 50, 40, 25, 10,  10, 25, 40, 50, 50, 40, 25, 10,  0, 15, 30, 40, 40, 30, 15, 0,  -15, -10, 0, 10, 10, 0, -10, -15,  -30, -25, -15, -10, -10, -15, -25, -30")("KingPieceSquareEndgame");
+    Call LoadList("  0,  19,  38,  44,  44,  38,  19,   0,  27,  46,  65,  62,  62,  65,  46,  27,  40,  65,  77,  81,  81,  77,  65,  40,  48,  71,  79,  79,  79,  79,  71,  48,  46,  78,  92,  91,  91,  92,  78,  46,  41,  77,  82,  89,  89,  82,  77,  41,  19,  46,  60,  66,  66,  60,  46,  19,   2,  28,  35,  35,  35,  35,  28,   2")("KingPieceSquareEndgame");
 }
 
 Define IsBlackKingCheckMate (warp=true)
@@ -7190,7 +7027,7 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
     }
     If (CurrentPiece > 0)
     {
-        If (MovePosLookupBlack[((PieceIdxLookup[CurrentPiece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == MagicEval)
+        If (MovePosLookupBlackLegal[((PieceIdxLookup[CurrentPiece] * 10000) + ((Idx * 100) + WhiteKingIdx))] == 0)
         {
             Stop(this script);
         }
@@ -7214,7 +7051,7 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
     {
         If (CurrentPiece < 0)
         {
-            If (MovePosLookupWhite[((PieceIdxLookup[(0 - CurrentPiece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == MagicEval)
+            If (MovePosLookupWhiteLegal[((PieceIdxLookup[(0 - CurrentPiece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == 0)
             {
                 Stop(this script);
             }
@@ -7620,15 +7457,11 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "PawnPieceSquareEndgame")
             {
-                List.Add(PawnPieceSquareEndgame, Operator.Round((CurrentValue * 0)));
-            }
-            If (ListName == "PawnPieceSquarePreCastling")
-            {
-                List.Add(PawnPieceSquarePreCastling, Operator.Round((CurrentValue * 1)));
+                List.Add(PawnPieceSquareEndgame, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "KingPieceSquare")
             {
-                List.Add(KingPieceSquare, Operator.Round((CurrentValue * 0.75)));
+                List.Add(KingPieceSquare, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "KingPieceSquareEndgame")
             {
@@ -7640,7 +7473,7 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "QueenPieceSquareEndgame")
             {
-                List.Add(QueenPieceSquareEndgame, Operator.Round((CurrentValue * 0.8)));
+                List.Add(QueenPieceSquareEndgame, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "RookPieceSquare")
             {
@@ -7652,35 +7485,35 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "BishopPieceSquare")
             {
-                List.Add(BishopPieceSquare, Operator.Round((CurrentValue * 0.4)));
+                List.Add(BishopPieceSquare, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "BishopPieceSquareEndgame")
             {
-                List.Add(BishopPieceSquareEndgame, Operator.Round((CurrentValue * 0.4)));
+                List.Add(BishopPieceSquareEndgame, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "KnightPieceSquare")
             {
-                List.Add(KnightPieceSquare, Operator.Round((CurrentValue * 0.4)));
+                List.Add(KnightPieceSquare, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "KnightPieceSquareEndgame")
             {
-                List.Add(KnightPieceSquareEndgame, Operator.Round((CurrentValue * 0.4)));
+                List.Add(KnightPieceSquareEndgame, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "KnightMobilityBonus")
             {
-                List.Add(KnightMobilityBonus, (CurrentValue * 0.75));
+                List.Add(KnightMobilityBonus, (CurrentValue * 1));
             }
             If (ListName == "BishopMobilityBonus")
             {
-                List.Add(BishopMobilityBonus, (CurrentValue * 0.75));
+                List.Add(BishopMobilityBonus, (CurrentValue * 1));
             }
             If (ListName == "RookMobilityBonus")
             {
-                List.Add(RookMobilityBonus, (CurrentValue * 0.75));
+                List.Add(RookMobilityBonus, (CurrentValue * 1));
             }
             If (ListName == "QueenMobilityBonus")
             {
-                List.Add(QueenMobilityBonus, (CurrentValue * 0.75));
+                List.Add(QueenMobilityBonus, (CurrentValue * 1));
             }
             If (ListName == "PawnStorm")
             {
@@ -7688,7 +7521,7 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "PawnShelter")
             {
-                List.Add(PawnShelter, Operator.Round((CurrentValue * 1.2)));
+                List.Add(PawnShelter, Operator.Round((CurrentValue * 1.5)));
             }
             If (ListName == "ImbalanceSameSide")
             {
@@ -8104,7 +7937,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     {
                         If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes == -1)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
                         {
-                            If (((((Depth % 2) == 1) And (Board[SourceIdx] > 0)) And (Not ((MovePosLookupBlack[((PieceIdxLookup[Board[SourceIdx]] * 10000) + ((SourceIdx * 100) + TargetIdx))] == MagicEval)))) Or ((((Depth % 2) == 0) And (Board[SourceIdx] < 0)) And (Not ((MovePosLookupWhite[((PieceIdxLookup[abs(Board[SourceIdx])] * 10000) + ((SourceIdx * 100) + TargetIdx))] == MagicEval)))))
+                            If (((((Depth % 2) == 1) And (Board[SourceIdx] > 0)) And (MovePosLookupBlackLegal[((PieceIdxLookup[Board[SourceIdx]] * 10000) + ((SourceIdx * 100) + TargetIdx))] == 1)) Or ((((Depth % 2) == 0) And (Board[SourceIdx] < 0)) And (MovePosLookupWhiteLegal[((PieceIdxLookup[abs(Board[SourceIdx])] * 10000) + ((SourceIdx * 100) + TargetIdx))] == 1)))
                             {
                                 If (((Not ((abs(Board[SourceIdx]) == GoK_BlackPawn))) Or (IdxToFile[SourceIdx] == IdxToFile[TargetIdx])) Or (Not ((Board[TargetIdx] == 0))))
                                 {
@@ -8187,7 +8020,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         If ((SourcePieceOuter2 * FactorOuter) > 0)
                         {
                             IdxOuter2 = ((PieceIdxLookup[abs(SourcePieceOuter2)] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2));
-                            If ((((Depth % 2) == 1) And (Not ((MovePosLookupBlack[IdxOuter2] == MagicEval)))) Or (((Depth % 2) == 0) And (Not ((MovePosLookupWhite[IdxOuter2] == MagicEval)))))
+                            If ((((Depth % 2) == 1) And (MovePosLookupBlackLegal[IdxOuter2] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupWhiteLegal[IdxOuter2] == 1)))
                             {
                                 Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(SourcePieceOuter2))(abs(Board[TargetIdxOuter2]))(floor((AppliedMove[(Depth - 1)] % 100)));
                             }
@@ -8198,7 +8031,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     Repeat (List.Length(TmpList3))
                     {
                         IdxOuter2 = (TmpList4[IdxOuter3] + TargetIdxOuter2);
-                        If ((((Depth % 2) == 1) And (Not ((MovePosLookupBlack[IdxOuter2] == MagicEval)))) Or (((Depth % 2) == 0) And (Not ((MovePosLookupWhite[IdxOuter2] == MagicEval)))))
+                        If ((((Depth % 2) == 1) And (MovePosLookupBlackLegal[IdxOuter2] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupWhiteLegal[IdxOuter2] == 1)))
                         {
                             SourceIdxOuter2 = TmpList3[IdxOuter3];
                             Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(abs(Board[TargetIdxOuter2]))(floor((AppliedMove[(Depth - 1)] % 100)));
@@ -8283,7 +8116,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     If ((Board[SourceIdxOuter2] * FactorOuter) > 0)
                     {
                         IdxOuter2 = ((PieceIdxLookup[abs(Board[SourceIdxOuter2])] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2));
-                        If ((((Depth % 2) == 1) And (Not ((MovePosLookupBlack[IdxOuter2] == MagicEval)))) Or (((Depth % 2) == 0) And (Not ((MovePosLookupWhite[IdxOuter2] == MagicEval)))))
+                        If ((((Depth % 2) == 1) And (MovePosLookupBlackLegal[IdxOuter2] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupWhiteLegal[IdxOuter2] == 1)))
                         {
                             Call //("When killer move is applicable, add to temp list");
                             Call StagedMoveGenKillerMoves(Depth)(CurrentMoveOuter)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[SourceIdxOuter2]))(IdxOuter3);
@@ -9129,32 +8962,51 @@ Define TaperedEval.Add(string Mg)(string Eg) (warp=true)
     TaperedEval.Eg += Eg;
 }
 
-Define TaperedEval.GetResult (warp=true)
+Define TaperedEval.GetPiecePosResult(string Piece)(string Idx) (warp=true)
 {
-    Count1 = (((WhiteQueenCountLocal * 14) + ((WhiteRookCountLocal * 6) + ((WhiteMinorCountLocal - WhiteRookCountLocal) * 3))) + ((BlackQueenCountLocal * 14) + ((BlackRookCountLocal * 6) + ((BlackMinorCountLocal - BlackRookCountLocal) * 3))));
-    If (Count1 > 76)
+    TaperedEval.PiecePosResult = 0;
+    IdxSub2 = ((PieceIdxLookup[abs(Piece)] * 10000) + Idx);
+    If (Piece > 0)
     {
-        Count1 = 76;
+        Call TaperedEval.GetScalarResult(MovePosLookupBlackMg[IdxSub2])(MovePosLookupBlackEg[IdxSub2])(TaperedEval.ScaleFactor);
+        TaperedEval.PiecePosResult = TaparedEval.ScalarResult;
     }
-    If (Count1 < 8)
+    Else
     {
-        Count1 = 8;
+        If (Piece < 0)
+        {
+            Call TaperedEval.GetScalarResult(MovePosLookupWhiteMg[IdxSub2])(MovePosLookupWhiteEg[IdxSub2])(TaperedEval.ScaleFactor);
+            TaperedEval.PiecePosResult = TaparedEval.ScalarResult;
+        }
     }
-    Count1 += -8;
-    TaperedEval.Result = Operator.Round(((TaperedEval.Mg * (Count1 / 68)) + (TaperedEval.Eg * ((68 - Count1) / 68))));
+}
+
+Define TaperedEval.GetScalarResult(string Mg)(string Eg)(string ScaleFactor) (warp=true)
+{
+    TaparedEval.ScalarResult = Operator.Round(((Mg * (ScaleFactor / 68)) + (Eg * ((68 - ScaleFactor) / 68))));
+}
+
+Define TaperedEval.GetSumResult (warp=true)
+{
+    Call TaperedEval.GetScalarResult(TaperedEval.Mg)(TaperedEval.Eg)(TaperedEval.ScaleFactor);
+    TaperedEval.SumResult = TaparedEval.ScalarResult;
 }
 
 Define TaperedEval.Init (warp=true)
 {
     TaperedEval.Eg = 0;
     TaperedEval.Mg = 0;
-    TaperedEval.Result = 0;
-}
-
-Define TaperedEval.Multiply(string Factor) (warp=true)
-{
-    TaperedEval.Eg = Operator.Round((TaperedEval.Mg * Factor));
-    TaperedEval.Mg = Operator.Round((TaperedEval.Eg * Factor));
+    TaperedEval.SumResult = 0;
+    TaperedEval.ScaleFactor = (((WhiteQueenCountLocal * 14) + ((WhiteRookCountLocal * 6) + ((WhiteMinorCountLocal - WhiteRookCountLocal) * 3))) + ((BlackQueenCountLocal * 14) + ((BlackRookCountLocal * 6) + ((BlackMinorCountLocal - BlackRookCountLocal) * 3))));
+    If (TaperedEval.ScaleFactor > 76)
+    {
+        TaperedEval.ScaleFactor = 76;
+    }
+    If (TaperedEval.ScaleFactor < 8)
+    {
+        TaperedEval.ScaleFactor = 8;
+    }
+    TaperedEval.ScaleFactor += -8;
 }
 
 Define TTProbeBoard(string BoardHash) (warp=true)
@@ -9456,6 +9308,7 @@ Define UndoPrevMove (warp=false)
 
 Define UpdateMoveHashPosScore(num Piece)(num SourceIdx)(num TargetIdx)(bool PosScoreUpdate) (warp=true)
 {
+    Call TaperedEval.Init;
     Call GetPiecePosHash(Piece)(SourceIdx);
     CurrentBoardHash = (CurrentBoardHash - PiecePosHash);
     If ((abs(Piece) == GoK_BlackPawn) Or (abs(Piece) == GoK_BlackKing))
@@ -9468,17 +9321,17 @@ Define UpdateMoveHashPosScore(num Piece)(num SourceIdx)(num TargetIdx)(bool PosS
     {
         CurrentBoardHash2 = (CurrentBoardHash2 + PiecePosHash);
     }
-    Call GetPiecePosScore(Piece)(SourceIdx);
+    Call TaperedEval.GetPiecePosResult(Piece)(SourceIdx);
     If PosScoreUpdate
     {
-        List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] - PosScoreRes));
+        List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] - TaperedEval.PiecePosResult));
     }
     Else
     {
-        List.ReplaceItem(PosScoreDelta, Depth, (0 - PosScoreRes));
+        List.ReplaceItem(PosScoreDelta, Depth, (0 - TaperedEval.PiecePosResult));
     }
-    Call GetPiecePosScore(Piece)(TargetIdx);
-    List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + PosScoreRes));
+    Call TaperedEval.GetPiecePosResult(Piece)(TargetIdx);
+    List.ReplaceItem(PosScoreDelta, Depth, (PosScoreDelta[Depth] + TaperedEval.PiecePosResult));
 }
 
 Define _ClearLists (warp=true)
@@ -9554,8 +9407,8 @@ Define _ClearLists (warp=true)
     List.DeleteAll(ChebyshevDistance);
     List.DeleteAll(MoveHashLookupBlack);
     List.DeleteAll(MoveHashLookupWhite);
-    List.DeleteAll(MovePosLookupBlack);
-    List.DeleteAll(MovePosLookupWhite);
+    List.DeleteAll(MovePosLookupBlackMg);
+    List.DeleteAll(MovePosLookupWhiteMg);
     List.DeleteAll(MovePathDelta);
     List.DeleteAll(MovePathStepInc);
     List.DeleteAll(Moves);
