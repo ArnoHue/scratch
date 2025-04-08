@@ -117,7 +117,7 @@ WhenKeyPressed(c)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9132 (07.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9137 (08.04.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -3328,7 +3328,7 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
             }
             If (BlackPawnCount[Idx] > 1)
             {
-                EvalExtendedResult1 += (-12 * BlackPawnCount[Idx]);
+                EvalExtendedResult1 += (-12 * (BlackPawnCount[Idx] - 1));
             }
             If ((IsPawnShelter == 0) Or (IsEndgame == 1))
             {
@@ -3383,17 +3383,6 @@ Define EvaluateBoardExtended1Impl(string Depth) (warp=true)
             }
         }
         Idx += 1;
-    }
-    If ((((WhiteQueenCount + WhiteMinorCount) + (BlackQueenCount + BlackMinorCount)) < 3) And ((WhiteQueenCount == 0) Or (BlackQueenCount == 0)))
-    {
-        If ((BlackQueenCountLocal + BlackMinorCountLocal) < (WhiteQueenCountLocal + WhiteMinorCountLocal))
-        {
-            EvalExtendedResult3 += (PieceMobility[SourceIdx] * 10);
-        }
-        If ((WhiteQueenCountLocal + WhiteMinorCountLocal) < (BlackQueenCountLocal + BlackMinorCountLocal))
-        {
-            EvalExtendedResult3 += (PieceMobility[SourceIdx] * -10);
-        }
     }
 }
 
@@ -3563,17 +3552,12 @@ Define EvaluateBoardExtended2Impl(string Depth) (warp=true)
     {
         Call TaperedEval.Add(-15)(-15);
     }
-    Call TaperedEval.GetResult;
-    EvalExtendedResult2 = TaperedEval.Result;
+    Call TaperedEval.GetSumResult;
+    EvalExtendedResult2 = TaperedEval.SumResult;
 }
 
 Define EvaluateBoardExtended3(string Depth) (warp=true)
 {
-    If (IsEndgame == 1)
-    {
-        EvalExtendedResult3 = 0;
-        Stop(this script);
-    }
     Call TTProbeBoard(CurrentBoardHash);
     If ((TTProbeRes == 1) And (Not ((TTProbeBoardScore3Res == ""))))
     {
@@ -3597,6 +3581,22 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
     }
     Call CalcBoardAttackedByMove((Depth + 1));
     Call CalcBoardAttackedByMove((Depth + 2));
+    If (IsEndgame == 1)
+    {
+        EvalExtendedResult3 = 0;
+        If ((((WhiteQueenCount + WhiteMinorCount) + (BlackQueenCount + BlackMinorCount)) < 3) And ((WhiteQueenCount == 0) Or (BlackQueenCount == 0)))
+        {
+            If ((BlackQueenCountLocal + BlackMinorCountLocal) < (WhiteQueenCountLocal + WhiteMinorCountLocal))
+            {
+                EvalExtendedResult3 += (PieceMobility[SourceIdx] * 10);
+            }
+            If ((WhiteQueenCountLocal + WhiteMinorCountLocal) < (BlackQueenCountLocal + BlackMinorCountLocal))
+            {
+                EvalExtendedResult3 += (PieceMobility[SourceIdx] * -10);
+            }
+        }
+        Stop(this script);
+    }
     Idx = 1;
     Repeat (64)
     {
@@ -3680,9 +3680,9 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                 }
                 AttackerPiece = Board[(AttackerIdx + 0)];
                 DefenderPiece = Board[(DefenderIdx + 0)];
-                StronglyProtected = (((Defended > 0) And (abs(DefenderPiece) == GoK_BlackPawn)) Or ((Defended > 1) And (Attacked < 2)));
-                IsWeak = ((Attacked > 0) And (StronglyProtected == 0));
-                Hanging = ((IsWeak == 1) And ((Defended == 0) Or ((CurrentPieceAbs > GoK_BlackPawn) And (Attacked > 1))));
+                StronglyProtectedCurrentPiece = (((Defended > 0) And (abs(DefenderPiece) == GoK_BlackPawn)) Or ((Defended > 1) And (Attacked < 2)));
+                StronglyProtectedCurrentPieceNonPawn = ((abs(CurrentPiece) > GoK_BlackPawn) And (StronglyProtectedCurrentPiece == 1));
+                IsWeakCurrentPiece = ((Attacked > 0) And (StronglyProtectedCurrentPiece == 0));
                 If (CurrentPiece > 0)
                 {
                     SafeAttacker = ((BoardAttackedByBlack[(AttackerIdx + 0)] == 0) Or (BoardAttackedByWhite[(AttackerIdx + 0)] > 0));
@@ -3691,48 +3691,53 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                 {
                     SafeAttacker = ((BoardAttackedByWhite[(AttackerIdx + 0)] == 0) Or (BoardAttackedByBlack[(AttackerIdx + 0)] > 0));
                 }
-                If (Hanging == 1)
+                If ((IsWeakCurrentPiece == 1) Or (StronglyProtectedCurrentPieceNonPawn == 1))
                 {
-                    Call //("Hanging pieces");
-                    Call TaperedEval.Add((-32 * Factor))((-17 * Factor));
-                }
-                If (SafeAttacker == 1)
-                {
-                    If ((abs(AttackerPiece) == GoK_BlackPawn) And ((CurrentPieceAbs > GoK_BlackPawn) And (CurrentPieceAbs < GoK_BlackKing)))
+                    If ((Defended == 0) Or ((abs(CurrentPiece) > GoK_BlackPawn) And (Attacked > 1)))
                     {
-                        Call //("Safe pawn attack");
-                        Call TaperedEval.Add((-85 * Factor))((-46 * Factor));
+                        Call //("Hanging pieces");
+                        Call TaperedEval.Add((-32 * Factor))((-17 * Factor));
+                    }
+                    If ((abs(AttackerPiece) == GoK_BlackKnight) Or (abs(AttackerPiece) == GoK_BlackBishop))
+                    {
+                        Call //("Minor threads");
+                        IdxSub = (PieceIdxLookup[CurrentPieceAbs] * 2);
+                        Call TaperedEval.Add(((0 - MinorAttackWeight[(IdxSub - 1)]) * Factor))(((0 - MinorAttackWeight[IdxSub]) * Factor));
+                    }
+                    If (abs(AttackerPiece) == GoK_BlackRook)
+                    {
+                        Call //("Rook threads");
+                        IdxSub = (PieceIdxLookup[CurrentPieceAbs] * 2);
+                        Call TaperedEval.Add(((0 - RookAttackWeight[(IdxSub - 1)]) * Factor))(((0 - RookAttackWeight[IdxSub]) * Factor));
                     }
                 }
                 If (SafeAttacker == 1)
                 {
-                    If ((CurrentPieceAbs > GoK_BlackPawn) And (CurrentPieceAbs < GoK_BlackKing))
+                    If ((abs(AttackerPiece) == GoK_BlackPawn) And (CurrentPieceAbs > GoK_BlackPawn))
                     {
-                        If ((abs(AttackerPiece) == GoK_BlackKnight) Or (abs(AttackerPiece) == GoK_BlackBishop))
+                        Call //("Safe pawn attack");
+                        Call TaperedEval.Add((-85 * Factor))((-46 * Factor));
+                    }
+                    If (CurrentPieceAbs == GoK_BlackQueen)
+                    {
+                        If ((abs(AttackerPiece) == GoK_BlackBishop) Or (abs(AttackerPiece) == GoK_BlackRook))
                         {
-                            Call //("Minor threads");
-                            If (CurrentPieceAbs < GoK_BlackRook)
-                            {
-                                Call TaperedEval.Add((-20 * Factor))((-25 * Factor));
-                            }
-                            Else
-                            {
-                                Call TaperedEval.Add((-32 * Factor))((-56 * Factor));
-                            }
+                            Call //("Sliders attack queen");
+                            Call TaperedEval.Add((-28 * Factor))((-8 * Factor));
                         }
-                        If (CurrentPieceAbs == GoK_BlackQueen)
+                        If (abs(AttackerPiece) == GoK_BlackKnight)
                         {
-                            If ((abs(AttackerPiece) == GoK_BlackBishop) Or (abs(AttackerPiece) == GoK_BlackRook))
-                            {
-                                Call //("Sliders attack queen");
-                                Call TaperedEval.Add((-28 * Factor))((-8 * Factor));
-                            }
-                            If (abs(AttackerPiece) == GoK_BlackKnight)
-                            {
-                                Call //("Knight attacks queen");
-                                Call TaperedEval.Add((-8 * Factor))((-8 * Factor));
-                            }
+                            Call //("Knight attacks queen");
+                            Call TaperedEval.Add((-8 * Factor))((-8 * Factor));
                         }
+                    }
+                }
+                If (IsWeakCurrentPiece == 1)
+                {
+                    If (abs(AttackerPiece) == GoK_BlackKing)
+                    {
+                        Call //("King threat");
+                        Call TaperedEval.Add((-11 * Factor))((-42 * Factor));
                     }
                 }
             }
@@ -3843,8 +3848,8 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
             SourceIdx += 1;
         }
     }
-    Call TaperedEval.GetResult;
-    EvalExtendedResult3 += TaperedEval.Result;
+    Call TaperedEval.GetSumResult;
+    EvalExtendedResult3 += TaperedEval.SumResult;
     Call TaperedEval.Init;
     List.DeleteAll(KingRingAttackersCount);
     List.DeleteAll(KingRingAttacksCount);
@@ -3870,7 +3875,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
     List.Add(AttacksWeight, 36);
     List.Add(AttacksWeight, 26);
     List.Add(AttacksWeight, 21);
-    List.Add(AttacksWeight, 15);
+    List.Add(AttacksWeight, 5);
     List.Add(AttacksWeight, 0);
     List.DeleteAll(TmpList2);
     List.Add(TmpList2, 1);
@@ -3894,7 +3899,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
         Idx = KingRings[IdxOuter];
         Repeat Until (Idx == -1)
         {
-            IsWeak = 0;
+            IsWeakCurrentPiece = 0;
             If (Side == 1)
             {
                 Count1 = BoardAttackedByWhite[Idx];
@@ -3911,7 +3916,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                     DefenderPiece = Board[BoardAttackedByBlackPiece[Idx]];
                     If ((BoardAttackedByBlack[Idx] == 0) Or ((DefenderPiece == GoK_BlackQueen) Or (DefenderPiece == GoK_BlackKing)))
                     {
-                        IsWeak = 1;
+                        IsWeakCurrentPiece = 1;
                     }
                 }
                 Else
@@ -3920,12 +3925,12 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                     DefenderPiece = Board[BoardAttackedByWhitePiece[Idx]];
                     If ((BoardAttackedByWhite[Idx] == 0) Or ((DefenderPiece == GoK_WhiteQueen) Or (DefenderPiece == GoK_WhiteKing)))
                     {
-                        IsWeak = 1;
+                        IsWeakCurrentPiece = 1;
                     }
                 }
                 List.ReplaceItem(KingRingAttacksCount, Side, (KingRingAttacksCount[Side] + 1));
                 List.ReplaceItem(KingRingAttacksWeight, Side, (KingRingAttacksWeight[Side] + AttacksWeight[PieceIdxLookup[abs(Board[IdxSub])]]));
-                If (IsWeak == 1)
+                If (IsWeakCurrentPiece == 1)
                 {
                     List.ReplaceItem(KingRingAttacksOnWeakCount, Side, (KingRingAttacksOnWeakCount[Side] + 1));
                 }
@@ -3952,8 +3957,8 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
         Idx = 1;
         Repeat (64)
         {
-            CurrentPiece = Board[(Idx + 0)];
-            If (((Side == 1) And (Not ((CurrentPiece < 0)))) Or ((Side == 2) And (Not ((CurrentPiece > 0)))))
+            TargetPiece = Board[(Idx + 0)];
+            If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
             {
                 If (Side == 1)
                 {
@@ -3975,7 +3980,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                     }
                     AttackerPiece = Board[(AttackerIdx + 0)];
                     AttackerPieceAbs = abs(AttackerPiece);
-                    If ((Not ((AttackerPieceAbs == GoK_BlackPawn))) And (Not ((AttackerPieceAbs == GoK_BlackKing))))
+                    If ((AttackerPieceAbs > GoK_BlackPawn) And (Not ((AttackerPieceAbs == GoK_BlackKing))))
                     {
                         Found = 0;
                         If (Side == 1)
@@ -4032,7 +4037,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                                     DefenderIdx = BoardAttackedByWhitePiece[Idx];
                                 }
                                 DefenderPiece = Board[DefenderIdx];
-                                IsWeak = (((Attacked > 1) And (Defended < 2)) And ((Defended == 0) Or (abs(DefenderPiece) > GoK_BlackRook)));
+                                IsWeak = (((Attacked > 0) And (Defended < 2)) And ((Defended == 0) Or (abs(DefenderPiece) > GoK_BlackRook)));
                                 If ((Defended == 0) Or ((IsWeak == 1) And (Attacked > 1)))
                                 {
                                     List.ReplaceItem(KingRingAttackSafeChecks, Side, (KingRingAttackSafeChecks[Side] + TmpList2[(PieceIdxLookup[AttackerPieceAbs] - 1)]));
@@ -4153,8 +4158,8 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
         }
         Side += 1;
     }
-    Call TaperedEval.GetResult;
-    EvalExtendedResult3 += TaperedEval.Result;
+    Call TaperedEval.GetSumResult;
+    EvalExtendedResult3 += TaperedEval.SumResult;
 }
 
 Define ExecuteEngineMove (warp=false)
@@ -6419,6 +6424,10 @@ Define InitKingSafety (warp=true)
     Call LoadList("0, 7, 8, 12, 29, 48, 86, 0")("PawnConnectedBonus");
     List.DeleteItem(PawnPhalanxBonus, all);
     Call LoadList("0, 7, 8, 12, 29, 48, 86, 0")("PawnPhalanxBonus");
+    List.DeleteItem(MinorAttackWeight, all);
+    Call LoadList("0, 15, 19, 20, 28, 22, 34, 55, 30, 59, 0, 0")("MinorAttackWeight");
+    List.DeleteItem(RookAttackWeight, all);
+    Call LoadList("0, 11, 18, 34, 16, 32, 0, 17, 25, 19, 0, 0")("RookAttackWeight");
     List.DeleteAll(KingRings);
     Repeat (640)
     {
@@ -6956,11 +6965,11 @@ Define InitOpeningBook (warp=true)
 Define InitPieceSquareTables (warp=true)
 {
     List.DeleteItem(PawnPieceSquare, all);
-    Call LoadList(" 0,  0,  0,  0,  0,  0,  0,  0, -1,  2,  7,  9,  9,  7,  2, -1, -7, -3,  8, 11, 11,  8, -3, -7, -5, -5,  6, 14, 14,  6, -5, -5,  4, -3, -4,  3,  3, -4, -3,  4, -5, -7, -3,  3,  3, -3, -7, -5, -4,  4, -5, -2, -2, -5,  4, -4,  0,  0,  0,  0,  0,  0,  0,  0")("PawnPieceSquare");
+    Call LoadList("-79, -45, -38, -37, -37, -38, -45, -79, -37, -18, -11,  -4,  -4, -11, -18, -37, -30,  -9,   2,   9,   9,   2,  -9, -30, -13,   2,  19,  22,  22,  19,   2, -13, -14,   6,  20,  24,  24,  20,   6, -14,  -5,  13,  30,  26,  26,  30,  13,  -5, -31, -10,   3,  17,  17,   3, -10, -31, -94, -38, -25, -15, -15, -25, -38, -94")("PawnPieceSquare");
     List.DeleteItem(PawnPieceSquareEndgame, all);
     Call LoadList(" 0,  0,  0,  0,  0,  0,  0,  0, -7, -2,  4,  5,  5,  4, -2, -7, -3, -4, -2,  2,  2, -2, -4, -3, -1, -3, -5, -4, -4, -5, -3, -1,  4,  4, -1, -6, -6, -1,  4,  4, 10,  6,  7, 14, 14,  7,  6, 10,  2, -2,  8, 11, 11,  8, -2,  2,  0,  0,  0,  0,  0,  0,  0,  0")("PawnPieceSquareEndgame");
     List.DeleteItem(KnightPieceSquare, all);
-    Call LoadList("-79, -45, -38, -37, -37, -38, -45, -79, -37, -18, -11,  -4,  -4, -11, -18, -37, -30,  -9,   2,   9,   9,   2,  -9, -30, -13,   2,  19,  22,  22,  19,   2, -13, -14,   6,  20,  24,  24,  20,   6, -14,  -5,  13,  30,  26,  26,  30,  13,  -5, -31, -10,   3,  17,  17,   3, -10, -31, -94, -38, -25, -15, -15, -25, -38, -94")("KnightPieceSquare");
+    Call LoadList("25, 50, 25,  0,  0, 25, 50, 25, -25, -25, -25, -25, -25, -25, -25, -25, -50, -50, -50, -50, -50, -50, -50, -50,  -50, -50, -50, -50, -50, -50, -50, -50,  -50, -50, -50, -50, -50, -50, -50, -50,  -50, -50, -50, -50, -50, -50, -50, -50,  -50, -50, -50, -50, -50, -50, -50, -50,  -50, -50, -50, -50, -50, -50, -50, -50, ")("KnightPieceSquare");
     List.DeleteItem(KnightPieceSquareEndgame, all);
     Call LoadList("-49, -35, -22,  -8,  -8, -22, -35, -49, -33, -26,  -7,   3,   3,  -7, -26, -33, -18, -15,  -2,  13,  13,  -2, -15, -18, -17,   0,   6,  16,  16,   6,   0, -17, -19,  -9,   2,  16,  16,   2,  -9, -19, -24, -18,  -8,   9,   9,  -8, -18, -24, -30, -21, -17,   8,   8, -17, -21, -30, -46, -42, -25,  -8,  -8, -25, -42, -46")("KnightPieceSquareEndgame");
     List.DeleteItem(BishopPieceSquare, all);
@@ -7483,11 +7492,11 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "KingPieceSquare")
             {
-                List.Add(KingPieceSquare, Operator.Round((CurrentValue * 0)));
+                List.Add(KingPieceSquare, Operator.Round((CurrentValue * 0.5)));
             }
             If (ListName == "KingPieceSquareEndgame")
             {
-                List.Add(KingPieceSquareEndgame, Operator.Round((CurrentValue * 1)));
+                List.Add(KingPieceSquareEndgame, Operator.Round((CurrentValue * 0.5)));
             }
             If (ListName == "QueenPieceSquare")
             {
@@ -9467,3 +9476,4 @@ Define _ClearLists (warp=true)
     List.DeleteItem(TTNodeCheckedAttackLines, all);
     List.DeleteItem(TTNodeScoreIsDynamic, all);
 }
+
