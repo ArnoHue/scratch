@@ -74,6 +74,8 @@ WhenKeyPressed(d)
         Variable.Show(BestMove);
         Variable.Show(NPS);
         Variable.Show(MPS);
+        Variable.Show(PV);
+        Variable.Show(CustomThinkTime);
     }
     Else
     {
@@ -83,42 +85,14 @@ WhenKeyPressed(d)
         Variable.Hide(BestMove);
         Variable.Hide(NPS);
         Variable.Hide(MPS);
-    }
-}
-
-WhenKeyPressed(c)
-{
-    PlayingMode = ((PlayingMode + 1) % 3);
-    If (PlayingMode == 0)
-    {
-        Call SayAsync("Standard mode (full null move pruning). Think time on Difficult set to 25/15 seconds, re-initializing cache.")(5);
-        If (IsScratch3 == 0)
-        {
-            Control.Wait(0.1);
-            Call ClearTT;
-        }
-    }
-    Else
-    {
-        If (PlayingMode == 1)
-        {
-            Call SayAsync("Competition mode (full null move pruning). Think time on Difficult set to 60 seconds, re-initializing cache.")(5);
-            If (IsScratch3 == 0)
-            {
-                Control.Wait(0.1);
-                Call ClearTT;
-            }
-        }
-        Else
-        {
-            Call SayAsync("Puzzle mode (limited null move pruning). Think time on Difficult set to 60 seconds.")(5);
-        }
+        Variable.Hide(PV);
+        Variable.Hide(CustomThinkTime);
     }
 }
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.276 (07.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.285 (12.04.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -970,6 +944,7 @@ Define AddSpecialMove(string Move)(string Depth) (warp=true)
 
 Define ApplyMove(num Depth) (warp=true)
 {
+    Call NNUE_Public_OnMakeMoveStart(Depth);
     List.ReplaceItem(PosEvalDelta, Depth, 0);
     List.ReplaceItem(SourcePieces, Depth, 0);
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
@@ -1284,6 +1259,7 @@ Define ApplyMove(num Depth) (warp=true)
             }
         }
     }
+    Call NNUE_Public_OnMakeMoveStop(Depth);
     If (Not ((AppliedMove[Depth] == 0)))
     {
         If (Quiescence[Depth] == 0)
@@ -1676,14 +1652,7 @@ Define ClearTT (warp=true)
     }
     Else
     {
-        If (PlayingMode == 0)
-        {
-            Call ClearTTImpl(1000000);
-        }
-        Else
-        {
-            Call ClearTTImpl(2000000);
-        }
+        Call ClearTTImpl(1000000);
     }
 }
 
@@ -1869,10 +1838,11 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
                     EvaluationRes += (15 * (Delta - 1));
                 }
             }
+            Call EvaluatePostProcess(Depth);
             Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
             If (Not ((PromotionPieces[1] == 0)))
             {
-                EvaluationRes += 120;
+                EvaluationRes += 75;
                 EvaluationIsDynamicRes = 1;
             }
         }
@@ -3053,35 +3023,32 @@ Define GetBestMoveMedDiff (warp=false)
     }
     Else
     {
-        If (PlayingMode == 0)
+        If (IsEndgame == 0)
         {
-            If (IsEndgame == 0)
+            ThinkTimeLimit = 25;
+        }
+        Else
+        {
+            If (IsEndgame2 == 0)
             {
                 ThinkTimeLimit = 25;
             }
             Else
             {
-                If (IsEndgame2 == 0)
+                If ((BlackPawnCount > 0) And (WhitePawnCount > 0))
                 {
-                    ThinkTimeLimit = 25;
+                    ThinkTimeLimit = 20;
                 }
                 Else
                 {
-                    If ((BlackPawnCount > 0) And (WhitePawnCount > 0))
-                    {
-                        ThinkTimeLimit = 20;
-                    }
-                    Else
-                    {
-                        ThinkTimeLimit = 15;
-                    }
+                    ThinkTimeLimit = 15;
                 }
             }
         }
-        Else
-        {
-            ThinkTimeLimit = 60;
-        }
+    }
+    If (CustomThinkTime > 0)
+    {
+        ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 18);
@@ -3477,42 +3444,39 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
 Define GetOpeningMoves (warp=true)
 {
     List.DeleteAll(OpeningMovesRes);
-    If (IsScratch3 == 1)
+    If (IsImportedBoard == 0)
     {
-        If (IsImportedBoard == 0)
+        Call GenerateMovesPublic(1);
+        Length = Variable.Length(GameMoves);
+        Idx = 1;
+        Repeat (List.Length(OpeningMoves))
         {
-            Call GenerateMovesPublic(1);
-            Length = Variable.Length(GameMoves);
-            Idx = 1;
-            Repeat (List.Length(OpeningMoves))
+            CurrentValue = OpeningMoves[Idx];
+            If (Length < Variable.Length(CurrentValue))
             {
-                CurrentValue = OpeningMoves[Idx];
-                If (Length < Variable.Length(CurrentValue))
+                IdxString = 1;
+                IsEqual = 1;
+                Repeat Until ((IdxString > Length) Or (IsEqual == 0))
                 {
-                    IdxString = 1;
-                    IsEqual = 1;
-                    Repeat Until ((IdxString > Length) Or (IsEqual == 0))
+                    If (Not ((Operator.LetterOf(GameMoves, IdxString) == Operator.LetterOf(CurrentValue, IdxString))))
                     {
-                        If (Not ((Operator.LetterOf(GameMoves, IdxString) == Operator.LetterOf(CurrentValue, IdxString))))
-                        {
-                            IsEqual = 0;
-                        }
-                        IdxString += 1;
+                        IsEqual = 0;
                     }
-                    If (IsEqual == 1)
+                    IdxString += 1;
+                }
+                If (IsEqual == 1)
+                {
+                    CurrentMove = Operator.LetterOf(CurrentValue, (Length + 1));
+                    CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 2)));
+                    CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 3)));
+                    CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 4)));
+                    If List.ContainsItem(Moves1, CurrentMove)
                     {
-                        CurrentMove = Operator.LetterOf(CurrentValue, (Length + 1));
-                        CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 2)));
-                        CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 3)));
-                        CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 4)));
-                        If List.ContainsItem(Moves1, CurrentMove)
-                        {
-                            List.Add(OpeningMovesRes, CurrentMove);
-                        }
+                        List.Add(OpeningMovesRes, CurrentMove);
                     }
                 }
-                Idx += 1;
             }
+            Idx += 1;
         }
     }
 }
@@ -4274,6 +4238,11 @@ Define InitBoard (warp=true)
         List.Add(QuiescentCheckMoveCount, "");
         List.Add(TTMove, 0);
     }
+    List.DeleteItem(PV, all);
+    Repeat ((MaxSearchDepthStackFrames * MaxSearchDepthStackFrames))
+    {
+        List.Add(PV, 0);
+    }
     List.DeleteItem(DepthEvalFactor, all);
     Repeat ((MaxSearchDepthStackFrames / 2))
     {
@@ -4608,15 +4577,11 @@ Define InitMoveLookup (warp=true)
 
 Define InitMovePosLookup(bool Init) (warp=true)
 {
-    If (IsScratch3 == 0)
+    If (IsClassicEndgameEval == 0)
     {
-        MetaState = 0;
+        MetaState = "AI";
     }
     Else
-    {
-        MetaState = IsEndgame2;
-    }
-    If (1 == 1)
     {
         MetaState = Operator.Join(IsBlackCastlingPossible, Operator.Join(IsWhiteCastlingPossible, Operator.Join(IsEndgame, IsEndgame2)));
         If (BlackQueenCount == 0)
@@ -5404,7 +5369,7 @@ Define Log(string Txt1)(string Txt2)(string Txt3)(string Txt4)(string Txt5)(stri
     List.Add(Logfile, Operator.Join(Operator.Join(Tmp, ": "), Operator.Join(Txt1, Operator.Join(Txt2, Operator.Join(Txt3, Operator.Join(Txt4, Operator.Join(Txt5, Operator.Join(Txt6, Operator.Join(Txt7, Txt8)))))))));
 }
 
-Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate) (warp=true)
+Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate)(string Depth) (warp=true)
 {
     NNUE_Side = 0;
     Repeat (2)
@@ -5413,10 +5378,24 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate) (warp=true)
         Repeat ((NNUE_HiddenSize / 256))
         {
             NNUE_Offset = (NNUE_Chunk * 256);
-            NNUE.Idx1 = ((NNUE_Side * NNUE_HiddenSize) + NNUE_Offset);
-            NNUE.Idx2 = ((NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * Piece) + Square)) + 1)] * NNUE_HiddenSize) + NNUE_Offset);
-            NNUE.Idx1 += 1;
-            NNUE.Idx2 += 1;
+            NNUE.Idx1 = (((NNUE_Side * NNUE_HiddenSize) + NNUE_Offset) + 1);
+            NNUE.Idx2 = (((NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * Piece) + Square)) + 1)] * NNUE_HiddenSize) + NNUE_Offset) + 1);
+            If (Depth == 0)
+            {
+                NNUE.TargetIdx = NNUE.Idx1;
+            }
+            Else
+            {
+                NNUE.TargetIdx = (NNUE.Idx1 + ((NNUE_HiddenSize * 2) * Depth));
+                If (NNUE_Accumulator_MetaState[Depth] == 0)
+                {
+                    NNUE.Idx1 = (NNUE.Idx1 + ((NNUE_HiddenSize * 2) * (Depth - 1)));
+                }
+                Else
+                {
+                    NNUE.Idx1 = (NNUE.Idx1 + ((NNUE_HiddenSize * 2) * Depth));
+                }
+            }
             If Activate
             {
                 If (NNUE.Idx2 > (768 * 256))
@@ -5424,18 +5403,20 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate) (warp=true)
                     NNUE.Idx2 += (0 - (768 * 256));
                     Repeat (32)
                     {
-                        Call NNUE_AddAccWght2_8(NNUE.Idx1)(NNUE.Idx2);
+                        Call NNUE_AddAccWght2_8(NNUE.Idx1)(NNUE.Idx2)(NNUE.TargetIdx);
                         NNUE.Idx1 += 8;
                         NNUE.Idx2 += 8;
+                        NNUE.TargetIdx += 8;
                     }
                 }
                 Else
                 {
                     Repeat (32)
                     {
-                        Call NNUE_AddAccWght1_8(NNUE.Idx1)(NNUE.Idx2);
+                        Call NNUE_AddAccWght1_8(NNUE.Idx1)(NNUE.Idx2)(NNUE.TargetIdx);
                         NNUE.Idx1 += 8;
                         NNUE.Idx2 += 8;
+                        NNUE.TargetIdx += 8;
                     }
                 }
             }
@@ -5446,18 +5427,20 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate) (warp=true)
                     NNUE.Idx2 += (0 - (768 * 256));
                     Repeat (32)
                     {
-                        Call NNUE_SubAccWght2_8(NNUE.Idx1)(NNUE.Idx2);
+                        Call NNUE_SubAccWght2_8(NNUE.Idx1)(NNUE.Idx2)(NNUE.TargetIdx);
                         NNUE.Idx1 += 8;
                         NNUE.Idx2 += 8;
+                        NNUE.TargetIdx += 8;
                     }
                 }
                 Else
                 {
                     Repeat (32)
                     {
-                        Call NNUE_SubAccWght1_8(NNUE.Idx1)(NNUE.Idx2);
+                        Call NNUE_SubAccWght1_8(NNUE.Idx1)(NNUE.Idx2)(NNUE.TargetIdx);
                         NNUE.Idx1 += 8;
                         NNUE.Idx2 += 8;
+                        NNUE.TargetIdx += 8;
                     }
                 }
             }
@@ -5465,40 +5448,47 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate) (warp=true)
         }
         NNUE_Side += 1;
     }
+    If (Depth > 0)
+    {
+        If (NNUE_Accumulator_MetaState[Depth] == 0)
+        {
+            List.ReplaceItem(NNUE_Accumulator_MetaState, Depth, 1);
+        }
+    }
 }
 
-Define NNUE_Activate(string GoKIdx)(string GoKPiece) (warp=true)
+Define NNUE_Activate(string GoKIdx)(string GoKPiece)(string Depth) (warp=true)
 {
-    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 1));
+    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 1))(Depth);
 }
 
-Define NNUE_AddAccWght1_8(string IdxAcc)(string IdxWght) (warp=true)
+Define NNUE_AddAccWght1_8(string IdxAcc)(string IdxWght)(string IdxAccTarget) (warp=true)
 {
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 0), (NNUE_Accumulator[(IdxAcc + 0)] + NNUE_InputWeights_1[(IdxWght + 0)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 1), (NNUE_Accumulator[(IdxAcc + 1)] + NNUE_InputWeights_1[(IdxWght + 1)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 2), (NNUE_Accumulator[(IdxAcc + 2)] + NNUE_InputWeights_1[(IdxWght + 2)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 3), (NNUE_Accumulator[(IdxAcc + 3)] + NNUE_InputWeights_1[(IdxWght + 3)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 4), (NNUE_Accumulator[(IdxAcc + 4)] + NNUE_InputWeights_1[(IdxWght + 4)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 5), (NNUE_Accumulator[(IdxAcc + 5)] + NNUE_InputWeights_1[(IdxWght + 5)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 6), (NNUE_Accumulator[(IdxAcc + 6)] + NNUE_InputWeights_1[(IdxWght + 6)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 7), (NNUE_Accumulator[(IdxAcc + 7)] + NNUE_InputWeights_1[(IdxWght + 7)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 0), (NNUE_Accumulator[(IdxAcc + 0)] + NNUE_InputWeights_1[(IdxWght + 0)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 1), (NNUE_Accumulator[(IdxAcc + 1)] + NNUE_InputWeights_1[(IdxWght + 1)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 2), (NNUE_Accumulator[(IdxAcc + 2)] + NNUE_InputWeights_1[(IdxWght + 2)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 3), (NNUE_Accumulator[(IdxAcc + 3)] + NNUE_InputWeights_1[(IdxWght + 3)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 4), (NNUE_Accumulator[(IdxAcc + 4)] + NNUE_InputWeights_1[(IdxWght + 4)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 5), (NNUE_Accumulator[(IdxAcc + 5)] + NNUE_InputWeights_1[(IdxWght + 5)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 6), (NNUE_Accumulator[(IdxAcc + 6)] + NNUE_InputWeights_1[(IdxWght + 6)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 7), (NNUE_Accumulator[(IdxAcc + 7)] + NNUE_InputWeights_1[(IdxWght + 7)]));
 }
 
-Define NNUE_AddAccWght2_8(string IdxAcc)(string IdxWght) (warp=true)
+Define NNUE_AddAccWght2_8(string IdxAcc)(string IdxWght)(string IdxAccTarget) (warp=true)
 {
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 0), (NNUE_Accumulator[(IdxAcc + 0)] + NNUE_InputWeights_2[(IdxWght + 0)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 1), (NNUE_Accumulator[(IdxAcc + 1)] + NNUE_InputWeights_2[(IdxWght + 1)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 2), (NNUE_Accumulator[(IdxAcc + 2)] + NNUE_InputWeights_2[(IdxWght + 2)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 3), (NNUE_Accumulator[(IdxAcc + 3)] + NNUE_InputWeights_2[(IdxWght + 3)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 4), (NNUE_Accumulator[(IdxAcc + 4)] + NNUE_InputWeights_2[(IdxWght + 4)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 5), (NNUE_Accumulator[(IdxAcc + 5)] + NNUE_InputWeights_2[(IdxWght + 5)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 6), (NNUE_Accumulator[(IdxAcc + 6)] + NNUE_InputWeights_2[(IdxWght + 6)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 7), (NNUE_Accumulator[(IdxAcc + 7)] + NNUE_InputWeights_2[(IdxWght + 7)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 0), (NNUE_Accumulator[(IdxAcc + 0)] + NNUE_InputWeights_2[(IdxWght + 0)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 1), (NNUE_Accumulator[(IdxAcc + 1)] + NNUE_InputWeights_2[(IdxWght + 1)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 2), (NNUE_Accumulator[(IdxAcc + 2)] + NNUE_InputWeights_2[(IdxWght + 2)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 3), (NNUE_Accumulator[(IdxAcc + 3)] + NNUE_InputWeights_2[(IdxWght + 3)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 4), (NNUE_Accumulator[(IdxAcc + 4)] + NNUE_InputWeights_2[(IdxWght + 4)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 5), (NNUE_Accumulator[(IdxAcc + 5)] + NNUE_InputWeights_2[(IdxWght + 5)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 6), (NNUE_Accumulator[(IdxAcc + 6)] + NNUE_InputWeights_2[(IdxWght + 6)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 7), (NNUE_Accumulator[(IdxAcc + 7)] + NNUE_InputWeights_2[(IdxWght + 7)]));
 }
 
-Define NNUE_Deactivate(string GoKIdx)(string GoKPiece) (warp=true)
+Define NNUE_Deactivate(string GoKIdx)(string GoKPiece)(string Depth) (warp=true)
 {
-    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 0));
+    Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 0))(Depth);
 }
 
 Define NNUE_DecodeNetwork (warp=true)
@@ -5598,7 +5588,7 @@ Define NNUE_DecToHex(string CSV) (warp=true)
     }
 }
 
-Define NNUE_Evaluate(string Side) (warp=true)
+Define NNUE_Evaluate(string Side)(string Depth) (warp=true)
 {
     NNUE_EvalRes = NNUE_OutputBias[1];
     NNUE_Chunk = 0;
@@ -5606,8 +5596,8 @@ Define NNUE_Evaluate(string Side) (warp=true)
     {
         NNUE_Offset = (NNUE_Chunk * 256);
         Idx = (NNUE_Offset + 1);
-        NNUE.Idx1 = (Side * NNUE_HiddenSize);
-        NNUE.Idx2 = ((1 - Side) * NNUE_HiddenSize);
+        NNUE.Idx1 = ((Side * NNUE_HiddenSize) + (Depth * (NNUE_HiddenSize * 2)));
+        NNUE.Idx2 = (((1 - Side) * NNUE_HiddenSize) + (Depth * (NNUE_HiddenSize * 2)));
         Repeat (32)
         {
             Call NNUE_Eval_Chunk_8((NNUE.Idx1 + Idx))(Idx)((NNUE.Idx2 + Idx))((NNUE_HiddenSize + Idx));
@@ -5750,9 +5740,14 @@ Define NNUE_Init (warp=true)
     NNUE_FeatureSize = 768;
     NNUE_HiddenSize = 512;
     List.DeleteAll(NNUE_Accumulator);
-    Repeat ((NNUE_HiddenSize * 2))
+    Repeat (((NNUE_HiddenSize * 2) * 50))
     {
         List.Add(NNUE_Accumulator, 0);
+    }
+    List.DeleteAll(NNUE_Accumulator_MetaState);
+    Repeat (50)
+    {
+        List.Add(NNUE_Accumulator_MetaState, 0);
     }
     Idx = 1;
     Repeat (NNUE_HiddenSize)
@@ -5848,24 +5843,7 @@ Define NNUE_LoadList(string Data) (warp=true)
 
 Define NNUE_Public_Evaluate(string Depth) (warp=true)
 {
-    NNUE_Idx = 1;
-    Repeat (64)
-    {
-        If (Not ((Board[NNUE_Idx] == NNUE_PrevRefreshBoard[NNUE_Idx])))
-        {
-            If (Not ((NNUE_PrevRefreshBoard[NNUE_Idx] == 0)))
-            {
-                Call NNUE_Deactivate(NNUE_Idx)(NNUE_PrevRefreshBoard[NNUE_Idx]);
-            }
-            If (Not ((Board[NNUE_Idx] == 0)))
-            {
-                Call NNUE_Activate(NNUE_Idx)(Board[NNUE_Idx]);
-            }
-            List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, Board[NNUE_Idx]);
-        }
-        NNUE_Idx += 1;
-    }
-    Call NNUE_Evaluate((Depth % 2));
+    Call NNUE_Evaluate((Depth % 2))((Depth - 1));
     If (NNUE_EvalRes > AbsMinCheckmateEval)
     {
         NNUE_EvalRes = AbsMinCheckmateEval;
@@ -5889,6 +5867,38 @@ Define NNUE_Public_Evaluate(string Depth) (warp=true)
     }
 }
 
+Define NNUE_Public_OnMakeMoveStart(string Depth) (warp=true)
+{
+    NNUE_Idx = 1;
+    Repeat (64)
+    {
+        List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, Board[NNUE_Idx]);
+        NNUE_Idx += 1;
+    }
+}
+
+Define NNUE_Public_OnMakeMoveStop(string Depth) (warp=true)
+{
+    List.ReplaceItem(NNUE_Accumulator_MetaState, Depth, 0);
+    NNUE_Idx = 1;
+    Repeat (64)
+    {
+        If (Not ((Board[NNUE_Idx] == NNUE_PrevRefreshBoard[NNUE_Idx])))
+        {
+            If (Not ((NNUE_PrevRefreshBoard[NNUE_Idx] == 0)))
+            {
+                Call NNUE_Deactivate(NNUE_Idx)(NNUE_PrevRefreshBoard[NNUE_Idx])(Depth);
+            }
+            If (Not ((Board[NNUE_Idx] == 0)))
+            {
+                Call NNUE_Activate(NNUE_Idx)(Board[NNUE_Idx])(Depth);
+            }
+            List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, Board[NNUE_Idx]);
+        }
+        NNUE_Idx += 1;
+    }
+}
+
 Define NNUE_Public_Refresh (warp=true)
 {
     Idx = 1;
@@ -5903,35 +5913,34 @@ Define NNUE_Public_Refresh (warp=true)
     {
         If (Not ((Board[NNUE_Idx] == 0)))
         {
-            Call NNUE_Activate(NNUE_Idx)(Board[NNUE_Idx]);
+            Call NNUE_Activate(NNUE_Idx)(Board[NNUE_Idx])(0);
         }
-        List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, Board[NNUE_Idx]);
         NNUE_Idx += 1;
     }
 }
 
-Define NNUE_SubAccWght1_8(string IdxAcc)(string IdxWght) (warp=true)
+Define NNUE_SubAccWght1_8(string IdxAcc)(string IdxWght)(string IdxAccTarget) (warp=true)
 {
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 0), (NNUE_Accumulator[(IdxAcc + 0)] - NNUE_InputWeights_1[(IdxWght + 0)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 1), (NNUE_Accumulator[(IdxAcc + 1)] - NNUE_InputWeights_1[(IdxWght + 1)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 2), (NNUE_Accumulator[(IdxAcc + 2)] - NNUE_InputWeights_1[(IdxWght + 2)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 3), (NNUE_Accumulator[(IdxAcc + 3)] - NNUE_InputWeights_1[(IdxWght + 3)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 4), (NNUE_Accumulator[(IdxAcc + 4)] - NNUE_InputWeights_1[(IdxWght + 4)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 5), (NNUE_Accumulator[(IdxAcc + 5)] - NNUE_InputWeights_1[(IdxWght + 5)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 6), (NNUE_Accumulator[(IdxAcc + 6)] - NNUE_InputWeights_1[(IdxWght + 6)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 7), (NNUE_Accumulator[(IdxAcc + 7)] - NNUE_InputWeights_1[(IdxWght + 7)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 0), (NNUE_Accumulator[(IdxAcc + 0)] - NNUE_InputWeights_1[(IdxWght + 0)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 1), (NNUE_Accumulator[(IdxAcc + 1)] - NNUE_InputWeights_1[(IdxWght + 1)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 2), (NNUE_Accumulator[(IdxAcc + 2)] - NNUE_InputWeights_1[(IdxWght + 2)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 3), (NNUE_Accumulator[(IdxAcc + 3)] - NNUE_InputWeights_1[(IdxWght + 3)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 4), (NNUE_Accumulator[(IdxAcc + 4)] - NNUE_InputWeights_1[(IdxWght + 4)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 5), (NNUE_Accumulator[(IdxAcc + 5)] - NNUE_InputWeights_1[(IdxWght + 5)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 6), (NNUE_Accumulator[(IdxAcc + 6)] - NNUE_InputWeights_1[(IdxWght + 6)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 7), (NNUE_Accumulator[(IdxAcc + 7)] - NNUE_InputWeights_1[(IdxWght + 7)]));
 }
 
-Define NNUE_SubAccWght2_8(string IdxAcc)(string IdxWght) (warp=true)
+Define NNUE_SubAccWght2_8(string IdxAcc)(string IdxWght)(string IdxAccTarget) (warp=true)
 {
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 0), (NNUE_Accumulator[(IdxAcc + 0)] - NNUE_InputWeights_2[(IdxWght + 0)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 1), (NNUE_Accumulator[(IdxAcc + 1)] - NNUE_InputWeights_2[(IdxWght + 1)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 2), (NNUE_Accumulator[(IdxAcc + 2)] - NNUE_InputWeights_2[(IdxWght + 2)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 3), (NNUE_Accumulator[(IdxAcc + 3)] - NNUE_InputWeights_2[(IdxWght + 3)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 4), (NNUE_Accumulator[(IdxAcc + 4)] - NNUE_InputWeights_2[(IdxWght + 4)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 5), (NNUE_Accumulator[(IdxAcc + 5)] - NNUE_InputWeights_2[(IdxWght + 5)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 6), (NNUE_Accumulator[(IdxAcc + 6)] - NNUE_InputWeights_2[(IdxWght + 6)]));
-    List.ReplaceItem(NNUE_Accumulator, (IdxAcc + 7), (NNUE_Accumulator[(IdxAcc + 7)] - NNUE_InputWeights_2[(IdxWght + 7)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 0), (NNUE_Accumulator[(IdxAcc + 0)] - NNUE_InputWeights_2[(IdxWght + 0)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 1), (NNUE_Accumulator[(IdxAcc + 1)] - NNUE_InputWeights_2[(IdxWght + 1)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 2), (NNUE_Accumulator[(IdxAcc + 2)] - NNUE_InputWeights_2[(IdxWght + 2)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 3), (NNUE_Accumulator[(IdxAcc + 3)] - NNUE_InputWeights_2[(IdxWght + 3)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 4), (NNUE_Accumulator[(IdxAcc + 4)] - NNUE_InputWeights_2[(IdxWght + 4)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 5), (NNUE_Accumulator[(IdxAcc + 5)] - NNUE_InputWeights_2[(IdxWght + 5)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 6), (NNUE_Accumulator[(IdxAcc + 6)] - NNUE_InputWeights_2[(IdxWght + 6)]));
+    List.ReplaceItem(NNUE_Accumulator, (IdxAccTarget + 7), (NNUE_Accumulator[(IdxAcc + 7)] - NNUE_InputWeights_2[(IdxWght + 7)]));
 }
 
 Define OnEvaluationChanged(string Eval) (warp=false)
@@ -6002,8 +6011,17 @@ Define OnRestart (warp=true)
     Variable.Hide(BestMove);
     Variable.Hide(NPS);
     Variable.Hide(MPS);
+    Variable.Hide(PV);
+    Variable.Hide(CustomThinkTime);
     ProfilerMode = -1;
     DebugMode = -1;
+    IdxDeepening = "";
+    BestSearchEvalRes = "";
+    BestMove = "";
+    NPS = "";
+    MPS = "";
+    PV = "";
+    CustomThinkTime = 0;
 }
 
 Define PickMove(string Depth)(bool Quiescence) (warp=true)
@@ -6739,6 +6757,8 @@ Define Search(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool 
     SearchTimer = (Sensing.DaysSince2000() * 86400);
     Call SearchImpl(MinDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))(ShowProgress)((MaxDepth - 1));
     SearchTimer = ((Sensing.DaysSince2000() * 86400) - SearchTimer);
+    Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
+    Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
     If ((ProfilerMode % 10) > 0)
     {
         Call Log("========================================")("")("")("")("")("")("")("");
@@ -6768,6 +6788,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     List.ReplaceItem(BestMoves, Depth, "");
     List.ReplaceItem(AppliedMove, Depth, "");
     List.ReplaceItem(BoardEval, Depth, "");
+    List.ReplaceItem(PV, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
     If (IsSearchTimeout == 1)
     {
         Stop(this script);
@@ -6816,7 +6837,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         Call //("Search tree leaf reached => evaluate board and return result");
         Call //("This will seldomly be invoked, as the usual search termination is quiescence search having reached a quite position");
         Call Evaluate((Depth - 1))((1 == 1));
-        Call EvaluatePostProcess((Depth - 1));
         List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
         List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
         Stop(this script);
@@ -6853,7 +6873,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         {
             Call //("Invoke full eval to establish standing pat value");
             Call Evaluate((Depth - 1))((1 == 1));
-            Call EvaluatePostProcess((Depth - 1));
             List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
             List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
             If ((Depth % 2) == 1)
@@ -7019,6 +7038,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                             Call GetCurrentMove(Depth);
                             List.ReplaceItem(BestMoves, Depth, CurrentMove);
                             List.ReplaceItem(BestMoveListIdx, Depth, MovesIdx[Depth]);
+                            Call UpdatePV(Depth)(CurrentMove);
                             If Quiescence
                             {
                                 If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Eval < Betas[Depth]))
@@ -7087,6 +7107,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                             Call GetCurrentMove(Depth);
                             List.ReplaceItem(BestMoves, Depth, CurrentMove);
                             List.ReplaceItem(BestMoveListIdx, Depth, MovesIdx[Depth]);
+                            Call UpdatePV(Depth)(CurrentMove);
                             If Quiescence
                             {
                                 If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Eval > Alphas[Depth]))
@@ -7677,7 +7698,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
         IsInNullMove += 1;
         If (Not (Quiescence))
         {
-            If ((Not ((PlayingMode == 2))) And ((Horizon > 2) And (((Betas[Depth] - Alphas[Depth]) == 1) And (CheckedState[Depth] == 0))))
+            If ((Horizon > 2) And (((Betas[Depth] - Alphas[Depth]) == 1) And (CheckedState[Depth] == 0)))
             {
                 If (((BlackMinorCountLocal + BlackQueenCountLocal) > 0) And ((WhiteMinorCountLocal + WhiteQueenCountLocal) > 0))
                 {
@@ -7810,7 +7831,7 @@ Define Search_TagSearchExtension(string Depth) (warp=true)
 
 Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(string Horizon) (warp=true)
 {
-    If ((Depth > 1) And (Not (InitialDeepening)))
+    If (Depth > 1)
     {
         Call //("Probe transposition table for cached node evaluations");
         Call TTProbeNode(CurrentBoardHash)(Depth);
@@ -8197,7 +8218,7 @@ Define StoreKillerMove(string Depth)(string Move) (warp=true)
 
 Define TTProbeBoard(string BoardHash)(string Depth) (warp=true)
 {
-    Call TTProbeBoardImpl((BoardHash + ((Depth % 2) * floor((List.Length(TTBoardHash) / 2)))));
+    Call TTProbeBoardImpl((BoardHash + ((Depth % 2) * 31)));
 }
 
 Define TTProbeBoardImpl(string BoardHash) (warp=true)
@@ -8235,7 +8256,7 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
 
 Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
 {
-    Call TTProbeNodeImpl((BoardHash + ((Depth % 2) * floor((List.Length(TTNodeHash) / 2)))));
+    Call TTProbeNodeImpl((BoardHash + ((Depth % 2) * 31)));
 }
 
 Define TTProbeNodeImpl(string BoardHash) (warp=true)
@@ -8280,7 +8301,7 @@ Define TTProbeNodeImpl(string BoardHash) (warp=true)
 
 Define TTStoreBoard(string BoardHash)(string Depth)(string Eval) (warp=true)
 {
-    Call TTStoreBoardImpl((BoardHash + ((Depth % 2) * floor((List.Length(TTBoardHash) / 2)))))(Eval);
+    Call TTStoreBoardImpl((BoardHash + ((Depth % 2) * 31)))(Eval);
 }
 
 Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
@@ -8322,11 +8343,11 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
     }
     If (Score == DrawByRepetitionEval)
     {
-        Call TTStoreNodeImpl((BoardHash + ((Depth % 2) * floor((List.Length(TTNodeHash) / 2)))))(Depth)("")(BestMove)("")(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
+        Call TTStoreNodeImpl((BoardHash + ((Depth % 2) * 31)))(Depth)("")(BestMove)("")(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
     }
     Else
     {
-        Call TTStoreNodeImpl((BoardHash + ((Depth % 2) * floor((List.Length(TTNodeHash) / 2)))))(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
+        Call TTStoreNodeImpl((BoardHash + ((Depth % 2) * 31)))(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
     }
 }
 
@@ -8492,6 +8513,39 @@ Define UpdateMoveHashPosEval(string Piece)(string SourceIdx)(string TargetIdx)(b
     List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + PosEvalRes));
 }
 
+Define UpdateMoveNotationPV (warp=true)
+{
+    PV = "";
+    Idx = 2;
+    Repeat (PV[1])
+    {
+        PV = Operator.Join(Operator.Join(PV, PV[Idx]), " ");
+        Idx += 1;
+    }
+}
+
+Define UpdatePV(string Depth)(string BestMove) (warp=true)
+{
+    Idx = (((Depth - 1) * MaxSearchDepthStackFrames) + 1);
+    Idx2 = ((Depth * MaxSearchDepthStackFrames) + 1);
+    Length = PV[Idx2];
+    List.ReplaceItem(PV, Idx, (Length + 1));
+    Call GetMoveNotation(BestMove);
+    List.ReplaceItem(PV, (Idx + 1), MoveNotationRes);
+    Idx += 2;
+    Idx2 += 1;
+    Repeat (Length)
+    {
+        List.ReplaceItem(PV, Idx, PV[Idx2]);
+        Idx += 1;
+        Idx2 += 1;
+    }
+    If (Depth == 1)
+    {
+        Call UpdateMoveNotationPV;
+    }
+}
+
 Define _ClearLists (warp=true)
 {
     List.DeleteAll(TTNodeHorizon);
@@ -8565,6 +8619,8 @@ Define _ClearLists (warp=true)
     List.DeleteAll(NNUE_PrevRefreshBoard);
     List.DeleteAll(HistoryCounterMoves);
     List.DeleteAll(TTMove);
+    List.DeleteAll(MoveToEvalDelta);
+    List.DeleteAll(MoveToHash);
     List.DeleteItem(BoardHistory, all);
     List.DeleteItem(BoardHistoryHash, all);
     List.DeleteItem(BoardHistoryMetaState, all);
