@@ -74,6 +74,7 @@ WhenKeyPressed(d)
         Variable.Show(NPS);
         Variable.Show(MPS);
         Variable.Show(PV);
+        Variable.Show(CustomThinkTime);
     }
     Else
     {
@@ -84,42 +85,13 @@ WhenKeyPressed(d)
         Variable.Hide(NPS);
         Variable.Hide(MPS);
         Variable.Hide(PV);
-    }
-}
-
-WhenKeyPressed(c)
-{
-    PlayingMode = ((PlayingMode + 1) % 3);
-    If (PlayingMode == 0)
-    {
-        Call SayAsync("Standard mode (full null move pruning). Think time on Difficult set to 25/15 seconds, re-initializing cache.")(5);
-        If (IsScratch3 == 0)
-        {
-            Control.Wait(0.1);
-            Call ClearTT;
-        }
-    }
-    Else
-    {
-        If (PlayingMode == 1)
-        {
-            Call SayAsync("Competition mode (full null move pruning). Think time on Difficult set to 60 seconds, re-initializing cache.")(5);
-            If (IsScratch3 == 0)
-            {
-                Control.Wait(0.1);
-                Call ClearTT;
-            }
-        }
-        Else
-        {
-            Call SayAsync("Puzzle mode (limited null move pruning). Think time on Difficult set to 60 seconds.")(5);
-        }
+        Variable.Hide(CustomThinkTime);
     }
 }
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9162 (11.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9165 (11.04.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(t)
@@ -2984,14 +2956,7 @@ Define ClearTT (warp=true)
     }
     Else
     {
-        If (PlayingMode == 0)
-        {
-            Call ClearTTImpl(1500000);
-        }
-        Else
-        {
-            Call ClearTTImpl(2500000);
-        }
+        Call ClearTTImpl(1500000);
     }
 }
 
@@ -3115,9 +3080,9 @@ Define EvaluateBoardExtended1(string Depth) (warp=true)
     Call //("Positional evaluation: king and pawn structure");
     Hash = CurrentBoardHash2;
     Call GetAttackForce((1 == 0));
-    Hash = ((Hash * 31) + AttackForce);
+    Hash = ((Hash * 31) + ((AttackForce < 12) * 17));
     Call GetAttackForce((1 == 1));
-    Hash = ((Hash * 31) + AttackForce);
+    Hash = ((Hash * 31) + ((AttackForce < 12) * 17));
     Call TTProbeBoard(Hash);
     If ((TTProbeRes == 1) And (Not ((TTProbeBoardScore1Res == ""))))
     {
@@ -3609,6 +3574,16 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
     {
         Stop(this script);
     }
+    Call GetAttackForce((1 == 0));
+    If (AttackForce < 12)
+    {
+        Stop(this script);
+    }
+    Call GetAttackForce((1 == 1));
+    If (AttackForce < 12)
+    {
+        Stop(this script);
+    }
     Idx = 1;
     Repeat (64)
     {
@@ -3652,17 +3627,6 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
         Idx += 1;
     }
     Call TaperedEval.Init;
-    If ((((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) < 3) And ((WhiteQueenCountLocal == 0) Or (BlackQueenCountLocal == 0)))
-    {
-        If ((BlackQueenCountLocal + BlackMinorCountLocal) < (WhiteQueenCountLocal + WhiteMinorCountLocal))
-        {
-            Call TaperedEval.AddIdentical((PieceMobility[BlackKingIdx] * 10));
-        }
-        If ((WhiteQueenCountLocal + WhiteMinorCountLocal) < (BlackQueenCountLocal + BlackMinorCountLocal))
-        {
-            Call TaperedEval.AddIdentical((PieceMobility[WhiteKingIdx] * -10));
-        }
-    }
     If (1 == 1)
     {
         SourceIdx = 1;
@@ -3716,12 +3680,6 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
             }
             SourceIdx += 1;
         }
-    }
-    If (IsEndgame == 1)
-    {
-        Call TaperedEval.GetSumResult;
-        EvalExtendedResult3 = TaperedEval.SumResult;
-        Stop(this script);
     }
     Idx = 1;
     Repeat (64)
@@ -5152,35 +5110,32 @@ Define GetBestMoveMedDiff (warp=false)
     }
     Else
     {
-        If (PlayingMode == 0)
+        If (IsEndgame == 0)
         {
-            If (IsEndgame == 0)
+            ThinkTimeLimit = 25;
+        }
+        Else
+        {
+            If (IsEndgame2 == 0)
             {
                 ThinkTimeLimit = 25;
             }
             Else
             {
-                If (IsEndgame2 == 0)
+                If ((BlackPawnCount > 0) And (WhitePawnCount > 0))
                 {
-                    ThinkTimeLimit = 25;
+                    ThinkTimeLimit = 20;
                 }
                 Else
                 {
-                    If ((BlackPawnCount > 0) And (WhitePawnCount > 0))
-                    {
-                        ThinkTimeLimit = 20;
-                    }
-                    Else
-                    {
-                        ThinkTimeLimit = 15;
-                    }
+                    ThinkTimeLimit = 15;
                 }
             }
         }
-        Else
-        {
-            ThinkTimeLimit = 60;
-        }
+    }
+    If (CustomThinkTime > 0)
+    {
+        ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 25);
@@ -7685,8 +7640,15 @@ Define OnRestart (warp=true)
     Variable.Hide(NPS);
     Variable.Hide(MPS);
     Variable.Hide(PV);
+    Variable.Hide(CustomThinkTime);
     ProfilerMode = -1;
     DebugMode = -1;
+    IdxDeepening = "";
+    BestMinMaxRes = "";
+    BestMove = "";
+    NPS = "";
+    MPS = "";
+    CustomThinkTime = 0;
 }
 
 Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescence) (warp=true)
