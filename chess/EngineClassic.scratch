@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9169 (14.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9171 (15.04.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1345,7 +1345,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
             Call //("Futility pruning");
             IsFutile = 0;
-            If ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0))
+            If ((CheckedState[Depth] == 0) And ((PutsInCheck[Depth] == 0) And (PromotionPieces[Depth] == 0)))
             {
                 FutilityMargin = "";
                 If Quiescence
@@ -1356,7 +1356,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     If ((Depth > 2) And (((MaxDepth + PlyExtension[Depth]) - Depth) < 6))
                     {
-                        If (((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+                        If ((TargetPieces[Depth] == 0) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
                         {
                             FutilityMargin = (((MaxDepth + PlyExtension[Depth]) - Depth) * 125);
                         }
@@ -1364,21 +1364,67 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
                 If (Not ((FutilityMargin == "")))
                 {
-                    ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[(Depth - 1)] + EvalExtended2[(Depth - 1)]) + EvalExtended3[(Depth - 1)])) + (((PosScoreDeltaSum[(Depth - 1)] + PosScoreDelta[(Depth + 0)]) - (CapturesDeltaSum[(Depth - 1)] + (TargetPieces[(Depth + 0)] - PromotionPieces[(Depth + 0)]))) + 0));
-                    If ((((Depth % 2) == 1) And (Not (((ScoreCalcRes + FutilityMargin) > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not (((ScoreCalcRes - FutilityMargin) < Betas[(Depth + 0)])))))
+                    ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[(Depth - 1)] + EvalExtended2[(Depth - 1)]) + EvalExtended3[(Depth - 1)])) + PosScoreDeltaSum[(Depth - 1)]);
+                    ScoreCalcRes = BoardEval[(Depth + 0)];
+                    If ((Depth % 2) == 1)
+                    {
+                        EvalResult = ((ScoreCalcRes - TargetPieces[Depth]) + FutilityMargin);
+                    }
+                    Else
+                    {
+                        EvalResult = ((ScoreCalcRes - TargetPieces[Depth]) - FutilityMargin);
+                    }
+                    If ((((Depth % 2) == 1) And (Not ((EvalResult > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((EvalResult < Betas[(Depth + 0)])))))
                     {
                         IsFutile = 1;
                         If Quiescence
                         {
                             If ((Depth % 2) == 1)
                             {
-                                List.ReplaceItem(MinMaxResults, Depth, (ScoreCalcRes + FutilityMargin));
+                                If (EvalResult > MinMaxResults[(Depth + 0)])
+                                {
+                                    List.ReplaceItem(MinMaxResults, Depth, EvalResult);
+                                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                                }
                             }
                             Else
                             {
-                                List.ReplaceItem(MinMaxResults, Depth, (ScoreCalcRes - FutilityMargin));
+                                If (EvalResult < MinMaxResults[(Depth + 0)])
+                                {
+                                    List.ReplaceItem(MinMaxResults, Depth, EvalResult);
+                                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                                }
                             }
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                        }
+                    }
+                    Else
+                    {
+                        If Quiescence
+                        {
+                            If ((((Depth % 2) == 1) And (Not ((ScoreCalcRes > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((ScoreCalcRes < Betas[(Depth + 0)])))))
+                            {
+                                Call SEE(Depth);
+                                If ((((Depth % 2) == 1) And (Not ((SEE.Result > 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result < 0)))))
+                                {
+                                    IsFutile = 1;
+                                    If ((Depth % 2) == 1)
+                                    {
+                                        If (ScoreCalcRes > MinMaxResults[(Depth + 0)])
+                                        {
+                                            List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
+                                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                                        }
+                                    }
+                                    Else
+                                    {
+                                        If (ScoreCalcRes < MinMaxResults[(Depth + 0)])
+                                        {
+                                            List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
+                                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2214,7 +2260,6 @@ Define ApplyMove(num Depth) (warp=true)
 
 Define ApplyMoveLight(string Depth) (warp=true)
 {
-    Call TaperedEval.Init;
     List.ReplaceItem(PreviousBoardHash, Depth, CurrentBoardHash);
     Call GetCurrentMove(Depth);
     List.ReplaceItem(AppliedMove, Depth, CurrentMove);
@@ -7712,6 +7757,18 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
         {
             List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
         }
+        If ((((SourcePieceOuter == GoK_BlackPawn) Or (SourcePieceOuter == GoK_BlackKing)) Or (SourcePieceOuter == GoK_BlackRook)) Or (((abs(TargetPieces[Depth]) == GoK_BlackPawn) Or ((abs(TargetPieces[Depth]) == GoK_BlackRook) Or (abs(TargetPieces[Depth]) == GoK_BlackQueen))) Or (Not ((PromotionPieces[Depth] == 0)))))
+        {
+            Call EvaluateBoardExtended1(Depth);
+            List.ReplaceItem(EvalExtended1, Depth, EvalExtendedResult1);
+        }
+        Else
+        {
+            List.ReplaceItem(EvalExtended1, Depth, EvalExtended1[(Depth - 1)]);
+        }
+        Call EvaluateBoardExtended2(Depth);
+        List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
+        List.ReplaceItem(EvalExtended3, Depth, EvalExtended3[(Depth - 1)]);
     }
     If (Depth == MaxDepth)
     {
@@ -7726,10 +7783,6 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
             }
             Stop(this script);
         }
-        Call EvaluateBoardExtended1(Depth);
-        List.ReplaceItem(EvalExtended1, Depth, EvalExtendedResult1);
-        Call EvaluateBoardExtended2(Depth);
-        List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
         Call EvaluateBoardExtended3(Depth);
         List.ReplaceItem(EvalExtended3, Depth, EvalExtendedResult3);
         ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + ((PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]) + 0));
@@ -8597,6 +8650,164 @@ Define SayAsync(string Text)(num Duration) (warp=false)
     SayAsyncText = Text;
     SayAsyncDuration = Duration;
     Event.Broadcast("sayasyncmsg");
+}
+
+Define SEE(string Depth) (warp=true)
+{
+    Depth = Depth;
+    List.DeleteAll(TmpList1);
+    List.DeleteAll(TmpList2);
+    List.DeleteAll(TmpList3);
+    SEE.Result = (0 - TargetPieces[Depth]);
+    TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
+    Side = 1;
+    Repeat (2)
+    {
+        List.DeleteAll(CalcMovesMoveList);
+        List.DeleteAll(CalcMovesScoreList);
+        SourceIdx = 1;
+        Repeat (64)
+        {
+            SourcePiece = Board[(SourceIdx + 0)];
+            If (((Side == 1) And (SourcePiece > 0)) Or ((Side == 2) And (SourcePiece < 0)))
+            {
+                Idx = ((PieceIdxLookup[abs(SourcePiece)] * 10000) + ((SourceIdx * 100) + TargetIdxOuter2));
+                If (Side == 1)
+                {
+                    If (MovePosLookupBlackLegal[(Idx + 0)] == 1)
+                    {
+                        List.Add(CalcMovesMoveList, (SourceIdx + 0));
+                        List.Add(CalcMovesScoreList, (0 - SourcePiece));
+                    }
+                }
+                Else
+                {
+                    If (MovePosLookupWhiteLegal[(Idx + 0)] == 1)
+                    {
+                        List.Add(CalcMovesMoveList, (SourceIdx + 0));
+                        List.Add(CalcMovesScoreList, SourcePiece);
+                    }
+                }
+            }
+            SourceIdx += 1;
+        }
+        Call SortList;
+        Idx = 1;
+        Repeat (List.Length(CalcMovesMoveList))
+        {
+            If (Side == 1)
+            {
+                List.Add(TmpList1, CalcMovesMoveList[(Idx + 0)]);
+            }
+            Else
+            {
+                List.Add(TmpList2, CalcMovesMoveList[(Idx + 0)]);
+            }
+            Idx += 1;
+        }
+        Side += 1;
+    }
+    If (Board[(TargetIdxOuter2 + 0)] > 0)
+    {
+        Side = 2;
+    }
+    Else
+    {
+        Side = 1;
+    }
+    IsDone = (((Side == 1) And (List.Length(TmpList1) == 0)) Or ((Side == 2) And (List.Length(TmpList2) == 0)));
+    Repeat Until (IsDone == 1)
+    {
+        FoundIdx = 0;
+        IdxOuter = 1;
+        Repeat Until ((FoundIdx > 0) Or (((Side == 1) And (IdxOuter > List.Length(TmpList1))) Or ((Side == 2) And (IdxOuter > List.Length(TmpList2)))))
+        {
+            If (Side == 1)
+            {
+                SourceIdxOuter2 = TmpList1[(IdxOuter + 0)];
+            }
+            Else
+            {
+                SourceIdxOuter2 = TmpList2[(IdxOuter + 0)];
+            }
+            Call SEE.IsAttackReachable(abs(Board[(SourceIdxOuter2 + 0)]))(SourceIdxOuter2)(TargetIdxOuter2);
+            If (IsReachableRes == 1)
+            {
+                If (Side == 1)
+                {
+                    List.DeleteItem(TmpList1, IdxOuter);
+                }
+                Else
+                {
+                    List.DeleteItem(TmpList2, IdxOuter);
+                }
+                FoundIdx = SourceIdxOuter2;
+            }
+            Else
+            {
+                IdxOuter += 1;
+            }
+        }
+        If (FoundIdx > 0)
+        {
+            CurrentMoveOuter = ((FoundIdx * 100) + TargetIdxOuter2);
+            Depth += 1;
+            Call ClearMoveList(Depth);
+            Call AddMoveToList(CurrentMoveOuter)(Depth);
+            List.ReplaceItem(MovesIdx, Depth, 1);
+            Call ApplyMoveLight(Depth);
+            SEE.Result += (0 - TargetPieces[(Depth + 0)]);
+        }
+        Else
+        {
+            IsDone = 1;
+        }
+        If (Side == 1)
+        {
+            Side = 2;
+        }
+        Else
+        {
+            Side = 1;
+        }
+    }
+    Repeat Until (Depth == Depth)
+    {
+        Call RevertMoveLight(Depth);
+        Depth += -1;
+    }
+}
+
+Define SEE.IsAttackReachable(string SourcePieceAbs)(string SourceIdx)(string TargetIdx) (warp=true)
+{
+    IsReachableRes = 0;
+    If ((SourcePieceAbs == GoK_BlackKing) Or (SourcePieceAbs == GoK_BlackKnight))
+    {
+        IsReachableRes = 1;
+        Stop(this script);
+    }
+    If (SourcePieceAbs == GoK_BlackPawn)
+    {
+        If (IdxToFile[SourceIdx] == IdxToFile[TargetIdx])
+        {
+            IsReachableRes = 1;
+            Stop(this script);
+        }
+    }
+    If ((SourcePieceAbs > GoK_BlackKnight) And (SourcePieceAbs < GoK_BlackKing))
+    {
+        Idx = ((SourceIdx * 100) + TargetIdx);
+        SourceIdx = SourceIdx;
+        Repeat ((MovePathDelta[Idx] - 1))
+        {
+            SourceIdx += MovePathStepInc[Idx];
+            If (Not ((Board[SourceIdx] == 0)))
+            {
+                Stop(this script);
+            }
+        }
+        IsReachableRes = 1;
+    }
 }
 
 Define SetCastlingStateFlag(string Depth)(string Offset)(string Val) (warp=true)
