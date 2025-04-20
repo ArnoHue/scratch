@@ -1,4 +1,3 @@
-
 //----- Green flag events ---------------------------------------------------------------------------------------------
 
 WhenGreenFlagClicked()
@@ -90,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9190 (18.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9194 (20.04.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -870,7 +869,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     Idx += -2;
                 }
             }
-            If (Count1 > 2)
+            If (Count1 > 1)
             {
                 List.ReplaceItem(MinMaxResults, Depth, DrawByRepetitionEval);
                 List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
@@ -1117,6 +1116,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Else
         {
             Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
+            List.ReplaceItem(BoardEval, Depth, ScoreCalcRes);
             List.ReplaceItem(MinMaxResults, Depth, ScoreCalcRes);
             List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreCalcResIsDynamic);
             If ((Depth % 2) == 1)
@@ -1166,6 +1166,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     IsInNullMove += 1;
                     Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
+                    List.ReplaceItem(BoardEval, Depth, ScoreCalcRes);
                     If ((((Depth % 2) == 1) And (Not ((ScoreCalcRes < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((ScoreCalcRes > Alphas[Depth])))))
                     {
                         Call ClearMoveList((Depth + 0));
@@ -1208,6 +1209,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     IsInNullMove += -1;
                 }
             }
+        }
+    }
+    If (BoardEval[Depth] == "")
+    {
+        If ((CheckedState[Depth] == 0) And (Quiescence Or ((Betas[Depth] - Alphas[Depth]) == 1)))
+        {
+            Call OnScoreCalc((Depth - 1))(MinDepth)((Depth - 1))(PrevQuiescence);
+            List.ReplaceItem(BoardEval, Depth, ScoreCalcRes);
         }
     }
     List.ReplaceItem(PickPhase, Depth, 1);
@@ -1354,10 +1363,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         }
                     }
                 }
-                If (Not ((FutilityMargin == "")))
+                ScoreCalcRes = BoardEval[(Depth + 0)];
+                If ((Not ((FutilityMargin == ""))) And (Not ((ScoreCalcRes == ""))))
                 {
-                    ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[(Depth - 1)] + EvalExtended2[(Depth - 1)]) + EvalExtended3[(Depth - 1)])) + PosScoreDeltaSum[(Depth - 1)]);
-                    ScoreCalcRes = BoardEval[(Depth + 0)];
                     If ((Depth % 2) == 1)
                     {
                         EvalResult = ((ScoreCalcRes - TargetPieces[Depth]) + FutilityMargin);
@@ -3455,7 +3463,7 @@ Define EvaluateBoardExtended2Impl(string Depth) (warp=true)
         Idx = ((Side - 1) * 4);
         If ((Operator.LetterOf(CurrentValue, (Idx + 2)) == 1) Or ((Operator.LetterOf(CurrentValue, (Idx + 3)) == 1) And (Operator.LetterOf(CurrentValue, (Idx + 4)) == 1)))
         {
-            Call TaperedEval.Add((-55 * Factor))((-25 * Factor));
+            Call TaperedEval.Add((-45 * Factor))((0 * Factor));
         }
         Side += 1;
     }
@@ -3685,7 +3693,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
                     }
                     If (AttackerPieceAbs == GoK_BlackRook)
                     {
-                        Call //("Rook threads");
+                        Call //("Rook threats");
                         IdxSub = (PieceIdxLookup[CurrentPieceAbs] * 2);
                         Call TaperedEval.Add(((0 - RookAttackWeight[(IdxSub - 1)]) * Factor))(((0 - RookAttackWeight[IdxSub]) * Factor));
                     }
@@ -3770,7 +3778,7 @@ Define EvaluateBoardExtended3Impl(string Depth) (warp=true)
         }
         Call TaperedEval.Add(((-4 * KingFlankAttacks) * Factor))(((-2 * KingFlankAttacks) * Factor));
         File = (KingFile - 1);
-        Count1 = "";
+        Count1 = 0;
         Repeat (3)
         {
             If (Side == 1)
@@ -7475,15 +7483,15 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "PawnPassedRankBonus")
             {
-                List.Add(PawnPassedRankBonus, Operator.Round((CurrentValue * 1)));
+                List.Add(PawnPassedRankBonus, Operator.Round((CurrentValue * 1.2)));
             }
             If (ListName == "PawnConnectedBonus")
             {
-                List.Add(PawnConnectedBonus, Operator.Round((CurrentValue * 1)));
+                List.Add(PawnConnectedBonus, Operator.Round((CurrentValue * 0.8)));
             }
             If (ListName == "PawnPhalanxBonus")
             {
-                List.Add(PawnPhalanxBonus, CurrentValue);
+                List.Add(PawnPhalanxBonus, Operator.Round((CurrentValue * 0.8)));
             }
             CurrentValue = "";
         }
@@ -7604,23 +7612,26 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
     {
         List.ReplaceItem(PosScoreDeltaSum, Depth, PosScoreDelta[Depth]);
         List.ReplaceItem(CapturesDeltaSum, Depth, TargetPieces[Depth]);
+        Call UpdatePawnStructure;
+        Call EvaluateBoardExtended1(Depth);
+        List.ReplaceItem(EvalExtended1, Depth, EvalExtendedResult1);
+        Call EvaluateBoardExtended2(Depth);
+        List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
+        Call EvaluateBoardExtended3(Depth);
+        List.ReplaceItem(EvalExtended3, Depth, EvalExtendedResult3);
     }
     Else
     {
         List.ReplaceItem(PosScoreDeltaSum, Depth, (PosScoreDeltaSum[(Depth - 1)] + PosScoreDelta[Depth]));
         List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[(Depth - 1)] + TargetPieces[Depth]));
+        List.ReplaceItem(EvalExtended1, Depth, EvalExtended1[(Depth - 1)]);
+        List.ReplaceItem(EvalExtended2, Depth, EvalExtended2[(Depth - 1)]);
+        List.ReplaceItem(EvalExtended3, Depth, EvalExtended3[(Depth - 1)]);
     }
     If (Not ((PromotionPieces[Depth] == 0)))
     {
         List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
     }
-    Call UpdatePawnStructure;
-    Call EvaluateBoardExtended1(Depth);
-    List.ReplaceItem(EvalExtended1, Depth, EvalExtendedResult1);
-    Call EvaluateBoardExtended2(Depth);
-    List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
-    Call EvaluateBoardExtended3(Depth);
-    List.ReplaceItem(EvalExtended3, Depth, EvalExtendedResult3);
     If (Depth == MaxDepth)
     {
         Call TTProbeBoard(CurrentBoardHash);
@@ -7634,6 +7645,13 @@ Define OnScoreCalc(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescen
             }
             Stop(this script);
         }
+        Call UpdatePawnStructure;
+        Call EvaluateBoardExtended1(Depth);
+        List.ReplaceItem(EvalExtended1, Depth, EvalExtendedResult1);
+        Call EvaluateBoardExtended2(Depth);
+        List.ReplaceItem(EvalExtended2, Depth, EvalExtendedResult2);
+        Call EvaluateBoardExtended3(Depth);
+        List.ReplaceItem(EvalExtended3, Depth, EvalExtendedResult3);
         ScoreCalcRes = ((EvalResultBase + ((EvalExtended1[Depth] + EvalExtended2[Depth]) + EvalExtended3[Depth])) + (PosScoreDeltaSum[Depth] - CapturesDeltaSum[Depth]));
         ScoreCalcResIsDynamic = 0;
         If (1 == 0)
