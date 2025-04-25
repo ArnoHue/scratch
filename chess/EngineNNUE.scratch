@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.301 (23.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.302 (24.04.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3057,10 +3057,6 @@ Define GetBestMoveMedDiff (warp=false)
     If (CustomThinkTime > 0)
     {
         ThinkTimeLimit = CustomThinkTime;
-    }
-    Else
-    {
-        CustomThinkTime = ThinkTimeLimit;
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 18);
@@ -7717,9 +7713,16 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                     List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
                 }
-                Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(((Horizon - Reduction) - 1));
+                If (Reduction == (Horizon - 1))
+                {
+                    Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1);
+                }
+                Else
+                {
+                    Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)((1 == 0))(ShowProgress)(((Horizon - Reduction) - 1));
+                }
                 Eval = SearchEvalResults[(Depth + 1)];
-                EvalIsDynamic = 1;
+                EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                 Search.LmrNonPV.IsReSearchRequired = 0;
             }
         }
@@ -7761,9 +7764,10 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
         {
             If ((Horizon > 2) And (((Betas[Depth] - Alphas[Depth]) == 1) And (CheckedState[Depth] == 0)))
             {
-                If (((BlackMinorCountLocal + BlackQueenCountLocal) > 0) And ((WhiteMinorCountLocal + WhiteQueenCountLocal) > 0))
+                If (((BlackQueenCount + BlackMinorCount) > 0) And ((WhiteQueenCount + WhiteMinorCount) > 0))
                 {
                     Call Evaluate((Depth - 1))((1 == 1));
+                    List.ReplaceItem(BoardEval, Depth, EvaluationRes);
                     If ((((Depth % 2) == 1) And (Not ((EvaluationRes < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((EvaluationRes > Alphas[Depth])))))
                     {
                         Call ClearMoveList((Depth + 0));
@@ -7781,17 +7785,39 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                             List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                             List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
                         }
-                        CurrentValue = (Horizon - 2);
-                        If (CurrentValue > 2)
+                        Reduction = (4 + floor((Horizon / 4)));
+                        If ((Depth % 2) == 1)
                         {
-                            CurrentValue = 2;
+                            CurrentValue = (EvaluationRes - Betas[Depth]);
                         }
-                        CurrentValue += floor(((Horizon - 2) / 4));
-                        If (CurrentValue < 0)
+                        Else
                         {
-                            CurrentValue = 0;
+                            CurrentValue = (Alphas[Depth] - EvaluationRes);
                         }
-                        Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(((Horizon - CurrentValue) - 1));
+                        If (floor((CurrentValue / 214)) < 3)
+                        {
+                            Reduction += floor((CurrentValue / 214));
+                        }
+                        Else
+                        {
+                            Reduction += 3;
+                        }
+                        If (Reduction > (Horizon - 1))
+                        {
+                            Reduction = (Horizon - 1);
+                        }
+                        If (Reduction < 0)
+                        {
+                            Reduction = 0;
+                        }
+                        If (Reduction == (Horizon - 1))
+                        {
+                            Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1);
+                        }
+                        Else
+                        {
+                            Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(((Horizon - Reduction) - 1));
+                        }
                         Eval = SearchEvalResults[(Depth + 1)];
                         EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                         Call RevertMove((Depth + 0));
@@ -8022,6 +8048,8 @@ Define SEE(string Depth) (warp=true)
             List.ReplaceItem(MovesIdx, Depth, 1);
             Call ApplyMoveLight(Depth);
             SEE.Result += (0 - TargetPieces[(Depth + 0)]);
+            MoveCountQ += 1;
+            NodeCountQ += 1;
         }
         Else
         {
