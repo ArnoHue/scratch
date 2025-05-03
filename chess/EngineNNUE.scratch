@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.311 (30.04.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.312 (02.05.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3061,11 +3061,6 @@ Define GetBestMoveMedDiff (warp=false)
     {
         ThinkTimeLimit = CustomThinkTime;
     }
-    List.DeleteAll(AWSize);
-    List.Add(AWSize, 18);
-    List.Add(AWSize, 20);
-    List.Add(AWSize, 100);
-    List.Add(AWSize, 325);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsSearchTimeout = 0;
     IsDeepeningDone = 0;
@@ -3076,9 +3071,9 @@ Define GetBestMoveMedDiff (warp=false)
     {
         QuiescenceDepth = (MaxSearchDepth - IdxDeepening);
         ThinkTimeLimitSearch = ThinkTimeLimit;
-        AWIdx = 1;
-        AWDelta = AWSize[1];
-        If ((((IdxDeepening > 5) Or ((IsScratch3 == 1) And (IdxDeepening > 3))) And (IsEvalStable == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
+        AWCount = 1;
+        AWDelta = Operator.Round((9 + ((BestSearchEvalRes * BestSearchEvalRes) / 16384)));
+        If (((IdxDeepening > 5) Or ((IsScratch3 == 1) And (IdxDeepening > 3))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -3093,7 +3088,7 @@ Define GetBestMoveMedDiff (warp=false)
         {
             If ((IsEvalStable == 0) And (IsEndgame2 == 0))
             {
-                ThinkTimeLimitSearch = Operator.Round((ThinkTimeLimit * 1.25));
+                ThinkTimeLimitSearch = Operator.Round((ThinkTimeLimit * 1));
             }
             Call Search(AWAlpha)(AWBeta)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
             Call Log(IdxDeepening)(": AW : ")(AWAlpha)(" : ")(AWBeta)(" : ")(SearchEvalResults[1])(Operator.Join(" : ", ((Not ((SearchEvalResults[1] == ""))) And ((Not ((SearchEvalResults[1] > AWAlpha))) Or (Not ((SearchEvalResults[1] < AWBeta)))))));
@@ -3101,33 +3096,37 @@ Define GetBestMoveMedDiff (warp=false)
             {
                 IsEvalStable = 0;
                 IsSearchTimeout = 0;
-                AWIdx += 1;
-                If ((AWIdx > List.Length(AWSize)) Or (IsEndgame2 == 1))
+                AWCount += 1;
+                If ((AWCount < 5) And (abs(SearchEvalResults[1]) < AbsMinCheckmateEval))
                 {
-                    AWDelta = 100000;
-                }
-                Else
-                {
-                    AWDelta = AWSize[AWIdx];
-                }
-                If (Not ((SearchEvalResults[1] > AWAlpha)))
-                {
-                    If (1 == 0)
-                    {
-                        AWBeta = Operator.Round(((AWAlpha + AWBeta) / 2));
-                    }
-                    AWAlpha += (0 - AWDelta);
+                    AWDelta = Operator.Round((AWDelta + (AWDelta / (3 - ((AWDelta > 2) + (AWDelta > 3))))));
                     If (Not ((SearchEvalResults[1] > AWAlpha)))
                     {
-                        AWAlpha = (SearchEvalResults[1] - AWDelta);
+                        AWAlpha += (0 - AWDelta);
+                        If (Not ((SearchEvalResults[1] > AWAlpha)))
+                        {
+                            AWAlpha = (SearchEvalResults[1] - AWDelta);
+                        }
+                        AWBeta = Operator.Round(((AWAlpha + (3 * AWBeta)) / 4));
+                    }
+                    Else
+                    {
+                        AWBeta += AWDelta;
+                        If (Not ((SearchEvalResults[1] < AWBeta)))
+                        {
+                            AWBeta = (SearchEvalResults[1] + AWDelta);
+                        }
                     }
                 }
                 Else
                 {
-                    AWBeta += AWDelta;
-                    If (Not ((SearchEvalResults[1] < AWBeta)))
+                    If (Not ((SearchEvalResults[1] > AWAlpha)))
                     {
-                        AWBeta = (SearchEvalResults[1] + AWDelta);
+                        AWAlpha = -100000;
+                    }
+                    Else
+                    {
+                        AWBeta = 100000;
                     }
                 }
                 TT.CurrentAge += -1;
@@ -7679,11 +7678,11 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
             {
                 If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
-                    Reduction = floor((2.01 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 3.76)));
+                    Reduction = floor((2.01 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.32)));
                 }
                 Else
                 {
-                    Reduction = floor((0.38 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.32)));
+                    Reduction = floor((0.38 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 3.76)));
                 }
                 If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                 {
@@ -7693,9 +7692,9 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 {
                     Reduction += -1;
                 }
-                If (Not ((TTMove[Depth] == 0)))
+                If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
-                    If (Not ((Board[floor((TTMove[Depth] % 100))] == 0)))
+                    If ((Not ((TTMove[Depth] == 0))) And (Not ((Board[floor((TTMove[Depth] % 100))] == 0))))
                     {
                         Reduction += 1;
                     }
