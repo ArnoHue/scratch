@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.312 (02.05.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.314 (04.05.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -956,7 +956,23 @@ Define AddSpecialMove(string Move)(string Depth) (warp=true)
             Stop(this script);
         }
     }
-    Call GetMoveScore("")("")("")("")(Move)(Depth);
+    SourcePiece = "";
+    If (Variable.Length(Move) == 6)
+    {
+        SourcePiece = GoK_BlackPawn;
+    }
+    If (floor((Move / 100)) == 0)
+    {
+        SourcePiece = GoK_BlackKing;
+    }
+    If ((Depth % 2) == 1)
+    {
+        Call GetMoveScore(SourcePiece)(0)("")("")(Move)(Depth);
+    }
+    Else
+    {
+        Call GetMoveScore((0 - SourcePiece))(0)("")("")(Move)(Depth);
+    }
     List.Add(CalcMovesScoreList, MoveScoreRes);
 }
 
@@ -2878,32 +2894,10 @@ Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bo
     {
         If (Depth == 1)
         {
-            If (List.Length(Ply1DeepeningMoveScore) == 0)
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And (Not ((TTProbeNode.BestMoveRes == ""))))
             {
-                Call TTProbeNode(CurrentBoardHash)(Depth);
-                Idx = 1;
-                Repeat (List.Length(CalcMovesScoreList))
-                {
-                    List.Add(Ply1DeepeningMoveScoreOrderMap, "");
-                    List.Add(Ply1DeepeningMoveScore, "");
-                    If ((TTProbeRes == 1) And (CalcMovesMoveList[Idx] == TTProbeNode.BestMoveRes))
-                    {
-                        List.ReplaceItem(CalcMovesScoreList, Idx, MaxPly1DeepeningMoveOrderScore);
-                    }
-                    Idx += 1;
-                }
-            }
-            Else
-            {
-                Idx = 1;
-                Repeat (List.Length(CalcMovesScoreList))
-                {
-                    If (Not ((Ply1DeepeningMoveScore[Idx] == "")))
-                    {
-                        List.ReplaceItem(CalcMovesScoreList, Idx, Ply1DeepeningMoveScore[Idx]);
-                    }
-                    Idx += 1;
-                }
+                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, TTProbeNode.BestMoveRes), MaxPly1DeepeningMoveOrderScore);
             }
         }
         Call SortMoveList(Depth);
@@ -3346,7 +3340,7 @@ Define GetMoveNotation(num Move) (warp=true)
 
 Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
 {
-    MoveScoreRes = "";
+    MoveScoreRes = 0;
     Factor = (((Depth % 2) * 2) - 1);
     If (floor((Move / 100)) == 0)
     {
@@ -3438,17 +3432,38 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         MoveScoreRes = ((2000 + ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (10 - PieceIdxLookup[abs(SourcePieceParam)]))) * Factor);
         Stop(this script);
     }
-    CurrentValue2 = (HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))] / MaxHistoryMoveScore[((Depth % 2) + 1)]);
-    If (CurrentValue2 > 0.2)
+    If (TargetPieceParam == 0)
     {
-        Call //("6: Quiets with high history score");
-        MoveScoreRes = ((4000 + Operator.Round((CurrentValue2 * 1000))) * Factor);
+        If (BoardAttackedCalculated[Depth] == 1)
+        {
+            If (BoardAttackedByOpponentSnapshot[(((Depth - 1) * 100) + ToIdx)] > 0)
+            {
+                MoveScoreRes = ((0 - (1000 + PieceIdxLookup[abs(SourcePieceParam)])) * Factor);
+                Stop(this script);
+            }
+        }
     }
-    Else
+    CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))];
+    CurrentValue2 = MaxHistoryMoveScore[((Depth % 2) + 1)];
+    If ((CurrentValue > 0) And (CurrentValue2 > 0))
     {
-        Call //("8: Other quiets");
-        MoveScoreRes = ((0 + Operator.Round((CurrentValue2 * 1000))) * Factor);
+        CurrentValue3 = (CurrentValue / CurrentValue2);
+        If (CurrentValue3 > 0.2)
+        {
+            Call //("6: Quiets with high history score");
+            MoveScoreRes = ((4000 + Operator.Round((CurrentValue3 * 1000))) * Factor);
+        }
+        Else
+        {
+            Call //("8: Other quiets");
+            MoveScoreRes = ((0 + Operator.Round((CurrentValue3 * 1000))) * Factor);
+        }
+        Stop(this script);
     }
+    Call GetPiecePosEval(SourcePieceParam)(FromIdx);
+    PosEvalRes2 = PosEvalRes;
+    Call GetPiecePosEval(SourcePieceParam)(ToIdx);
+    MoveScoreRes = (PosEvalRes - PosEvalRes2);
 }
 
 Define GetOpeningMoves (warp=true)
@@ -6066,7 +6081,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.DeleteAll(TmpList1);
         List.DeleteAll(TmpList2);
         Call ClearMoveList(Depth);
-        If (Depth > 1)
+        If ((Depth > 1) Or (1 == 1))
         {
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If (TTProbeRes == 1)
@@ -7082,17 +7097,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                             Else
                             {
                                 List.ReplaceItem(Alphas, Depth, Eval);
-                                If ((Depth == 1) And (IsSearchTimeout == 0))
-                                {
-                                    Idx = (MaxPly1DeepeningMoveOrderScore - 3);
-                                    List.ReplaceItem(Ply1DeepeningMoveScore, List.IndexOf(Ply1DeepeningMoveScore, Idx), "");
-                                    Repeat (3)
-                                    {
-                                        Idx += 1;
-                                        List.ReplaceItem(Ply1DeepeningMoveScore, List.IndexOf(Ply1DeepeningMoveScore, Idx), (Idx - 1));
-                                    }
-                                    List.ReplaceItem(Ply1DeepeningMoveScore, Ply1DeepeningMoveScoreOrderMap[MovesIdx[1]], MaxPly1DeepeningMoveOrderScore);
-                                }
                                 If (Not ((Eval < Betas[Depth])))
                                 {
                                     If (Depth > 1)
@@ -7113,6 +7117,11 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                         If (Not ((Eval < (0 - AbsMaxCheckmateEval))))
                                         {
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
+                                            Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(Horizon)("")("")("")("")("")("")("");
+                                            If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
+                                            {
+                                                Call StoreKillerMove(Depth)(BestMoves[Depth]);
+                                            }
                                             SearchMoveRes = Moves1[MovesIdx[1]];
                                             SearchEvalRes = Eval;
                                             Call Search_OnBestRootMoveFound(SearchMoveRes)(SearchEvalRes);
@@ -7525,7 +7534,10 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
         FutilityMargin = "";
         If Quiescence
         {
-            FutilityMargin = 400;
+            If (Not ((TargetPieces[Depth] == 0)))
+            {
+                FutilityMargin = 400;
+            }
         }
         Else
         {
@@ -7614,11 +7626,6 @@ Define Search_InitStack(string Depth)(bool InitialDeepening) (warp=true)
     Call //("Initialize local variables or forward state from previous ply");
     If (Depth == 1)
     {
-        If InitialDeepening
-        {
-            List.DeleteItem(Ply1DeepeningMoveScore, all);
-            List.DeleteItem(Ply1DeepeningMoveScoreOrderMap, all);
-        }
         Call CalcBoardAttackedByMove(1);
         Call StoreAttackInfo(1)(1);
         Call CalcBoardAttackedByMove(2);
@@ -7977,16 +7984,16 @@ Define SEE(string MoveDepth) (warp=true)
                 {
                     If (MovePosLookupBlackLegal[(Idx + 0)] == 1)
                     {
-                        List.Add(CalcMovesMoveList, (SourceIdx + 0));
-                        List.Add(CalcMovesScoreList, (0 - SourcePiece));
+                        List.Add(CalcMovesMoveList, SourceIdx);
+                        List.Add(CalcMovesScoreList, SourcePiece);
                     }
                 }
                 Else
                 {
                     If (MovePosLookupWhiteLegal[(Idx + 0)] == 1)
                     {
-                        List.Add(CalcMovesMoveList, (SourceIdx + 0));
-                        List.Add(CalcMovesScoreList, SourcePiece);
+                        List.Add(CalcMovesMoveList, SourceIdx);
+                        List.Add(CalcMovesScoreList, (0 - SourcePiece));
                     }
                 }
             }
@@ -8166,26 +8173,24 @@ Define SortMoveList(string Depth) (warp=true)
         Idx2 = List.Length(CalcMovesMoveList);
         Repeat (List.Length(CalcMovesMoveList))
         {
-            List.ReplaceItem(Ply1DeepeningMoveScoreOrderMap, Idx, List.IndexOf(Moves1, CalcMovesMoveList[Idx2]));
-            Idx += 1;
-            Idx2 += -1;
-        }
-        Idx = 1;
-        Idx2 = List.Length(CalcMovesMoveList);
-        Repeat (List.Length(CalcMovesMoveList))
-        {
             List.ReplaceItem(Moves, Idx, CalcMovesMoveList[Idx2]);
             List.ReplaceItem(Moves1, Idx, CalcMovesMoveList[Idx2]);
             Idx += 1;
             Idx2 += -1;
         }
         List.ReplaceItem(MovesCount, Depth, List.Length(CalcMovesMoveList));
+        Idx = 1;
+        Repeat (List.Length(CalcMovesMoveList))
+        {
+            List.ReplaceItem(CalcMovesMoveList, Idx, Moves[Idx]);
+            Idx += 1;
+        }
         Stop(this script);
     }
     If (Depth == 2)
     {
         Call SortList;
-        Idx2 = ((Depth - 1) * 300);
+        Idx2 = ((Depth - 1) * MaxMovesPerGeneration);
         Idx = 1;
         Repeat (List.Length(CalcMovesMoveList))
         {
@@ -8204,6 +8209,14 @@ Define SortMoveList(string Depth) (warp=true)
         Repeat (List.Length(CalcMovesMoveList))
         {
             List.ReplaceItem(Moves, (Idx2 + Idx), CalcMovesMoveList[((List.Length(CalcMovesMoveList) - Idx) + 1)]);
+            Idx += 1;
+        }
+        List.ReplaceItem(MovesCount, Depth, List.Length(CalcMovesMoveList));
+        Idx2 = ((Depth - 1) * MaxMovesPerGeneration);
+        Idx = 1;
+        Repeat (List.Length(CalcMovesMoveList))
+        {
+            List.ReplaceItem(CalcMovesMoveList, Idx, Moves[(Idx2 + Idx)]);
             Idx += 1;
         }
         List.ReplaceItem(MovesCount, Depth, List.Length(CalcMovesMoveList));
