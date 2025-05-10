@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.319 (08.05.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.322 (10.05.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1702,43 +1702,34 @@ Define ClearTTImpl(string Size) (warp=true)
     List.DeleteItem(TTNodeType, all);
     List.DeleteItem(TTNodeChecked, all);
     List.DeleteItem(TTNodeHorizon, all);
-    List.DeleteItem(TTNodeBlackMobility, all);
-    List.DeleteItem(TTNodeWhiteMobility, all);
     List.DeleteItem(TTBoardAge, all);
     List.DeleteItem(TTBoardHash, all);
-    List.DeleteItem(TTBoardEval1, all);
-    List.DeleteItem(TTBoardEval2, all);
-    List.DeleteItem(TTBoardEval3, all);
     List.DeleteItem(TTBoardEvalSum, all);
     List.DeleteItem(TTNodeBoardAttackedByOpp, all);
     List.DeleteItem(TTNodeBoardAttackedByOppPiece, all);
     List.DeleteItem(TTNodeCheckedAttackLines, all);
     List.DeleteItem(TTNodeEvalIsDynamic, all);
     List.DeleteItem(TTBoardEvalIsDynamic, all);
-    List.DeleteItem(TTNodeQSearchMeta, all);
     Repeat (Size)
     {
         List.Add(TTNodeHash, 0);
+        List.Add(TTNodeAge, 0);
         List.Add(TTNodeBestMove, "");
         List.Add(TTNodeEval, "");
         List.Add(TTNodeDepth, "");
-        List.Add(TTNodeAge, 0);
         List.Add(TTNodeType, "");
         List.Add(TTNodeChecked, "");
         List.Add(TTNodeHorizon, "");
-        List.Add(TTNodeBlackMobility, "");
-        List.Add(TTNodeWhiteMobility, "");
         List.Add(TTNodeCheckedAttackLines, "");
         List.Add(TTNodeBoardAttackedByOpp, "");
         List.Add(TTNodeBoardAttackedByOppPiece, "");
-        List.Add(TTNodeQSearchMeta, "");
     }
-    Repeat ((Size * 3))
+    Repeat ((Size * 1))
     {
-        List.Add(TTBoardEvalSum, "");
-        List.Add(TTBoardAge, 0);
         List.Add(TTBoardHash, 0);
-        List.Add(TTBoardEvalIsDynamic, 0);
+        List.Add(TTBoardAge, 0);
+        List.Add(TTBoardEvalIsDynamic, "");
+        List.Add(TTBoardEvalSum, "");
     }
 }
 
@@ -1850,7 +1841,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         If (IsClassicEndgameEval == 0)
         {
             Call NNUE_Public_Evaluate((Depth + 1));
-            EvaluationRes = NNUE_EvalRes;
+            EvaluationRes = Operator.Round(NNUE_EvalRes);
             EvaluationIsDynamicRes = 0;
             Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
         }
@@ -3800,6 +3791,14 @@ Define GetTargetIdx(num SourceIdx)(num DeltaX)(num DeltaY) (warp=true)
     }
 }
 
+Define GetTTNodeHash(string BoardHash)(string Depth) (warp=true)
+{
+    TTNodeHashResult = (Depth % 2);
+    TTNodeHashResult = ((TTNodeHashResult * 31) + EnPassantTarget[BoardHash]);
+    TTNodeHashResult = ((TTNodeHashResult * 31) + CastlingState[BoardHash]);
+    TTNodeHashResult = ((TTNodeHashResult * 31) + BoardHash);
+}
+
 Define GetVirtualMove(num Move) (warp=true)
 {
     If (IsPlayerBlack == 0)
@@ -4694,9 +4693,6 @@ Define InitMovePosLookup(bool Init) (warp=true)
                 Idx = 1;
                 Repeat (List.Length(TTBoardEvalSum))
                 {
-                    List.ReplaceItem(TTBoardEval1, Idx, "");
-                    List.ReplaceItem(TTBoardEval2, Idx, "");
-                    List.ReplaceItem(TTBoardEval3, Idx, "");
                     List.ReplaceItem(TTBoardEvalSum, Idx, "");
                     List.ReplaceItem(TTBoardEvalIsDynamic, Idx, "");
                     Idx += 1;
@@ -7767,7 +7763,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction);
                 Eval = SearchEvalResults[(Depth + 1)];
-                EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
+                EvalIsDynamic = 1;
                 Search.LmrNonPV.IsReSearchRequired = 0;
             }
         }
@@ -7862,7 +7858,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                         If (((((Depth % 2) == 1) And (Not ((Eval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Eval > Alphas[Depth]))))) And (Not ((abs(Eval) > AbsMinCheckmateEval))))
                         {
                             List.ReplaceItem(SearchEvalResults, Depth, Eval);
-                            List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvalIsDynamic);
+                            List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
                         }
                     }
                 }
@@ -8511,19 +8507,19 @@ Define TTProbeBoard(string BoardHash)(string Depth) (warp=true)
 Define TTProbeBoardImpl(string BoardHash) (warp=true)
 {
     HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
-    If (Not ((TTBoardHash[HashBucket] == BoardHash)))
+    If (Not ((TTBoardHash[(HashBucket + 0)] == BoardHash)))
     {
         HashBucket += 1;
-        If (Not ((TTBoardHash[HashBucket] == BoardHash)))
+        If (Not ((TTBoardHash[(HashBucket + 0)] == BoardHash)))
         {
             HashBucket += 1;
-            If (Not ((TTBoardHash[HashBucket] == BoardHash)))
+            If (Not ((TTBoardHash[(HashBucket + 0)] == BoardHash)))
             {
                 HashBucket += 1;
-                If (Not ((TTBoardHash[HashBucket] == BoardHash)))
+                If (Not ((TTBoardHash[(HashBucket + 0)] == BoardHash)))
                 {
                     HashBucket += 1;
-                    If (Not ((TTBoardHash[HashBucket] == BoardHash)))
+                    If (Not ((TTBoardHash[(HashBucket + 0)] == BoardHash)))
                     {
                         TTProbeRes = 0;
                         Stop(this script);
@@ -8543,25 +8539,26 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
 
 Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
 {
-    Call TTProbeNodeImpl((BoardHash + ((Depth % 2) * 31)));
+    Call GetTTNodeHash(BoardHash)(Depth);
+    Call TTProbeNodeImpl(TTNodeHashResult);
 }
 
 Define TTProbeNodeImpl(string BoardHash) (warp=true)
 {
     HashBucket = ((BoardHash % (List.Length(TTNodeHash) - 5)) + 1);
-    If (Not ((TTNodeHash[HashBucket] == BoardHash)))
+    If (Not ((TTNodeHash[(HashBucket + 0)] == BoardHash)))
     {
         HashBucket += 1;
-        If (Not ((TTNodeHash[HashBucket] == BoardHash)))
+        If (Not ((TTNodeHash[(HashBucket + 0)] == BoardHash)))
         {
             HashBucket += 1;
-            If (Not ((TTNodeHash[HashBucket] == BoardHash)))
+            If (Not ((TTNodeHash[(HashBucket + 0)] == BoardHash)))
             {
                 HashBucket += 1;
-                If (Not ((TTNodeHash[HashBucket] == BoardHash)))
+                If (Not ((TTNodeHash[(HashBucket + 0)] == BoardHash)))
                 {
                     HashBucket += 1;
-                    If (Not ((TTNodeHash[HashBucket] == BoardHash)))
+                    If (Not ((TTNodeHash[(HashBucket + 0)] == BoardHash)))
                     {
                         TTProbeRes = 0;
                         Stop(this script);
@@ -8595,16 +8592,16 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
 {
     HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
     Idx = 1;
-    Repeat Until (((TTBoardHash[HashBucket] == BoardHash) Or (TTBoardHash[HashBucket] == 0)) Or (Idx > 4))
+    Repeat Until (((TTBoardHash[(HashBucket + 0)] == BoardHash) Or (TTBoardHash[(HashBucket + 0)] == 0)) Or (Idx > 4))
     {
         Idx += 1;
         HashBucket += 1;
     }
-    If (Not (((TTBoardHash[HashBucket] == BoardHash) Or (TTBoardHash[HashBucket] == 0))))
+    If (Not (((TTBoardHash[(HashBucket + 0)] == BoardHash) Or (TTBoardHash[(HashBucket + 0)] == 0))))
     {
         HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
         Idx = 1;
-        Repeat Until (TTBoardAge[HashBucket] < (TT.CurrentAge - 1))
+        Repeat Until (TTBoardAge[(HashBucket + 0)] < (TT.CurrentAge - 0))
         {
             If (Idx > 4)
             {
@@ -8628,13 +8625,14 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
             Stop(this script);
         }
     }
+    Call GetTTNodeHash(BoardHash)(Depth);
     If (Score == DrawByRepetitionEval)
     {
-        Call TTStoreNodeImpl((BoardHash + ((Depth % 2) * 31)))(Depth)("")(BestMove)("")(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
+        Call TTStoreNodeImpl(TTNodeHashResult)(Depth)("")(BestMove)("")(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
     }
     Else
     {
-        Call TTStoreNodeImpl((BoardHash + ((Depth % 2) * 31)))(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
+        Call TTStoreNodeImpl(TTNodeHashResult)(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
     }
 }
 
@@ -8642,16 +8640,16 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
 {
     HashBucket = ((BoardHash % (List.Length(TTNodeHash) - 5)) + 1);
     Idx = 1;
-    Repeat Until (((TTNodeHash[HashBucket] == BoardHash) Or (TTNodeHash[HashBucket] == 0)) Or (Idx > 4))
+    Repeat Until (((TTNodeHash[(HashBucket + 0)] == BoardHash) Or (TTNodeHash[(HashBucket + 0)] == 0)) Or (Idx > 4))
     {
         Idx += 1;
         HashBucket += 1;
     }
-    If (Not (((TTNodeHash[HashBucket] == BoardHash) Or (TTNodeHash[HashBucket] == 0))))
+    If (Not (((TTNodeHash[(HashBucket + 0)] == BoardHash) Or (TTNodeHash[(HashBucket + 0)] == 0))))
     {
         HashBucket = ((BoardHash % (List.Length(TTNodeHash) - 5)) + 1);
         Idx = 1;
-        Repeat Until (TTNodeAge[HashBucket] < (TT.CurrentAge - 1))
+        Repeat Until (TTNodeAge[(HashBucket + 0)] < (TT.CurrentAge - 0))
         {
             If (Idx > 4)
             {
@@ -8661,7 +8659,7 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
             HashBucket += 1;
         }
     }
-    If (TTNodeHash[HashBucket] == BoardHash)
+    If (TTNodeHash[(HashBucket + 0)] == BoardHash)
     {
         If ((Not ((BoardAttackedByOpp == ""))) And (TTNodeBoardAttackedByOpp[HashBucket] == ""))
         {
