@@ -3058,8 +3058,8 @@ Define GetBestMoveMedDiff (warp=false)
         QuiescenceDepth = (MaxSearchDepth - IdxDeepening);
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
-        AWDelta = Operator.Round((9 + ((BestSearchEvalRes * BestSearchEvalRes) / 16384)));
-        If (((IdxDeepening > 3) Or ((IsScratch3 == 1) And (IdxDeepening > 3))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
+        AWDelta = Operator.Round((9 + ((BestSearchEvalRes * BestSearchEvalRes) / 4096)));
+        If (((IdxDeepening > 6) Or ((IsScratch3 == 1) And (IdxDeepening > 3))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -3072,20 +3072,14 @@ Define GetBestMoveMedDiff (warp=false)
         IsAWDone = 0;
         Repeat Until ((IsAWDone == 1) Or (IsSearchTimeout == 1))
         {
-            If ((IsEvalStable == 0) And (IsEndgame2 == 0))
-            {
-                ThinkTimeLimitSearch = Operator.Round((ThinkTimeLimit * 1));
-            }
             Call Search(AWAlpha)(AWBeta)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
             Call Log(IdxDeepening)(": AW : ")(AWAlpha)(" : ")(AWBeta)(" : ")(SearchEvalResults[1])(Operator.Join(" : ", ((Not ((SearchEvalResults[1] == ""))) And ((Not ((SearchEvalResults[1] > AWAlpha))) Or (Not ((SearchEvalResults[1] < AWBeta)))))));
-            If ((Not ((SearchEvalResults[1] == ""))) And ((Not ((SearchEvalResults[1] > AWAlpha))) Or (Not ((SearchEvalResults[1] < AWBeta)))))
+            If ((IsSearchTimeout == 0) And ((Not ((SearchEvalResults[1] == ""))) And ((Not ((SearchEvalResults[1] > AWAlpha))) Or (Not ((SearchEvalResults[1] < AWBeta))))))
             {
-                IsEvalStable = 0;
-                IsSearchTimeout = 0;
                 AWCount += 1;
-                If ((AWCount < 5) And (abs(SearchEvalResults[1]) < AbsMinCheckmateEval))
+                If ((AWCount < 2) And (abs(SearchEvalResults[1]) < AbsMinCheckmateEval))
                 {
-                    AWDelta = Operator.Round((AWDelta + (AWDelta / (3 - ((AWCount > 1) + (AWCount > 2))))));
+                    AWDelta = Operator.Round((AWDelta + (AWDelta / 2)));
                     If (Not ((SearchEvalResults[1] > AWAlpha)))
                     {
                         AWAlpha += (0 - AWDelta);
@@ -3123,7 +3117,6 @@ Define GetBestMoveMedDiff (warp=false)
             Else
             {
                 IsAWDone = 1;
-                IsEvalStable = 1;
             }
         }
         If (Not ((SearchMoveRes == "")))
@@ -3774,8 +3767,8 @@ Define GetTargetIdx(num SourceIdx)(num DeltaX)(num DeltaY) (warp=true)
 Define GetTTNodeHash(string BoardHash)(string Depth) (warp=true)
 {
     TTNodeHashResult = (Depth % 2);
-    TTNodeHashResult = ((TTNodeHashResult * 31) + EnPassantTarget[BoardHash]);
-    TTNodeHashResult = ((TTNodeHashResult * 31) + CastlingState[BoardHash]);
+    TTNodeHashResult = ((TTNodeHashResult * 31) + EnPassantTarget[Depth]);
+    TTNodeHashResult = ((TTNodeHashResult * 31) + CastlingState[Depth]);
     TTNodeHashResult = ((TTNodeHashResult * 31) + BoardHash);
 }
 
@@ -7034,7 +7027,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
             Else
             {
-                If (((Not (Quiescence)) And (Depth > 1)) And ((IsEndgame == 0) And (CheckedState[Depth] == 1)))
+                If (((Not (Quiescence)) And (Depth > 1)) And ((IsEndgame == 0) And ((CheckedState[Depth] == 1) And (Horizon > 1))))
                 {
                     List.ReplaceItem(SearchExtension, Depth, 1);
                 }
@@ -7118,11 +7111,14 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
                                             SearchMoveRes = BestMoves[Depth];
                                             SearchEvalRes = Eval;
-                                            List.DeleteItem(SearchPly1BestMoves, List.IndexOf(SearchPly1BestMoves, BestMoves[Depth]));
-                                            List.InsertItem(SearchPly1BestMoves, 1, BestMoves[Depth]);
-                                            If (List.Length(SearchPly1BestMoves) > 2)
+                                            If (Horizon > 3)
                                             {
-                                                List.DeleteItem(SearchPly1BestMoves, List.Length(SearchPly1BestMoves));
+                                                List.DeleteItem(SearchPly1BestMoves, List.IndexOf(SearchPly1BestMoves, BestMoves[Depth]));
+                                                List.InsertItem(SearchPly1BestMoves, 1, BestMoves[Depth]);
+                                                If (List.Length(SearchPly1BestMoves) > 3)
+                                                {
+                                                    List.DeleteItem(SearchPly1BestMoves, List.Length(SearchPly1BestMoves));
+                                                }
                                             }
                                             Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(Horizon)("")("")("")("")("")("")("");
                                             Call Search_OnBestRootMoveFound(SearchMoveRes)(SearchEvalRes);
@@ -7746,7 +7742,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction);
                 Eval = SearchEvalResults[(Depth + 1)];
-                EvalIsDynamic = 1;
+                EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                 Search.LmrNonPV.IsReSearchRequired = 0;
             }
         }
@@ -7841,7 +7837,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                         If (((((Depth % 2) == 1) And (Not ((Eval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Eval > Alphas[Depth]))))) And (Not ((abs(Eval) > AbsMinCheckmateEval))))
                         {
                             List.ReplaceItem(SearchEvalResults, Depth, Eval);
-                            List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
+                            List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
                         }
                     }
                 }
@@ -8490,7 +8486,8 @@ Define StoreKillerMove(string Depth)(string Move) (warp=true)
 
 Define TTProbeBoard(string BoardHash)(string Depth) (warp=true)
 {
-    Call TTProbeBoardImpl((BoardHash + ((Depth % 2) * 31)));
+    Call GetTTNodeHash(BoardHash)(Depth);
+    Call TTProbeBoardImpl(TTNodeHashResult);
 }
 
 Define TTProbeBoardImpl(string BoardHash) (warp=true)
@@ -8574,7 +8571,8 @@ Define TTProbeNodeImpl(string BoardHash) (warp=true)
 
 Define TTStoreBoard(string BoardHash)(string Depth)(string Eval) (warp=true)
 {
-    Call TTStoreBoardImpl((BoardHash + ((Depth % 2) * 31)))(Eval);
+    Call GetTTNodeHash(BoardHash)(Depth);
+    Call TTStoreBoardImpl(TTNodeHashResult)(Eval);
 }
 
 Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
