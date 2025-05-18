@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9235 (15.05.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9236 (18.05.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1471,7 +1471,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
             Else
             {
-                If (((Not (Quiescence)) And (Depth > 1)) And (((IsEndgame == 0) And ((CheckedState[Depth] == 1) And (Horizon > 1))) Or ((IsScratch3 == 1) And ((PlyExtensionTagged[Depth] == 1) Or (CheckedState[Depth] == 1)))))
+                If (((Not (Quiescence)) And (Depth > 1)) And ((((CheckedState[Depth] == 1) And (Horizon > 1)) And (IsEndgame == 1)) Or ((IsScratch3 == 1) And ((PlyExtensionTagged[Depth] == 1) Or (CheckedState[Depth] == 1)))))
                 {
                     List.ReplaceItem(PlyExtension, Depth, 1);
                 }
@@ -3122,6 +3122,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
         Call StoreAttackInfo(1)(1);
         Call CalcBoardAttackedByMove(2);
         Call StoreAttackInfo(2)(1);
+        Call PrepareEvalPiecesData;
         Call EvaluatePawns(1);
         Call EvaluateMajorsMinors(1);
         Call EvaluateThreats(1);
@@ -3324,6 +3325,113 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
         If (WhiteBishopCountLocal > 1)
         {
             Call TaperedEval.Add(-15)(-15);
+        }
+    }
+    Count1 = ((BlackQueenCountLocal * 9) + ((BlackRookCountLocal * 5) + ((BlackMinorCountLocal - BlackRookCountLocal) * 3)));
+    Count2 = ((WhiteQueenCountLocal * 9) + ((WhiteRookCountLocal * 5) + ((WhiteMinorCountLocal - WhiteRookCountLocal) * 3)));
+    If ((Count1 + Count2) > 49)
+    {
+        BlockedCount = 0;
+        Idx = 9;
+        Repeat (48)
+        {
+            CurrentPiece = Board[(Idx + 0)];
+            If (abs(CurrentPiece) == GoK_BlackPawn)
+            {
+                Factor = (((CurrentPiece > 0) * 2) - 1);
+                If (Board[(Idx + (8 * Factor))] == (GoK_WhitePawn * Factor))
+                {
+                    BlockedCount += 1;
+                }
+                Else
+                {
+                    File = IdxToFile[(Idx + 0)];
+                    If ((File > 1) And (File < 8))
+                    {
+                        If (Board[(Idx + (15 * Factor))] == (GoK_WhitePawn * Factor))
+                        {
+                            If (Board[(Idx + (17 * Factor))] == (GoK_WhitePawn * Factor))
+                            {
+                                BlockedCount += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            Idx += 1;
+        }
+        Side = 1;
+        Repeat (2)
+        {
+            SpaceBonus = 0;
+            Factor = (((Side == 1) * 2) - 1);
+            If (Side == 1)
+            {
+                Rank = 2;
+            }
+            Else
+            {
+                Rank = 5;
+            }
+            Repeat (3)
+            {
+                File = 3;
+                Repeat (4)
+                {
+                    Idx = (((Rank - 1) * 8) + File);
+                    If (Not ((Board[(Idx + 0)] == (GoK_BlackPawn * Factor))))
+                    {
+                        If (Side == 1)
+                        {
+                            Attacked = (abs(Board[(BoardAttackedByWhitePiece[(Idx + 0)] + 0)]) == GoK_BlackPawn);
+                        }
+                        Else
+                        {
+                            Attacked = (abs(Board[(BoardAttackedByBlackPiece[(Idx + 0)] + 0)]) == GoK_BlackPawn);
+                        }
+                        If (Attacked == 0)
+                        {
+                            SpaceBonus += 1;
+                            If (Side == 1)
+                            {
+                                Attacked = (BoardAttackedByWhite[(Idx + 0)] > 0);
+                            }
+                            Else
+                            {
+                                Attacked = (BoardAttackedByBlack[(Idx + 0)] > 0);
+                            }
+                            If (Attacked == 0)
+                            {
+                                If ((Board[(Idx + (8 * Factor))] == (GoK_BlackPawn * Factor)) Or ((Board[(Idx + (16 * Factor))] == (GoK_BlackPawn * Factor)) Or (Board[(Idx + (24 * Factor))] == (GoK_BlackPawn * Factor))))
+                                {
+                                    SpaceBonus += 1;
+                                }
+                            }
+                        }
+                    }
+                    File += 1;
+                }
+                Rank += 1;
+            }
+            If (Side == 1)
+            {
+                Weight = ((BlackMinorCountLocal + (BlackQueenCountLocal + BlackPawnCountLocal)) - 2);
+            }
+            Else
+            {
+                Weight = ((BlackMinorCountLocal + (BlackQueenCountLocal + BlackPawnCountLocal)) - 2);
+            }
+            If (BlockedCount > 9)
+            {
+                Weight += 9;
+            }
+            Else
+            {
+                Weight += BlockedCount;
+            }
+            CurrentValue = floor(((SpaceBonus * (Weight * Weight)) / 32));
+            Call TaperedEval.Add((CurrentValue * Factor))(0);
+            Side += 1;
         }
     }
     Call TaperedEval.GetSumResult;
@@ -3856,11 +3964,11 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             AttackerPieceAbs = abs(Board[(AttackerIdx + 0)]);
             DefenderPieceAbs = abs(Board[(DefenderIdx + 0)]);
         }
-        If (1 == 0)
+        If (1 == 1)
         {
             If ((CurrentPieceAbs == GoK_BlackKnight) Or (CurrentPieceAbs == GoK_BlackBishop))
             {
-                Rank = IdxToRank[Idx];
+                Rank = IdxToRank[(Idx + 0)];
                 If ((Rank > (2 + (CurrentPiece > 0))) And (Rank < (6 + (CurrentPiece > 0))))
                 {
                     If ((Defended > 0) And (DefenderPieceAbs == GoK_BlackPawn))
@@ -4342,7 +4450,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             {
                 CurrentValue = (0 - CurrentValue);
             }
-            CurrentValue2 = Operator.Round((KingDanger / 16));
+            CurrentValue2 = Operator.Round((KingDanger / 24));
             Call TaperedEval.Add((0 - CurrentValue))((0 - CurrentValue2));
         }
         Call TaperedEval.Add(KingRingPawnProtection[(Side + 0)])(0);
@@ -5370,8 +5478,8 @@ Define GetBestMoveMedDiff (warp=false)
             ThinkTimeLimitMinMax = ThinkTimeLimit;
         }
         AWCount = 1;
-        AWDelta = Operator.Round((13 + ((BestMinMaxRes * BestMinMaxRes) / 4096)));
-        If ((IdxDeepening > 6) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        AWDelta = Operator.Round((18 + ((BestMinMaxRes * BestMinMaxRes) / 4096)));
+        If ((IdxDeepening > 5) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -5390,9 +5498,9 @@ Define GetBestMoveMedDiff (warp=false)
                 IsEvalStable = 0;
                 IsMinMaxTimeout = 0;
                 AWCount += 1;
-                If ((AWCount < 2) And (abs(MinMaxResults[1]) < AbsMinCheckmateEval))
+                If ((AWCount < 3) And (abs(MinMaxResults[1]) < AbsMinCheckmateEval))
                 {
-                    AWDelta = Operator.Round((AWDelta + (AWDelta / 2)));
+                    AWDelta = Operator.Round((AWDelta + AWDelta));
                     If (Not ((MinMaxResults[1] > AWAlpha)))
                     {
                         AWAlpha += (0 - AWDelta);
@@ -5745,7 +5853,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             }
         }
         Call //("7: Net negative captures");
-        MoveScoreRes = Operator.Round(((5000 + (MoveScoreRes / 100)) * Factor));
+        MoveScoreRes = Operator.Round(((2000 + (MoveScoreRes / 100)) * Factor));
         Stop(this script);
     }
     CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))];
@@ -5764,11 +5872,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
         Stop(this script);
     }
-    If (ToIdxAttacked == 1)
-    {
-        MoveScoreRes = ((0 - (1000 + abs(TargetPieceParam))) * Factor);
-        Stop(this script);
-    }
+    MoveScoreRes = 0;
 }
 
 Define GetNormalizedMove(string Move) (warp=true)
