@@ -4247,7 +4247,7 @@ Define InitBoard (warp=true)
         List.Add(PawnShelterCapture, 0);
         List.Add(BoardEval, "");
         List.Add(QuiescentCheckMoveCount, "");
-        List.Add(TTMove, 0);
+        List.Add(TTMove, "");
     }
     List.DeleteItem(PV, all);
     Repeat ((MaxSearchDepthStackFrames * MaxSearchDepthStackFrames))
@@ -6049,11 +6049,10 @@ Define OnRestart (warp=true)
 Define PickMove(string Depth)(bool Quiescence) (warp=true)
 {
     Call //("Staged move-generator implementation");
-    List.ReplaceItem(TTMove, Depth, 0);
     If (PickPhase[Depth] == 1)
     {
         Call //("Phase 1: Look up hash-move from transposition table");
-        List.ReplaceItem(TTMove, Depth, 0);
+        List.ReplaceItem(TTMove, Depth, "");
         List.ReplaceItem(PickedMoves, Depth, ":");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
         List.ReplaceItem(MovesCount, Depth, 0);
@@ -7655,7 +7654,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
             {
                 Idx += 1;
             }
-            If (TTMove[Depth] == 0)
+            If (TTMove[Depth] == "")
             {
                 Idx += 1;
             }
@@ -7686,18 +7685,24 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 {
                     Reduction += -1;
                 }
-                If (PutsInCheck[Depth] == 1)
-                {
-                    Reduction += -1;
-                }
                 If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
-                    If ((Not ((TTMove[Depth] == 0))) And (Not ((Board[floor((TTMove[Depth] % 100))] == 0))))
+                    SourceIdx = floor((AppliedMove[Depth] / 100));
+                    TargetIdx = floor((AppliedMove[Depth] % 100));
+                    Call GetMoveScore(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(AppliedMove[Depth])(Depth);
+                    If ((((Depth % 2) == 1) And (MoveScoreRes > 3000)) Or (((Depth % 2) == 0) And (MoveScoreRes < -3000)))
+                    {
+                        Reduction += -1;
+                    }
+                }
+                Else
+                {
+                    If (Not ((TTMove[Depth] == "")))
                     {
                         Reduction += 1;
                     }
                 }
-                If ((HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))))] / MaxHistoryMoveScore[((Depth % 2) + 1)]) > 0.2)
+                If (PutsInCheck[Depth] == 1)
                 {
                     Reduction += -1;
                 }
@@ -7807,7 +7812,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                         Call ClearMoveList((Depth + 0));
                         Call AddMoveToList(0)((Depth + 0));
                         List.ReplaceItem(MovesIdx, (Depth + 0), 1);
-                        Call ApplyMoveLight((Depth + 0));
+                        Call ApplyMove((Depth + 0));
                         Call Evaluate((Depth + 0))((1 == 0));
                         If ((Depth % 2) == 1)
                         {
@@ -7822,7 +7827,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                         Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction);
                         Eval = SearchEvalResults[(Depth + 1)];
                         EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
-                        Call RevertMoveLight((Depth + 0));
+                        Call RevertMove((Depth + 0));
                         If (((((Depth % 2) == 1) And (Not ((Eval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Eval > Alphas[Depth]))))) And (Not ((abs(Eval) > AbsMinCheckmateEval))))
                         {
                             List.ReplaceItem(SearchEvalResults, Depth, Eval);
