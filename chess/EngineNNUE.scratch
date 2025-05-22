@@ -2877,10 +2877,11 @@ Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bo
     {
         If (Depth == 1)
         {
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 1) And (Not ((TTProbeNode.BestMoveRes == ""))))
+            List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[1]), MaxPly1DeepeningMoveOrderScore);
+            If (IdxDeepening > 3)
             {
-                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, TTProbeNode.BestMoveRes), MaxPly1DeepeningMoveOrderScore);
+                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[2]), (MaxPly1DeepeningMoveOrderScore - 1));
+                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[3]), (MaxPly1DeepeningMoveOrderScore - 2));
             }
         }
         Call SortMoveList(Depth);
@@ -3039,9 +3040,10 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 15);
     List.Add(AWSize, 30);
+    List.Add(AWSize, 45);
     List.Add(AWSize, 75);
+    List.Add(AWSize, 115);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsSearchTimeout = 0;
     IsDeepeningDone = 0;
@@ -3085,10 +3087,6 @@ Define GetBestMoveMedDiff (warp=false)
                         If (Not ((SearchEvalResults[1] > AWAlpha)))
                         {
                             AWAlpha = (SearchEvalResults[1] - AWDelta);
-                        }
-                        If (1 == 1)
-                        {
-                            AWBeta += AWDelta;
                         }
                     }
                     Else
@@ -3392,7 +3390,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If (Not ((TargetPieceParam == 0)))
     {
         MvvLvaScore = ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]));
-        If (Quiescence[Depth] == 1)
+        If ((Quiescence[Depth] == 1) Or ((Depth > 4) And (Depth == (IdxDeepening - 1))))
         {
             MoveScoreRes = ((7000000 + MvvLvaScore) * Factor);
             Stop(this script);
@@ -4971,6 +4969,13 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
         Repeat (10000)
         {
             List.Add(HistoryCounterMoves, "");
+        }
+        List.DeleteAll(Ply1BestMoves);
+        List.DeleteAll(Ply1BestScores);
+        Repeat (3)
+        {
+            List.Add(Ply1BestMoves, "");
+            List.Add(Ply1BestScores, "");
         }
     }
     Call SetInitialEnPassantTarget(1);
@@ -7114,8 +7119,11 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                         {
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
                                             Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(Horizon)("")("")("")("")("")("")("");
-                                            SearchMoveRes = Moves1[MovesIdx[1]];
+                                            SearchMoveRes = BestMoves[Depth];
                                             SearchEvalRes = Eval;
+                                            List.ReplaceItem(Ply1BestMoves, 3, Ply1BestMoves[2]);
+                                            List.ReplaceItem(Ply1BestMoves, 2, Ply1BestMoves[1]);
+                                            List.ReplaceItem(Ply1BestMoves, 1, BestMoves[Depth]);
                                             Call Search_OnBestRootMoveFound(SearchMoveRes)(SearchEvalRes);
                                         }
                                     }
@@ -7707,7 +7715,10 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 If (TTMove[Depth] == 1)
                 {
-                    Reduction += 1;
+                    If (1 == 0)
+                    {
+                        Reduction += 1;
+                    }
                 }
                 If (PutsInCheck[Depth] == 1)
                 {
@@ -7726,6 +7737,10 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     {
                         Reduction += -1;
                     }
+                }
+                If (Reduction > 2)
+                {
+                    Reduction = 2;
                 }
                 If (Reduction > (Horizon - 1))
                 {
