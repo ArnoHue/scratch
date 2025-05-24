@@ -2878,11 +2878,7 @@ Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bo
         If (Depth == 1)
         {
             List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[1]), MaxPly1DeepeningMoveOrderScore);
-            If (IdxDeepening > 3)
-            {
-                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[2]), (MaxPly1DeepeningMoveOrderScore - 1));
-                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[3]), (MaxPly1DeepeningMoveOrderScore - 2));
-            }
+            List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[2]), (MaxPly1DeepeningMoveOrderScore - 1));
         }
         Call SortMoveList(Depth);
     }
@@ -3080,7 +3076,7 @@ Define GetBestMoveMedDiff (warp=false)
                 AWCount += 1;
                 If ((Not ((AWCount > 4))) And (abs(SearchEvalResults[1]) < AbsMinCheckmateEval))
                 {
-                    AWDelta = (AWDelta + (AWDelta / 2));
+                    AWDelta = Operator.Round((AWDelta + (AWDelta / 2)));
                     If (Not ((SearchEvalResults[1] > AWAlpha)))
                     {
                         AWAlpha += (0 - AWDelta);
@@ -4075,7 +4071,7 @@ Define InitBoard (warp=true)
     GoK_BlackPawn = 100;
     AbsMinCheckmateEval = (GoK_BlackKing - 10000);
     AbsMaxCheckmateEval = 97000;
-    DrawByRepetitionEval = -111.11;
+    DrawByRepetitionEval = -49.9;
     MaxPly1DeepeningMoveOrderScore = 9999999;
     MaxMoveOrderScore = 9999999;
     MaxSearchDepthStackFrames = 40;
@@ -6940,9 +6936,9 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
     If (BoardEval[Depth] == "")
     {
-        If (Not (Quiescence))
+        If (CheckedState[Depth] == 0)
         {
-            If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And ((Betas[Depth] - Alphas[Depth]) == 1))
+            If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
             {
                 Call Evaluate((Depth - 1))((1 == 1));
                 List.ReplaceItem(BoardEval, Depth, EvaluationRes);
@@ -7121,8 +7117,14 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                             Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(Horizon)("")("")("")("")("")("")("");
                                             SearchMoveRes = BestMoves[Depth];
                                             SearchEvalRes = Eval;
-                                            List.ReplaceItem(Ply1BestMoves, 2, Ply1BestMoves[1]);
-                                            List.ReplaceItem(Ply1BestMoves, 1, BestMoves[Depth]);
+                                            If (Not ((Ply1BestMoves[1] == BestMoves[Depth])))
+                                            {
+                                                If (Horizon > 3)
+                                                {
+                                                    List.ReplaceItem(Ply1BestMoves, 2, Ply1BestMoves[1]);
+                                                }
+                                                List.ReplaceItem(Ply1BestMoves, 1, BestMoves[Depth]);
+                                            }
                                             Call Search_OnBestRootMoveFound(SearchMoveRes)(SearchEvalRes);
                                         }
                                     }
@@ -7488,7 +7490,7 @@ Define Search_DetectDraw(string Depth) (warp=true)
 
 Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
 {
-    If ((Not (Quiescence)) And ((Depth > 1) And (IsInNullMove == 0)))
+    If ((Depth > 1) And (IsInNullMove == 0))
     {
         Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures. When repetition is possible, history tables are searched for same board hash, when found we verify if the occurred for the same side.");
         Search.Count = 1;
@@ -7528,7 +7530,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
 Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (warp=true)
 {
     IsFutile = 0;
-    If ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0))
+    If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And ((PromotionPieces[Depth] == 0) And (Not ((BoardEval[Depth] == "")))))
     {
         FutilityMargin = "";
         If Quiescence
@@ -7542,13 +7544,13 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
         {
             If ((Depth > 1) And (Horizon < 6))
             {
-                If (((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+                If ((TargetPieces[Depth] == 0) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
                 {
                     FutilityMargin = (Horizon * 125);
                 }
             }
         }
-        If ((Not ((FutilityMargin == ""))) And (Not ((BoardEval[Depth] == ""))))
+        If (Not ((FutilityMargin == "")))
         {
             List.DeleteAll(TmpList1);
             List.Add(TmpList1, 114);
@@ -7958,23 +7960,26 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
 {
     If (Depth > 1)
     {
-        Call //("Probe transposition table for cached node evaluations");
-        Call TTProbeNode(CurrentBoardHash)(Depth);
-        If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
+        If ((Betas[Depth] - Alphas[Depth]) == 1)
         {
-            If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1)))
+            Call //("Probe transposition table for cached node evaluations");
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
             {
-                If ((Betas[Depth] - Alphas[Depth]) == 1)
+                If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1)))
                 {
                     If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
                     {
                         If (TTProbeNode.EvalIsDynamicRes == 0)
                         {
-                            If ((Depth > 2) Or (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval))))
+                            If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
                             {
-                                List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
-                                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
-                                Stop(this script);
+                                If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
+                                {
+                                    List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
+                                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
+                                    Stop(this script);
+                                }
                             }
                         }
                     }
@@ -8607,12 +8612,12 @@ Define TTProbeNodeImpl(string BoardHash) (warp=true)
     TTProbeNode.CheckedRes = TTNodeChecked[HashBucket];
     TTProbeNode.CheckedAttackLinesRes = TTNodeCheckedAttackLines[HashBucket];
     TTProbeNode.HorizonRes = TTNodeHorizon[HashBucket];
-    TTProbeNode.QSMeta = TTNodeQSearchMeta[HashBucket];
     TTProbeNode.BoardAttackedByOpp = TTNodeBoardAttackedByOpp[HashBucket];
     TTProbeNode.BoardAttackedByOppPiece = TTNodeBoardAttackedByOppPiece[HashBucket];
     TTProbeNode.AgeRes = TTNodeAge[HashBucket];
     TTProbeNode.BlackMobRes = 0;
     TTProbeNode.WhiteMobRes = 0;
+    TTProbeNode.QSMeta = 0;
 }
 
 Define TTStoreBoard(string BoardHash)(string Depth)(string Eval) (warp=true)
@@ -8713,7 +8718,6 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
                     List.ReplaceItem(TTNodeEval, HashBucket, Score);
                     List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
                     List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-                    List.ReplaceItem(TTNodeQSearchMeta, HashBucket, QSMeta);
                     List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
                 }
                 If (Not ((BestMove == "")))
@@ -8729,7 +8733,6 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
                     List.ReplaceItem(TTNodeEval, HashBucket, Score);
                     List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
                     List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-                    List.ReplaceItem(TTNodeQSearchMeta, HashBucket, QSMeta);
                     List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
                 }
                 If ((Not ((BestMove == ""))) And (TTNodeBestMove[HashBucket] == ""))
@@ -8752,7 +8755,6 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
         List.ReplaceItem(TTNodeEval, HashBucket, Score);
         List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
         List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-        List.ReplaceItem(TTNodeQSearchMeta, HashBucket, QSMeta);
         List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
     }
 }
