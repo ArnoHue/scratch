@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9238 (19.05.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9238 (23.05.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -914,25 +914,28 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
         }
     }
-    If ((Depth > 1) And (Not (InitialDeepening)))
+    If (Depth > 1)
     {
-        Call //("Probe transposition table for cached node evaluations");
-        Call TTProbeNode(CurrentBoardHash)(Depth);
-        If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+        If ((Betas[Depth] - Alphas[Depth]) == 1)
         {
-            If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
+            Call //("Probe transposition table for cached node evaluations");
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)]))))))
                     {
                         If (TTProbeNodeScoreIsDynamicRes == 0)
                         {
-                            If ((Depth > 2) Or (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval))))
+                            If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
                             {
-                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
-                                Stop(this script);
+                                If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
+                                {
+                                    List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
+                                    Stop(this script);
+                                }
                             }
                         }
                     }
@@ -1260,10 +1263,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If (BoardEval[Depth] == "")
     {
-        If ((CheckedState[Depth] == 0) And (Quiescence Or ((Betas[Depth] - Alphas[Depth]) == 1)))
+        If (CheckedState[Depth] == 0)
         {
-            Call Evaluate((Depth - 1))((1 == 1));
-            List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+            If (((Not (Quiescence)) And (((Depth > 1) And (((MaxDepth + PlyExtension[Depth]) - Depth) < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
+            {
+                Call Evaluate((Depth - 1))((1 == 1));
+                List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+            }
         }
     }
     List.ReplaceItem(PickPhase, Depth, 1);
@@ -1393,7 +1399,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
             Call //("Futility pruning");
             IsFutile = 0;
-            If ((CheckedState[Depth] == 0) And ((PutsInCheck[Depth] == 0) And (PromotionPieces[Depth] == 0)))
+            If ((CheckedState[Depth] == 0) And ((PutsInCheck[Depth] == 0) And ((PromotionPieces[Depth] == 0) And (Not ((BoardEval[Depth] == ""))))))
             {
                 FutilityMargin = "";
                 If Quiescence
@@ -1405,7 +1411,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
                 Else
                 {
-                    If ((Depth > 2) And (((MaxDepth + PlyExtension[Depth]) - Depth) < 6))
+                    If ((Depth > 1) And (((MaxDepth + PlyExtension[Depth]) - Depth) < 6))
                     {
                         If ((TargetPieces[Depth] == 0) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
                         {
@@ -1413,7 +1419,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         }
                     }
                 }
-                EvaluateRes = BoardEval[(Depth + 0)];
+                EvaluateRes = BoardEval[Depth];
                 If ((Not ((FutilityMargin == ""))) And (Not ((EvaluateRes == ""))))
                 {
                     If ((Depth % 2) == 1)
@@ -1699,8 +1705,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                             MinMaxMoveRes = BestMoves[Depth];
                                             MinMaxEvalRes = Score;
                                             Call TTStoreNode(CurrentBoardHash)(Depth)("")(BestMoves[Depth])("")("")(Horizon)("")("")("")("")("")("");
-                                            List.ReplaceItem(MinMaxPly1BestMoves, 2, MinMaxPly1BestMoves[1]);
-                                            List.ReplaceItem(MinMaxPly1BestMoves, 1, BestMoves[Depth]);
+                                            If (Not ((MinMaxPly1BestMoves[1] == BestMoves[Depth])))
+                                            {
+                                                If (Horizon > 3)
+                                                {
+                                                    List.ReplaceItem(MinMaxPly1BestMoves, 2, MinMaxPly1BestMoves[1]);
+                                                }
+                                                List.ReplaceItem(MinMaxPly1BestMoves, 1, BestMoves[Depth]);
+                                            }
                                             If (1 == 1)
                                             {
                                                 Call Log((MaxDepth - 1))(" : ")(MinMaxMoveRes)(" : ")(MinMaxEvalRes)("")("")("");
@@ -5292,11 +5304,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
         If (Depth == 1)
         {
             List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, MinMaxPly1BestMoves[1]), MaxPly1DeepeningMoveOrderScore);
-            If (IdxDeepening > 3)
-            {
-                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, MinMaxPly1BestMoves[2]), (MaxPly1DeepeningMoveOrderScore - 1));
-                List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, MinMaxPly1BestMoves[3]), (MaxPly1DeepeningMoveOrderScore - 2));
-            }
+            List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, MinMaxPly1BestMoves[2]), (MaxPly1DeepeningMoveOrderScore - 1));
         }
         Call SortMoveList(Depth);
     }
@@ -5480,8 +5488,8 @@ Define GetBestMoveMedDiff (warp=false)
         IsAWDone = 0;
         QuiescenceDepth = (MaxSearchDepth - IdxDeepening);
         AWCount = 1;
-        AWDelta = 20;
-        If ((IdxDeepening > 4) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        AWDelta = 25;
+        If ((IdxDeepening > 6) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -6443,7 +6451,7 @@ Define InitBoard (warp=true)
     GoK_BlackPawn = 80;
     AbsMinCheckmateEval = (GoK_BlackKing - 10000);
     AbsMaxCheckmateEval = 97000;
-    DrawByRepetitionEval = -111.11;
+    DrawByRepetitionEval = -49.9;
     MaxPly1DeepeningMoveOrderScore = 9999999;
     MaxMoveOrderScore = 9999999;
     MaxSearchDepthStackFrames = 40;
