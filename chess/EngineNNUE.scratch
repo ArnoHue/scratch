@@ -4929,18 +4929,6 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
         Call OnProgressChanged(1);
         PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
         TT.CurrentAge = ((floor((TT.CurrentAge / 100)) + 1) * 100);
-        Idx = 1;
-        Repeat (List.Length(HistoryMoveScores))
-        {
-            List.ReplaceItem(HistoryMoveScores, Idx, (Operator.Round((HistoryMoveScores[Idx] / 8)) * 0));
-            Idx += 1;
-        }
-        Idx = 1;
-        Repeat (List.Length(MaxHistoryMoveScore))
-        {
-            List.ReplaceItem(MaxHistoryMoveScore, Idx, (Operator.Round((MaxHistoryMoveScore[Idx] / 8)) * 0));
-            Idx += 1;
-        }
         If ((IsScratch3 == 0) And (Level > 3))
         {
             Idx = 1;
@@ -4972,6 +4960,18 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
             List.Add(Ply1BestMoves, "");
             List.Add(Ply1BestScores, "");
         }
+    }
+    Idx = 1;
+    Repeat (List.Length(HistoryMoveScores))
+    {
+        List.ReplaceItem(HistoryMoveScores, Idx, 0);
+        Idx += 1;
+    }
+    Idx = 1;
+    Repeat (List.Length(MaxHistoryMoveScore))
+    {
+        List.ReplaceItem(MaxHistoryMoveScore, Idx, 0);
+        Idx += 1;
     }
     Call SetInitialEnPassantTarget(1);
     List.DeleteItem(SearchRootMovesDone, all);
@@ -6379,16 +6379,22 @@ Define PrepareCurrentKillerMoves(string Depth) (warp=true)
 
 Define ProfilerMethodEnter(string Id) (warp=true)
 {
-    Repeat Until (Not ((List.Length(ProfilingData) < Id)))
+    If ((ProfilerMode % 10) == 2)
     {
-        List.Add(ProfilingData, 0);
+        Repeat Until (Not ((List.Length(ProfilingData) < Id)))
+        {
+            List.Add(ProfilingData, 0);
+        }
+        List.ReplaceItem(ProfilingData, Id, (ProfilingData[Id] - ((Sensing.DaysSince2000() * 24) * 3600)));
     }
-    List.ReplaceItem(ProfilingData, Id, (ProfilingData[Id] - ((Sensing.DaysSince2000() * 24) * 3600)));
 }
 
 Define ProfilerMethodExit(string Id) (warp=false)
 {
-    List.ReplaceItem(ProfilingData, Id, (ProfilingData[Id] + ((Sensing.DaysSince2000() * 24) * 3600)));
+    If ((ProfilerMode % 10) == 2)
+    {
+        List.ReplaceItem(ProfilingData, Id, (ProfilingData[Id] + ((Sensing.DaysSince2000() * 24) * 3600)));
+    }
 }
 
 Define ProfilerReset (warp=true)
@@ -7552,7 +7558,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                             If ((((Depth % 2) == 1) And (Eval > SearchEvalResults[Depth])) Or (((Depth % 2) == 0) And (Eval < SearchEvalResults[Depth])))
                             {
                                 List.ReplaceItem(SearchEvalResults, Depth, Eval);
-                                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
+                                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
                             }
                         }
                     }
@@ -7597,7 +7603,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     Search.LmrNonPV.IsReSearchRequired = 1;
     If ((Not (Quiescence)) And (IsSearchTimeout == 0))
     {
-        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And (SearchExtension[Depth] == 0))) And (((BlackQueenCountLocal + BlackMinorCountLocal) > 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)))
+        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And (SearchExtension[Depth] == 0))) And (((BlackQueenCountLocal + BlackMinorCountLocal) > 1) Or ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 1)))
         {
             Call //("LMR search");
             Reduction = 0;
@@ -7687,7 +7693,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction);
                 Eval = SearchEvalResults[(Depth + 1)];
-                EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
+                EvalIsDynamic = 1;
                 Search.LmrNonPV.IsReSearchRequired = 0;
             }
         }
@@ -8594,7 +8600,7 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
     Call GetTTNodeHash(BoardHash)(Depth);
     If (Score == DrawByRepetitionEval)
     {
-        Call TTStoreNodeImpl(TTNodeHashResult)(Depth)("")(BestMove)("")(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
+        Call TTStoreNodeImpl(TTNodeHashResult)(Depth)("")(BestMove)("")(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)("")(QSMeta);
     }
     Else
     {
@@ -8637,8 +8643,8 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
         {
             List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
         }
-        HorizonLoc = 0;
-        If (((Not ((Score == ""))) And (Not ((Horizon == "")))) And ((((Horizon > (HorizonLoc + 2)) Or ((HorizonLoc == -1) And (Not ((Horizon == -1))))) Or (HorizonLoc == "")) Or (((TTNodeEvalIsDynamic[(HashBucket + 0)] == 1) And (IsDynamic == 0)) Or (Type == "E"))))
+        HorizonLoc = TTNodeHorizon[(HashBucket + 0)];
+        If (((Not ((Score == ""))) And (Not ((Horizon == "")))) And ((((Horizon + 2) > HorizonLoc) Or (HorizonLoc == "")) Or ((TTNodeEval[(HashBucket + 0)] == "") Or (Type == "E"))))
         {
             List.ReplaceItem(TTNodeType, HashBucket, Type);
             List.ReplaceItem(TTNodeEval, HashBucket, Score);
