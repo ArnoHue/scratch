@@ -3051,7 +3051,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = 20;
-        If ((1 == 1) And ((IdxDeepening > 10) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval))))
+        If ((1 == 1) And ((IdxDeepening > 7) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval))))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -7637,11 +7637,11 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
-                    Reduction = floor((2.01 + ((ln(Horizon) * ln(CurrentValue)) / 2.32)));
+                    Reduction = ceiling((2.01 + ((ln(Horizon) * ln(CurrentValue)) / 2.32)));
                 }
                 Else
                 {
-                    Reduction = floor((0.38 + ((ln(Horizon) * ln(CurrentValue)) / 3.76)));
+                    Reduction = ceiling((0.38 + ((ln(Horizon) * ln(CurrentValue)) / 3.76)));
                 }
                 If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                 {
@@ -7668,6 +7668,13 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     If (1 == 0)
                     {
                         Reduction += 1;
+                    }
+                }
+                If (1 == 0)
+                {
+                    If (Reduction > 2)
+                    {
+                        Reduction = 2;
                     }
                 }
                 If (Reduction > (Horizon - 1))
@@ -7887,26 +7894,23 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
 {
     If (Depth > 1)
     {
-        If ((Betas[Depth] - Alphas[Depth]) == 1)
+        Call //("Probe transposition table for cached node evaluations");
+        Call TTProbeNode(CurrentBoardHash)(Depth);
+        If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
         {
-            Call //("Probe transposition table for cached node evaluations");
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
+            If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1)))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1)))
+                If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
                 {
-                    If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
+                    If (TTProbeNode.EvalIsDynamicRes == 0)
                     {
-                        If (TTProbeNode.EvalIsDynamicRes == 0)
+                        If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
                         {
-                            If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                            If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
                             {
-                                If ((Not (List.ContainsItem(BoardHistoryHash, CurrentBoardHash))) And (Not (List.ContainsItem(PreviousBoardHash, CurrentBoardHash))))
-                                {
-                                    List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
-                                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
-                                    Stop(this script);
-                                }
+                                List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
+                                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
+                                Stop(this script);
                             }
                         }
                     }
@@ -8590,6 +8594,10 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
     {
         Stop(this script);
     }
+    If (Score == DrawByRepetitionEval)
+    {
+        Stop(this script);
+    }
     If (abs((IdxToRank[BlackKingIdx] - IdxToRank[WhiteKingIdx])) < 2)
     {
         If (abs((IdxToFile[BlackKingIdx] - IdxToFile[WhiteKingIdx])) < 2)
@@ -8598,14 +8606,7 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
         }
     }
     Call GetTTNodeHash(BoardHash)(Depth);
-    If (Score == DrawByRepetitionEval)
-    {
-        Call TTStoreNodeImpl(TTNodeHashResult)(Depth)("")(BestMove)("")(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)("")(QSMeta);
-    }
-    Else
-    {
-        Call TTStoreNodeImpl(TTNodeHashResult)(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
-    }
+    Call TTStoreNodeImpl(TTNodeHashResult)(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
 }
 
 Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string BlackMob)(string WhiteMob)(string BoardAttackedByOpp)(string BoardAttackedByOppPiece)(string CheckedAttackLines)(string IsDynamic)(string QSMeta) (warp=true)
@@ -8644,7 +8645,7 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
             List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
         }
         HorizonLoc = TTNodeHorizon[(HashBucket + 0)];
-        If (((Not ((Score == ""))) And (Not ((Horizon == "")))) And ((((Horizon + 2) > HorizonLoc) Or (HorizonLoc == "")) Or ((TTNodeEval[(HashBucket + 0)] == "") Or (Type == "E"))))
+        If (((Not ((Score == ""))) And (Not ((Horizon == "")))) And (((Not ((Horizon < HorizonLoc))) Or (HorizonLoc == "")) Or ((TTNodeEval[(HashBucket + 0)] == "") Or (Type == "E"))))
         {
             List.ReplaceItem(TTNodeType, HashBucket, Type);
             List.ReplaceItem(TTNodeEval, HashBucket, Score);
