@@ -6732,7 +6732,7 @@ Define Search(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool 
     ProfBestMoveCountQ = 0;
     ProfBestMoveIdxSumQ = 0;
     SearchTimer = (Sensing.DaysSince2000() * 86400);
-    Call SearchImpl(MinDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))(ShowProgress)((MaxDepth - 1));
+    Call SearchImpl(MinDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0));
     SearchTimer = ((Sensing.DaysSince2000() * 86400) - SearchTimer);
     Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
     Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
@@ -6756,7 +6756,7 @@ Define Search(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool 
     NPS = Operator.Round(((NodeCount + NodeCountQ) / SearchTimer));
 }
 
-Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon) (warp=true)
+Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
 {
     Call //("Search function (minimax / alpha-beta pruning)");
     List.ReplaceItem(SearchEvalResults, Depth, "");
@@ -6822,7 +6822,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         Call //("Full search => invoke evaluation to update incremental eval components");
         Call Evaluate((Depth - 1))((1 == 0));
-        Call Search_NullMovePruning(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon);
+        Call Search_NullMovePruning(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)();
         If (Not ((SearchEvalResults[Depth] == "")))
         {
             Stop(this script);
@@ -6922,7 +6922,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 0) Or (TTProbeNode.BestMoveRes == ""))
             {
-                Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((Horizon - 3));
+                Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0));
             }
         }
         If (IsBlockProfilerEnabled == 1)
@@ -6982,13 +6982,13 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                     }
                 }
                 Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
-                Call Search_LMRNonPV(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon);
+                Call Search_LMRNonPV(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
                 If ((Search.LmrNonPV.IsReSearchRequired == 1) And (IsSearchTimeout == 0))
                 {
                     Call //("Move was not pruned upfront, enter full depth + current window search");
                     List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                     List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0);
+                    Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0));
                     Eval = SearchEvalResults[(Depth + 1)];
                     EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                 }
@@ -7276,16 +7276,16 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
 }
 
-Define SearchImplEx(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(string Reduction) (warp=true)
+Define SearchImplEx(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(string Reduction)(bool Cutnode) (warp=true)
 {
     If ((QuiescenceDepth > 0) And ((Horizon - Reduction) == 1))
     {
         Call //("If still on full search: max depth reached, extend or continue with quiescence. If on quiescence search, simply continue");
-        Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((Quiescence Or (SearchExtension[Depth] == 0)))(ShowProgress)(1);
+        Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((Quiescence Or (SearchExtension[Depth] == 0)))(ShowProgress)(1)((1 == 1));
     }
     Else
     {
-        Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((((Horizon + SearchExtension[Depth]) - Reduction) - 1));
+        Call SearchImpl((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((((Horizon + SearchExtension[Depth]) - Reduction) - 1))(Cutnode);
     }
 }
 
@@ -7597,7 +7597,7 @@ Define Search_InitStack(string Depth)(bool InitialDeepening) (warp=true)
     List.ReplaceItem(PutsInCheck, Depth, 0);
 }
 
-Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon) (warp=true)
+Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
 {
     Call //("Late move reduction preparation");
     Search.LmrNonPV.IsReSearchRequired = 1;
@@ -7637,11 +7637,11 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
-                    Reduction = ceiling((2.01 + ((ln(Horizon) * ln(CurrentValue)) / 2.32)));
+                    Reduction = floor((2.01 + ((ln(Horizon) * ln(CurrentValue)) / 2.32)));
                 }
                 Else
                 {
-                    Reduction = ceiling((0.38 + ((ln(Horizon) * ln(CurrentValue)) / 3.76)));
+                    Reduction = floor((0.38 + ((ln(Horizon) * ln(CurrentValue)) / 3.76)));
                 }
                 If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                 {
@@ -7669,6 +7669,10 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     {
                         Reduction += 1;
                     }
+                }
+                If Cutnode
+                {
+                    Reduction += 2;
                 }
                 If (1 == 0)
                 {
@@ -7698,7 +7702,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                     List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
                 }
-                Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction);
+                Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1));
                 Eval = SearchEvalResults[(Depth + 1)];
                 EvalIsDynamic = 1;
                 Search.LmrNonPV.IsReSearchRequired = 0;
@@ -7717,7 +7721,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                 List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
             }
-            Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0);
+            Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)));
             Eval = SearchEvalResults[(Depth + 1)];
             EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
             If ((Eval > Alphas[Depth]) And (Eval < Betas[Depth]))
@@ -7732,7 +7736,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     }
 }
 
-Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon) (warp=true)
+Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
 {
     Call //("Null move pruning");
     If (IsInNullMove == 0)
@@ -7788,7 +7792,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                             List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                             List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
                         }
-                        Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction);
+                        Call SearchImplEx(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)));
                         Eval = SearchEvalResults[(Depth + 1)];
                         EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                         Call RevertMove((Depth + 0));
