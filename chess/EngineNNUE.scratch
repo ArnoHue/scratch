@@ -335,14 +335,14 @@ WhenBroadcastReceived(UI_CreditsClicked)
         List.Add(CreditsData, "https://github.com/Disservin/Smallbrain/");
         List.Add(CreditsData, "");
         List.Add(CreditsData, "When reusing NNUE code, please give credits:");
-        List.Add(CreditsData, "- To the SmallBrain project for model data");
+        List.Add(CreditsData, "- To the Smallbrain project for model data");
         List.Add(CreditsData, "- To ArnoHu for Scratch port & integration");
         List.Add(CreditsData, "Credits and links should be clearly visible.");
         List.Add(CreditsData, "");
         List.Add(CreditsData, "Thanks to: ");
-        List.Add(CreditsData, "FastSkript for improved lazy accumulator updates");
+        List.Add(CreditsData, "FastSkript for improved accumulator updates");
         List.Add(CreditsData, "Grijfland for original opening book");
-        List.Add(CreditsData, "AZURUS41 and ababoin07 for adapted opening book");
+        List.Add(CreditsData, "S_P_A_R_T for opening book data");
         List.Add(CreditsData, "");
         List.Add(CreditsData, "AI Bot image licensed from shutterstock.com ");
         List.Add(CreditsData, "Piece SVGs licensed from shutterstock.com license");
@@ -3321,6 +3321,19 @@ Define GetMoveNotation(num Move) (warp=true)
 Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
 {
     MoveScoreRes = 0;
+    UserMove = "";
+    If (Depth == 1)
+    {
+        If (Variable.Length(GameMoves) > 3)
+        {
+            Idx = (Variable.Length(GameMoves) - 3);
+            UserMove = Operator.Join(Operator.Join(Operator.LetterOf(GameMoves, Idx), Operator.LetterOf(GameMoves, (Idx + 1))), Operator.Join(Operator.LetterOf(GameMoves, (Idx + 2)), Operator.LetterOf(GameMoves, (Idx + 3))));
+        }
+    }
+    Else
+    {
+        UserMove = AppliedMove[(Depth - 1)];
+    }
     Factor = (((Depth % 2) * 2) - 1);
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
     If (CheckedState[Depth] == 1)
@@ -3336,7 +3349,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             MoveScoreRes = ((9000000 + Delta) * Factor);
             Stop(this script);
         }
-        If (ToIdx == floor((AppliedMove[(Depth - 1)] % 100)))
+        If (ToIdx == floor((UserMove % 100)))
         {
             MoveScoreRes = ((8900000 + Delta) * Factor);
             Stop(this script);
@@ -3375,7 +3388,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
                 Stop(this script);
             }
         }
-        If (HistoryCounterMoves[AppliedMove[(Depth - 1)]] == Move)
+        If (HistoryCounterMoves[UserMove] == Move)
         {
             Call //("5: Counter moves");
             MoveScoreRes = (4000000 * Factor);
@@ -3435,41 +3448,27 @@ Define GetNormalizedMove(string Move) (warp=true)
 
 Define GetOpeningMoves (warp=true)
 {
-    List.DeleteAll(OpeningMovesRes);
-    If (IsImportedBoard == 0)
+    List.DeleteItem(OpeningMovesRes, all);
+    If (List.Length(BoardHistoryHash) > 7)
     {
-        Call GenerateMovesPublic(1);
-        Length = Variable.Length(GameMoves);
-        Idx = 1;
-        Repeat (List.Length(OpeningMoves))
+        If (Operator.Random(1 , 2) == 2)
         {
-            CurrentValue = OpeningMoves[Idx];
-            If (Length < Variable.Length(CurrentValue))
-            {
-                IdxString = 1;
-                IsEqual = 1;
-                Repeat Until ((IdxString > Length) Or (IsEqual == 0))
-                {
-                    If (Not ((Operator.LetterOf(GameMoves, IdxString) == Operator.LetterOf(CurrentValue, IdxString))))
-                    {
-                        IsEqual = 0;
-                    }
-                    IdxString += 1;
-                }
-                If (IsEqual == 1)
-                {
-                    CurrentMove = Operator.LetterOf(CurrentValue, (Length + 1));
-                    CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 2)));
-                    CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 3)));
-                    CurrentMove = Operator.Join(CurrentMove, Operator.LetterOf(CurrentValue, (Length + 4)));
-                    If List.ContainsItem(Moves1, CurrentMove)
-                    {
-                        List.Add(OpeningMovesRes, CurrentMove);
-                    }
-                }
-            }
-            Idx += 1;
+            Stop(this script);
         }
+    }
+    Call GenerateMovesPublic(1);
+    Call CreateCurrentBoardHash;
+    Idx = 1;
+    Repeat (List.Length(OpeningMovesMapHash))
+    {
+        If (OpeningMovesMapHash[Idx] == CurrentBoardHash)
+        {
+            If List.ContainsItem(Moves1, OpeningMovesMapMove[Idx])
+            {
+                List.Add(OpeningMovesRes, OpeningMovesMapMove[Idx]);
+            }
+        }
+        Idx += 1;
     }
 }
 
@@ -4816,57 +4815,30 @@ Define InitMovePosLookup(bool Init) (warp=true)
 
 Define InitOpeningBook (warp=true)
 {
-    List.DeleteAll(OpeningMoves);
-    List.DeleteAll(TmpList1);
-    List.Add(TmpList1, "a");
-    List.Add(TmpList1, "b");
-    List.Add(TmpList1, "c");
-    List.Add(TmpList1, "d");
-    List.Add(TmpList1, "e");
-    List.Add(TmpList1, "f");
-    List.Add(TmpList1, "g");
-    List.Add(TmpList1, "h");
+    List.DeleteItem(OpeningMoves, all);
     Idx = 1;
-    Repeat (List.Length(OpeningMovesRaw))
+    Repeat (List.Length(OpeningMovesNeutral))
     {
-        CurrentValue = OpeningMovesRaw[Idx];
-        CurrentValue2 = "";
-        Idx2 = 1;
-        Repeat ((Variable.Length(CurrentValue) / 4))
-        {
-            SourceIdx = (((8 - Operator.LetterOf(CurrentValue, (Idx2 + 1))) * 8) + List.IndexOf(TmpList1, Operator.LetterOf(CurrentValue, (Idx2 + 0))));
-            TargetIdx = (((8 - Operator.LetterOf(CurrentValue, (Idx2 + 3))) * 8) + List.IndexOf(TmpList1, Operator.LetterOf(CurrentValue, (Idx2 + 2))));
-            CurrentMove = MoveToZeroPaddedStr[(((100 * SourceIdx) + TargetIdx) + 1)];
-            If (CurrentMove == 0503)
-            {
-                CurrentMove = MoveToZeroPaddedStr[(GoK_BlackQueensideCastling + 1)];
-            }
-            Else
-            {
-                If (CurrentMove == 0507)
-                {
-                    CurrentMove = MoveToZeroPaddedStr[(GoK_BlackQueensideCastling + 1)];
-                }
-                Else
-                {
-                    If (CurrentMove == 6159)
-                    {
-                        CurrentMove = MoveToZeroPaddedStr[(GoK_WhiteQueensideCastling + 1)];
-                    }
-                    Else
-                    {
-                        If (CurrentMove == 6163)
-                        {
-                            CurrentMove = MoveToZeroPaddedStr[(GoK_WhiteKingsideCastling + 1)];
-                        }
-                    }
-                }
-            }
-            CurrentValue2 = Operator.Join(CurrentValue2, CurrentMove);
-            Idx2 += 4;
-        }
-        List.Add(OpeningMoves, CurrentValue2);
+        List.Add(OpeningMoves, OpeningMovesNeutral[Idx]);
         Idx += 1;
+    }
+    If (IsPlayerBlack == 1)
+    {
+        Idx = 1;
+        Repeat (List.Length(OpeningMovesWhite))
+        {
+            List.Add(OpeningMoves, OpeningMovesWhite[Idx]);
+            Idx += 1;
+        }
+    }
+    Else
+    {
+        Idx = 1;
+        Repeat (List.Length(OpeningMovesBlack))
+        {
+            List.Add(OpeningMoves, OpeningMovesBlack[Idx]);
+            Idx += 1;
+        }
     }
     If (IsPlayerBlack == 1)
     {
@@ -4883,9 +4855,111 @@ Define InitOpeningBook (warp=true)
                 CurrentValue2 = Operator.Join(CurrentValue2, MoveToZeroPaddedStr[(floor(VirtualMove) + 1)]);
                 Idx2 += 4;
             }
-            List.ReplaceItem(OpeningMoves, Idx, CurrentValue2);
+            If ((Operator.Join(Operator.LetterOf(CurrentValue2, 1), Operator.LetterOf(CurrentValue2, 2)) == 9) Or (Operator.Join(Operator.LetterOf(CurrentValue2, 1), Operator.LetterOf(CurrentValue2, 2)) == 16))
+            {
+                List.ReplaceItem(OpeningMoves, Idx, "");
+            }
+            Else
+            {
+                List.ReplaceItem(OpeningMoves, Idx, CurrentValue2);
+            }
             Idx += 1;
         }
+    }
+    Call InitOpeningMovesMap;
+}
+
+Define InitOpeningMovesMap (warp=true)
+{
+    List.DeleteAll(OpeningMovesMapHash);
+    List.DeleteAll(OpeningMovesMapMove);
+    List.DeleteAll(OpeningMovesMapStack);
+    Repeat (List.Length(OpeningMoves))
+    {
+        List.Add(OpeningMovesMapStack, 1);
+    }
+    Call CreateCurrentBoardHash;
+    Call InitOpeningMovesMapImpl((1 + IsPlayerBlack))(0)("")((1 == 1));
+}
+
+Define InitOpeningMovesMapImpl(string Depth)(string GameMovesLen)(string Move)(bool Init) (warp=true)
+{
+    List.DeleteAll(OpeningMovesRes);
+    Idx = 1;
+    Repeat (List.Length(OpeningMovesMapStack))
+    {
+        IsEqual = 0;
+        CurrentValue = OpeningMoves[Idx];
+        If ((OpeningMovesMapStack[Idx] % 2) == 1)
+        {
+            IsEqual = 1;
+            IdxString = 1;
+            If (Not (Init))
+            {
+                Repeat Until ((IsEqual == 0) Or (IdxString > 4))
+                {
+                    If (Not ((Operator.LetterOf(Move, IdxString) == Operator.LetterOf(CurrentValue, (GameMovesLen + IdxString)))))
+                    {
+                        IsEqual = 0;
+                    }
+                    IdxString += 1;
+                }
+            }
+        }
+        If (IsEqual == 1)
+        {
+            Caller.CurrentMove = Operator.Join(Operator.Join(Operator.LetterOf(CurrentValue, (GameMovesLen + IdxString)), Operator.LetterOf(CurrentValue, ((GameMovesLen + IdxString) + 1))), Operator.Join(Operator.LetterOf(CurrentValue, ((GameMovesLen + IdxString) + 2)), Operator.LetterOf(CurrentValue, ((GameMovesLen + IdxString) + 3))));
+            If (Not ((Caller.CurrentMove == "")))
+            {
+                List.Add(OpeningMovesRes, Caller.CurrentMove);
+            }
+            List.ReplaceItem(OpeningMovesMapStack, Idx, ((OpeningMovesMapStack[Idx] * 2) + 1));
+        }
+        Else
+        {
+            List.ReplaceItem(OpeningMovesMapStack, Idx, ((OpeningMovesMapStack[Idx] * 2) + 0));
+        }
+        Idx += 1;
+    }
+    If (List.Length(OpeningMovesRes) > 0)
+    {
+        List.DeleteAll(TmpList1);
+        Call ClearMoveList(Depth);
+        Opening.Idx = 1;
+        Repeat (List.Length(OpeningMovesRes))
+        {
+            Caller.CurrentMove = OpeningMovesRes[Opening.Idx];
+            List.Add(OpeningMovesMapHash, CurrentBoardHash);
+            List.Add(OpeningMovesMapMove, Caller.CurrentMove);
+            If (Not (List.ContainsItem(TmpList1, Caller.CurrentMove)))
+            {
+                Call AddMoveToList(Caller.CurrentMove)(Depth);
+                List.Add(TmpList1, Caller.CurrentMove);
+            }
+            Opening.Idx += 1;
+        }
+        List.ReplaceItem(MovesIdx, Depth, 1);
+        Repeat (MovesCount[Depth])
+        {
+            Call ApplyMoveLight(Depth);
+            Call GetCurrentMove(Depth);
+            If Init
+            {
+                Call InitOpeningMovesMapImpl((Depth + 1))(0)(AppliedMove[Depth])((1 == 0));
+            }
+            Else
+            {
+                Call InitOpeningMovesMapImpl((Depth + 1))((GameMovesLen + 4))(AppliedMove[Depth])((1 == 0));
+            }
+            Call RevertMoveLight(Depth);
+            List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
+        }
+    }
+    Idx = 1;
+    Repeat (List.Length(OpeningMovesMapStack))
+    {
+        List.ReplaceItem(OpeningMovesMapStack, Idx, floor((OpeningMovesMapStack[Idx] / 2)));
+        Idx += 1;
     }
 }
 
@@ -6372,10 +6446,15 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
 
 Define PrepareCurrentKillerMoves(string Depth) (warp=true)
 {
-    List.DeleteAll(CurrentKillerMoves);
+    If (Not ((List.Length(CurrentKillerMoves) == 2)))
+    {
+        List.DeleteAll(CurrentKillerMoves);
+        List.Add(CurrentKillerMoves, "");
+        List.Add(CurrentKillerMoves, "");
+    }
     Idx = (((Depth - 1) * 2) + 1);
-    List.Add(CurrentKillerMoves, KillerMoves[Idx]);
-    List.Add(CurrentKillerMoves, KillerMoves[(Idx + 1)]);
+    List.ReplaceItem(CurrentKillerMoves, 1, KillerMoves[(Idx + 0)]);
+    List.ReplaceItem(CurrentKillerMoves, 2, KillerMoves[(Idx + 1)]);
 }
 
 Define ProfilerMethodEnter(string Id) (warp=true)
@@ -7604,7 +7683,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     Search.LmrNonPV.IsReSearchRequired = 1;
     If ((Not (Quiescence)) And (IsSearchTimeout == 0))
     {
-        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And (SearchExtension[Depth] == 0))) And ((((BlackQueenCountLocal + BlackMinorCountLocal) > 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)) And (((BlackQueenCountLocal + BlackMinorCountLocal) + (WhiteQueenCountLocal + WhiteMinorCountLocal)) > 2)))
+        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And (SearchExtension[Depth] == 0))) And (((BlackQueenCountLocal + BlackMinorCountLocal) + (WhiteQueenCountLocal + WhiteMinorCountLocal)) > 2))
         {
             Call //("LMR search");
             Reduction = 0;
@@ -8606,12 +8685,13 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
     {
         Stop(this script);
     }
-    If (abs((IdxToRank[BlackKingIdx] - IdxToRank[WhiteKingIdx])) < 2)
+    If (abs(Score) > AbsMinCheckmateEval)
     {
-        If (abs((IdxToFile[BlackKingIdx] - IdxToFile[WhiteKingIdx])) < 2)
-        {
-            Stop(this script);
-        }
+        Stop(this script);
+    }
+    If (ChebyshevDistance[((BlackKingIdx * 100) + WhiteKingIdx)] == 1)
+    {
+        Stop(this script);
     }
     Call GetTTNodeHash(BoardHash)(Depth);
     Call TTStoreNodeImpl(TTNodeHashResult)(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic)(QSMeta);
@@ -8653,17 +8733,17 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
             List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
         }
         HorizonLoc = TTNodeHorizon[(HashBucket + 0)];
-        If (((Not ((Score == ""))) And (Not ((Horizon == "")))) And (((Not ((Horizon < HorizonLoc))) Or (HorizonLoc == "")) Or ((TTNodeEval[(HashBucket + 0)] == "") Or (Type == "E"))))
+        If (((Not ((Score == ""))) And (Not ((Horizon == "")))) And (((Not ((Horizon < HorizonLoc))) Or (HorizonLoc == "")) Or (TTNodeEval[(HashBucket + 0)] == "")))
         {
             List.ReplaceItem(TTNodeType, HashBucket, Type);
             List.ReplaceItem(TTNodeEval, HashBucket, Score);
             List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
             List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
             List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
-        }
-        If (Not ((BestMove == "")))
-        {
-            List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
+            If (Not ((BestMove == "")))
+            {
+                List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
+            }
         }
     }
     Else
