@@ -1486,7 +1486,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 IsReductionAndDone = 0;
                 If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
                 {
-                    If (((Horizon > 2) And (((BlackQueenCountLocal + BlackMinorCountLocal) + (WhiteQueenCountLocal + WhiteMinorCountLocal)) > 1)) And ((CheckedState[Depth] == 0) And (PlyExtension[Depth] == 0)))
+                    If (((Horizon > 2) And (((WhiteQueenCountLocal + WhiteMinorCountLocal) > 1) Or ((BlackQueenCountLocal + BlackMinorCountLocal) > 1))) And ((CheckedState[Depth] == 0) And (PlyExtension[Depth] == 0)))
                     {
                         Reduction = 0;
                         Idx = 0;
@@ -1593,7 +1593,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             }
                             Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(Reduction)((1 == 1));
                             Score = MinMaxResults[(Depth + 1)];
-                            ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
+                            ScoreIsDynamic = 1;
                             IsReductionAndDone = 1;
                         }
                     }
@@ -5230,15 +5230,18 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
     {
         If (Depth == 1)
         {
-            If (MinMaxPly1BestMoves[1] == "")
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If (((TTProbeRes == 1) And (Not ((TTProbeBestMoveRes == "")))) And ((Not ((TTProbeHorizonRes == ""))) And (Not ((TTProbeHorizonRes == -1)))))
             {
-                If (1 == 0)
+                If (Not ((TTProbeHorizonRes < IdxDeepening)))
                 {
-                    Call TTProbeNode(CurrentBoardHash)(Depth);
-                    If ((TTProbeRes == 1) And (Not ((TTProbeBestMoveRes == ""))))
+                    If (Not ((MinMaxPly1BestMoves[1] == TTProbeBestMoveRes)))
                     {
+                        List.ReplaceItem(MinMaxPly1BestMoves, 3, MinMaxPly1BestMoves[2]);
+                        List.ReplaceItem(MinMaxPly1BestMoves, 2, MinMaxPly1BestMoves[1]);
                         List.ReplaceItem(MinMaxPly1BestMoves, 1, TTProbeBestMoveRes);
                     }
+                    Call TTStoreNode(CurrentBoardHash)("")("")("")("")("")("")("")("")("")("")("")("");
                 }
             }
             List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, MinMaxPly1BestMoves[1]), MaxPly1DeepeningMoveOrderScore);
@@ -5427,7 +5430,7 @@ Define GetBestMoveMedDiff (warp=false)
         QuiescenceDepth = (MaxSearchDepth - IdxDeepening);
         AWCount = 1;
         AWDelta = AWSize[1];
-        If ((IdxDeepening > 5) And ((ThinkTimeIteration > 1) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
+        If ((IdxDeepening > 7) And ((ThinkTimeIteration > 1) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -5491,9 +5494,15 @@ Define GetBestMoveMedDiff (warp=false)
                 IsAWDone = 1;
                 IsEvalStable = 1;
             }
-            ThinkTimeIteration = 0;
         }
-        ThinkTimeIteration = ((Sensing.DaysSince2000() * 86400) - ThinkTimeIteration);
+        If ((AWAlpha == -100000) And (AWBeta == 100000))
+        {
+            ThinkTimeIteration = ((Sensing.DaysSince2000() * 86400) - ThinkTimeIteration);
+        }
+        Else
+        {
+            ThinkTimeIteration = ThinkTimeLimit;
+        }
         If (Not ((MinMaxMoveRes == "")))
         {
             If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
