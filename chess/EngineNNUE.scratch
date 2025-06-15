@@ -976,14 +976,6 @@ Define ApplyMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
-    If (Depth < 3)
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, 0);
-    }
-    Else
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, PawnShelterCapture[(Depth - 2)]);
-    }
     If (Depth > 1)
     {
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
@@ -1007,7 +999,7 @@ Define ApplyMove(num Depth) (warp=true)
         List.ReplaceItem(Board, TargetIdx, SourcePiece);
         List.ReplaceItem(Board, SourceIdx, 0);
         Call //("Incremental positional eval via move-to-eval lookup table");
-        Idx2 = (((((DepthEvalFactor[Depth] + 1) / 2) * 60000) + (PieceIdxLookup[abs(SourcePiece)] * 10000)) + ((SourceIdx * 100) + TargetIdx));
+        Idx2 = ((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(SourcePiece)] * 10000)) + ((SourceIdx * 100) + TargetIdx));
         List.ReplaceItem(PosEvalDelta, Depth, MoveToEvalDelta[Idx2]);
         Call //("Incremental Zobrist hash update via move-to-hash lookup table");
         CurrentBoardHash += MoveToHash[Idx2];
@@ -1148,7 +1140,7 @@ Define ApplyMove(num Depth) (warp=true)
         If (Not ((TargetPiece == 0)))
         {
             Call //("Captures => incremental positional eval and Zobrist hash update");
-            Idx2 = (((((DepthEvalFactor[(Depth + 1)] + 1) / 2) * 60000) + (PieceIdxLookup[abs(TargetPiece)] * 10000)) + (TargetIdx * 100));
+            Idx2 = ((((DepthEvalFactor[(Depth + 1)] + 1) * 30000) + (PieceIdxLookup[abs(TargetPiece)] * 10000)) + (TargetIdx * 100));
             List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + MoveToEvalDelta[Idx2]));
             CurrentBoardHash += MoveToHash[Idx2];
             If ((abs(TargetPiece) == GoK_BlackPawn) Or (abs(TargetPiece) == GoK_BlackKing))
@@ -1160,10 +1152,6 @@ Define ApplyMove(num Depth) (warp=true)
                 If (TargetPiece == GoK_BlackPawn)
                 {
                     BlackPawnCountLocal += -1;
-                    If ((IdxToRank[BlackKingIdx] < IdxToRank[TargetIdx]) And ((abs((IdxToRank[BlackKingIdx] - IdxToRank[TargetIdx])) < 4) And (abs((IdxToFile[BlackKingIdx] - IdxToFile[TargetIdx])) < 2)))
-                    {
-                        List.ReplaceItem(PawnShelterCapture, Depth, (PawnShelterCapture[Depth] + 1));
-                    }
                 }
                 Else
                 {
@@ -1193,10 +1181,6 @@ Define ApplyMove(num Depth) (warp=true)
                 If (TargetPiece == GoK_WhitePawn)
                 {
                     WhitePawnCountLocal += -1;
-                    If ((IdxToRank[TargetIdx] < IdxToRank[WhiteKingIdx]) And ((abs((IdxToRank[WhiteKingIdx] - IdxToRank[TargetIdx])) < 4) And (abs((IdxToFile[WhiteKingIdx] - IdxToFile[TargetIdx])) < 2)))
-                    {
-                        List.ReplaceItem(PawnShelterCapture, Depth, (PawnShelterCapture[Depth] + 1));
-                    }
                 }
                 Else
                 {
@@ -1572,9 +1556,9 @@ Define CalcBoardStats (warp=true)
         Idx += 1;
     }
     IsClassicEndgameEval = 0;
-    If (IsScratch3 == 1)
+    If ((IsScratch3 == 1) Or (Level < 4))
     {
-        If (Operator.Round(((((BlackQueenCount * 9) + (BlackRookCount * 5)) + (((BlackBishopCount * 3.3) + (((BlackMinorCount - BlackRookCount) - BlackBishopCount) * 3.1)) + BlackPawnCount)) + (((WhiteQueenCount * 9) + (WhiteRookCount * 5)) + (((WhiteBishopCount * 3.3) + (((WhiteMinorCount - WhiteRookCount) - WhiteBishopCount) * 3.1)) + WhitePawnCount)))) < 20)
+        If (((BlackQueenCount + BlackMinorCount) == 0) Or ((WhiteQueenCount + WhiteMinorCount) == 0))
         {
             IsClassicEndgameEval = 1;
         }
@@ -1798,19 +1782,15 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         {
             List.ReplaceItem(PosEvalDeltaSum, Depth, PosEvalDelta[Depth]);
             List.ReplaceItem(CapturesDeltaSum, Depth, TargetPieces[Depth]);
-            If (Not ((PromotionPieces[Depth] == 0)))
-            {
-                List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
-            }
         }
         Else
         {
             List.ReplaceItem(PosEvalDeltaSum, Depth, (PosEvalDeltaSum[(Depth - 1)] + PosEvalDelta[Depth]));
             List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[(Depth - 1)] + TargetPieces[Depth]));
-            If (Not ((PromotionPieces[Depth] == 0)))
-            {
-                List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
-            }
+        }
+        If (Not ((PromotionPieces[Depth] == 0)))
+        {
+            List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
         }
     }
     If ForceFullEval
@@ -1840,27 +1820,64 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         Else
         {
             EvaluationRes = (EvalBase + (PosEvalDeltaSum[Depth] - CapturesDeltaSum[Depth]));
-            If (IsEndgame2 == 1)
+            If (((BlackQueenCountLocal + BlackMinorCountLocal) == 0) Or ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0))
             {
-                Delta = abs((IdxToRank[WhiteKingIdx] - IdxToRank[BlackKingIdx]));
-                Delta2 = abs((IdxToFile[WhiteKingIdx] - IdxToFile[BlackKingIdx]));
-                If (Delta < Delta2)
+                Side = 0;
+                If ((BlackQueenCountLocal + BlackMinorCountLocal) > 0)
                 {
-                    Delta = Delta2;
+                    Side = 1;
                 }
-                If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+                Else
                 {
-                    EvaluationRes += (-15 * (Delta - 1));
+                    If ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)
+                    {
+                        Side = 2;
+                    }
                 }
-                If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+                If (Not ((Side == 0)))
                 {
-                    EvaluationRes += (15 * (Delta - 1));
+                    CurrentValue += ChebyshevDistance[((WhiteKingIdx * 100) + BlackKingIdx)];
+                    If (CurrentValue < 4)
+                    {
+                        CurrentValue += 4;
+                    }
+                    EvaluationRes += (-20 * (CurrentValue * (Side == 1)));
+                    If (Side == 1)
+                    {
+                        File = IdxToFile[BlackKingIdx];
+                        Rank = IdxToRank[BlackKingIdx];
+                    }
+                    Else
+                    {
+                        File = IdxToFile[WhiteKingIdx];
+                        Rank = IdxToRank[WhiteKingIdx];
+                    }
+                    Delta = 0;
+                    Delta2 = 0;
+                    If (Rank < 4)
+                    {
+                        Delta = (4 - Rank);
+                    }
+                    Else
+                    {
+                        If (Rank > 5)
+                        {
+                            Delta = (Rank - 5);
+                        }
+                    }
+                    If (File < 4)
+                    {
+                        Delta2 = (4 - File);
+                    }
+                    Else
+                    {
+                        If (File > 5)
+                        {
+                            Delta2 = (File - 5);
+                        }
+                    }
+                    EvaluationRes += (20 * ((Delta + Delta2) * (Side == 1)));
                 }
-            }
-            If (Not ((PromotionPieces[1] == 0)))
-            {
-                EvaluationRes += 15;
-                EvaluationIsDynamicRes = 1;
             }
             Call EvaluatePostProcess(Depth);
             Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
@@ -1968,7 +1985,7 @@ Define EvaluatePostProcess(string Depth) (warp=true)
                                     }
                                     If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
                                     {
-                                        EvaluationRes += (GoK_WhiteQueen - GoK_WhitePawn);
+                                        EvaluationRes += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
                                     }
                                 }
                             }
@@ -1996,7 +2013,7 @@ Define EvaluatePostProcess(string Depth) (warp=true)
                                     }
                                     If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
                                     {
-                                        EvaluationRes += (GoK_BlackQueen - GoK_BlackPawn);
+                                        EvaluationRes += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
                                     }
                                 }
                             }
@@ -3970,6 +3987,7 @@ Define ImportBoardImpl(string ImpBoard) (warp=true)
 
 Define InitBoard (warp=true)
 {
+    PV = "";
     Stg_FromSquareIdx = -1;
     Stg_ToSquareIdx = -1;
     ProfilerMode = 0;
@@ -4946,6 +4964,7 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
     IsSearchTimeout = 0;
     If InitialDeepening
     {
+        PV = "";
         Call ProfilerReset;
         Call OnProgressChanged(1);
         PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
@@ -6058,7 +6077,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         {
                             If ((Board[SourceIdx] * DepthEvalFactor[Depth]) > 0)
                             {
-                                If (Not ((MoveToHash[(((((DepthEvalFactor[Depth] + 1) / 2) * 60000) + (PieceIdxLookup[abs(Board[SourceIdx])] * 10000)) + ((SourceIdx * 100) + TargetIdx))] == 0)))
+                                If (Not ((MoveToHash[((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(Board[SourceIdx])] * 10000)) + ((SourceIdx * 100) + TargetIdx))] == 0)))
                                 {
                                     IsReachable = 1;
                                     SourcePiece = Board[SourceIdx];
@@ -6160,7 +6179,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         If (Not (List.ContainsItem(TmpList3, Caller.SourceIdx)))
                         {
                             List.Add(TmpList3, Caller.SourceIdx);
-                            List.Add(TmpList4, (((((DepthEvalFactor[Depth] + 1) / 2) * 60000) + (PieceIdxLookup[abs(Board[Caller.SourceIdx])] * 10000)) + (Caller.SourceIdx * 100)));
+                            List.Add(TmpList4, ((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(Board[Caller.SourceIdx])] * 10000)) + (Caller.SourceIdx * 100)));
                         }
                     }
                 }
@@ -6178,7 +6197,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         MoveGen.SourcePiece = Board[MoveGen.SourceIdx];
                         If ((MoveGen.SourcePiece * DepthEvalFactor[Depth]) > 0)
                         {
-                            If (Not ((MoveToHash[(((((DepthEvalFactor[Depth] + 1) / 2) * 60000) + (PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000)) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == 0)))
+                            If (Not ((MoveToHash[((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000)) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == 0)))
                             {
                                 Call StagedMoveGenMVVLVA(Depth)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(MoveGen.SourcePiece))(abs(Board[MoveGen.TargetIdx]))(floor((AppliedMove[(Depth - 1)] % 100)));
                             }
@@ -6273,7 +6292,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 {
                     If ((Board[MoveGen.SourceIdx] * DepthEvalFactor[Depth]) > 0)
                     {
-                        If (Not ((MoveToHash[(((((DepthEvalFactor[Depth] + 1) / 2) * 60000) + (PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000)) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == 0)))
+                        If (Not ((MoveToHash[((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000)) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == 0)))
                         {
                             Call //("When killer move is applicable, add to temp list");
                             Call StagedMoveGenKillerMoves(Depth)(Caller.CurrentMove)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(Board[MoveGen.SourceIdx]));
@@ -6667,14 +6686,6 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPiecesIdx, Depth, "");
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
-    If (Depth < 3)
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, 0);
-    }
-    Else
-    {
-        List.ReplaceItem(PawnShelterCapture, Depth, PawnShelterCapture[(Depth - 2)]);
-    }
     If (Depth == 1)
     {
         List.ReplaceItem(CastlingState, Depth, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
@@ -7867,7 +7878,7 @@ Define Search_TagSearchExtension(string Depth) (warp=true)
                         {
                             If (abs(Caller.SourcePiece) < abs(Board[Caller.TargetIdx]))
                             {
-                                If (Not ((MoveToHash[(((((DepthEvalFactor[Depth] + 1) / 2) * 60000) + (PieceIdxLookup[abs(Caller.SourcePiece)] * 10000)) + ((Caller.SourceIdx * 100) + Caller.TargetIdx))] == 0)))
+                                If (Not ((MoveToHash[((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(Caller.SourcePiece)] * 10000)) + ((Caller.SourceIdx * 100) + Caller.TargetIdx))] == 0)))
                                 {
                                     Search.Count += 1;
                                 }
@@ -8814,7 +8825,10 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
     }
     If (Depth == 1)
     {
-        Call UpdateMoveNotationPV;
+        If (PV[1] > 1)
+        {
+            Call UpdateMoveNotationPV;
+        }
     }
 }
 
