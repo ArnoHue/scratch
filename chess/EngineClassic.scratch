@@ -3170,7 +3170,6 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
         If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
         {
             EvaluateRes = TTProbeBoardScoreSumRes;
-            Call OnScoreCaldPostProcessFixups(Depth);
             If (IsBlockProfilerEnabled == 1)
             {
                 Call Profile_MethodExit(Depth);
@@ -3204,7 +3203,6 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             EvaluateRes += Operator.Round(((CountOuter1 - CountOuter2) / 1));
         }
         Call TTStoreBoard(CurrentBoardHash)(Depth)("")("")("")(EvaluateRes);
-        Call OnScoreCaldPostProcessFixups(Depth);
     }
     If (IsBlockProfilerEnabled == 1)
     {
@@ -3693,7 +3691,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                                 If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
                                 {
-                                    EvalPawnsResult += (GoK_WhiteQueen - GoK_WhitePawn);
+                                    EvalPawnsResult += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
                                 }
                             }
                         }
@@ -3721,7 +3719,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                                 If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
                                 {
-                                    EvalPawnsResult += (GoK_BlackQueen - GoK_BlackPawn);
+                                    EvalPawnsResult += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
                                 }
                             }
                         }
@@ -3729,6 +3727,65 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                 }
             }
             Idx += 1;
+        }
+    }
+    If (((BlackQueenCountLocal + BlackMinorCountLocal) == 0) Or ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
+    {
+        Side = 0;
+        If ((BlackQueenCountLocal + BlackMinorCountLocal) > 0)
+        {
+            Side = 1;
+        }
+        Else
+        {
+            If ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)
+            {
+                Side = 2;
+            }
+        }
+        If (Not ((Side == 0)))
+        {
+            CurrentValue = ChebyshevDistance[((WhiteKingIdx * 100) + BlackKingIdx)];
+            If (CurrentValue < 4)
+            {
+                CurrentValue = 4;
+            }
+            EvalPawnsResult += (-20 * (CurrentValue * (Side == 1)));
+            If (Side == 1)
+            {
+                KingIdx = BlackKingIdx;
+            }
+            Else
+            {
+                KingIdx = WhiteKingIdx;
+            }
+            File = IdxToFile[KingIdx];
+            Rank = IdxToRank[KingIdx];
+            Delta = 0;
+            Delta2 = 0;
+            If (Rank < 4)
+            {
+                Delta = (4 - Rank);
+            }
+            Else
+            {
+                If (Rank > 5)
+                {
+                    Delta = (Rank - 5);
+                }
+            }
+            If (File < 4)
+            {
+                Delta2 = (4 - File);
+            }
+            Else
+            {
+                If (File > 5)
+                {
+                    Delta2 = (File - 5);
+                }
+            }
+            EvalPawnsResult += (20 * ((Delta + Delta2) * (Side == 1)));
         }
     }
 }
@@ -6287,6 +6344,7 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
     IsMinMaxTimeout = 0;
     If InitialDeepening
     {
+        PV = "";
         Call Profile_Reset;
         PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
         TTCurrentAge = ((floor((TTCurrentAge / 100)) + 1) * 100);
@@ -6344,6 +6402,7 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
 
 Define InitBoard (warp=true)
 {
+    PV = "";
     Stg_FromSquareIdx = -1;
     Stg_ToSquareIdx = -1;
     ProfilerMode = 0;
@@ -7987,20 +8046,6 @@ Define OnRestart (warp=true)
     NPS = "";
     MPS = "";
     CustomThinkTime = 0;
-}
-
-Define OnScoreCaldPostProcessFixups(string Depth) (warp=true)
-{
-    If (Not ((PromotionPieces[1] == 0)))
-    {
-        EvaluateRes += 75;
-        EvaluateResIsDynamic = 1;
-    }
-    If ((PromotionPieces[1] == GoK_BlackKingsideCastling) Or (PromotionPieces[1] == GoK_BlackQueensideCastling))
-    {
-        EvaluateRes += 25;
-        EvaluateResIsDynamic = 1;
-    }
 }
 
 Define PickMove(string Depth)(bool Quiescence) (warp=true)
@@ -9721,7 +9766,10 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
     }
     If (Depth == 1)
     {
-        Call UpdateMoveNotationPV;
+        If (PV[1] > 1)
+        {
+            Call UpdateMoveNotationPV;
+        }
     }
 }
 
