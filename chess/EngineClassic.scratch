@@ -679,6 +679,10 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
         Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
         Stop(this script);
     }
+    If (abs(Piece) == GoK_BlackKing)
+    {
+        Stop(this script);
+    }
     If (Piece > 0)
     {
         If (MovePosLookupBlackLegal[((PieceIdxLookup[(Piece + 0)] * 10000) + ((TargetIdx * 100) + WhiteKingIdx))] == 0)
@@ -1525,14 +1529,25 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             }
                             If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                             {
-                                CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))))];
-                                CurrentValue2 = MaxHistoryMoveScore[((Depth % 2) + 1)];
-                                If ((CurrentValue > 0) And (CurrentValue2 > 0))
+                                Call PrepareCurrentKillerMoves(Depth);
+                                If (((CurrentKillerMoves[1] == AppliedMove[Depth]) Or (CurrentKillerMoves[2] == AppliedMove[Depth])) Or (HistoryCounterMoves[AppliedMove[(Depth - 1)]] == AppliedMove[Depth]))
                                 {
-                                    Reduction += (0 - floor(((CurrentValue / CurrentValue2) * 8)));
+                                    Reduction += -1;
+                                }
+                                Else
+                                {
+                                    CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))))];
+                                    CurrentValue2 = MaxHistoryMoveScore[((Depth % 2) + 1)];
+                                    If ((CurrentValue > 0) And (CurrentValue2 > 0))
+                                    {
+                                        If ((CurrentValue / CurrentValue2) > 0.15)
+                                        {
+                                            Reduction += -1;
+                                        }
+                                    }
                                 }
                             }
-                            If (1 == 0)
+                            If (1 == 1)
                             {
                                 If (HashMoveMetaData[Depth] == 1)
                                 {
@@ -8351,12 +8366,13 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     If (PickPhase[(Depth + 0)] == 6)
     {
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
         If (GenerateMovesRequiresAttackRecalc == 1)
         {
-            Call //("Not required any more, when attack tables are guarantee to be up-to-date during quiescence");
+            Call CalcBoardAttackedByMove((Depth + 1));
+            Call StoreAttackInfo((Depth + 1))(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
