@@ -609,11 +609,8 @@ Define AddMoveImplLookup(string SourceIdx)(string TargetIdx)(string Depth)(bool 
         {
             If (BoardAttackedCalculated[Depth] == 0)
             {
-                If (Not (CapturesOnly))
-                {
-                    GenerateMovesRequiresAttackRecalc = 1;
-                    Stop(this script);
-                }
+                GenerateMovesRequiresAttackRecalc = 1;
+                Stop(this script);
             }
             Else
             {
@@ -685,6 +682,10 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     If (IsCheckingPieceRes == 1)
     {
         Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
+        Stop(this script);
+    }
+    If (abs(Piece) == GoK_BlackKing)
+    {
         Stop(this script);
     }
     If (Piece > 0)
@@ -6351,28 +6352,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     If (PickPhase[Depth] == 6)
     {
         Call //("Phase 6: Full move generator for all moves not found yet");
-        If (Depth == 1)
-        {
-            Call CalcBoardAttackedByMove((Depth + 2));
-            Call StoreAttackInfo((Depth + 2))(Depth);
-        }
         Call //("Create attack tables in case not found in TT");
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
-        If ((Not (Quiescence)) Or (CheckedState[Depth] == 1))
-        {
-            If (BoardAttackedCalculated[Depth] == 0)
-            {
-                Call CalcBoardAttackedByMove((Depth + 1));
-                Call StoreAttackInfo((Depth + 1))(Depth);
-                List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            }
-        }
         Call //("Invoke full move generator. When in check, only create evasions");
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
-        If (1 == 0)
-        {
-            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
-        }
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
         If (GenerateMovesRequiresAttackRecalc == 1)
         {
             Call //("Move generator will raise this error when creating king moves without having provided current attack tables (can only happen during quiescence search) => create them and invoke again");
@@ -7695,11 +7678,22 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
-                    CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))))];
-                    CurrentValue2 = MaxHistoryMoveScore[((Depth % 2) + 1)];
-                    If ((CurrentValue > 0) And (CurrentValue2 > 0))
+                    Call PrepareCurrentKillerMoves(Depth);
+                    If (((CurrentKillerMoves[1] == AppliedMove[Depth]) Or (CurrentKillerMoves[2] == AppliedMove[Depth])) Or (HistoryCounterMoves[AppliedMove[(Depth - 1)]] == AppliedMove[Depth]))
                     {
-                        Reduction += (0 - floor(((CurrentValue / CurrentValue2) * 8)));
+                        Reduction += -1;
+                    }
+                    Else
+                    {
+                        CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))))];
+                        CurrentValue2 = MaxHistoryMoveScore[((Depth % 2) + 1)];
+                        If ((CurrentValue > 0) And (CurrentValue2 > 0))
+                        {
+                            If ((CurrentValue / CurrentValue2) > 0.15)
+                            {
+                                Reduction += (0 - 1);
+                            }
+                        }
                     }
                 }
                 If (1 == 0)
