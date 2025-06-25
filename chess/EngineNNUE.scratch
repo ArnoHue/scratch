@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.335 (24.06.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.335 (26.06.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -610,6 +610,7 @@ Define AddMoveImplLookup(string SourceIdx)(string TargetIdx)(string Depth)(bool 
             If (BoardAttackedCalculated[Depth] == 0)
             {
                 GenerateMovesRequiresAttackRecalc = 1;
+                Call Log("Warning: AddMoveImplLookup() attack table recalc triggered.")("")("")("")("")("")("")("");
                 Stop(this script);
             }
             Else
@@ -1450,7 +1451,7 @@ Define CalcBoardAttackedOnDemand(string Depth)(bool Quiescence)(bool ForceOnChec
 {
     If (BoardAttackedCalculated[Depth] == 0)
     {
-        If ((ForceOnCheck And (CheckedState[Depth] == 1)) Or ((Not (Quiescence)) And (Not ((Depth > MaxDepth)))))
+        If ((ForceOnCheck And (CheckedState[Depth] == 1)) Or (Not ((Depth > MaxDepth))))
         {
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
@@ -2684,25 +2685,23 @@ Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool AttackTable
 
 Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bool IsBlackMove) (warp=true)
 {
-    If ((Not (AttackTableOnly)) And (Not (Quiescence)))
+    If (Not (AttackTableOnly))
     {
         If (BoardAttackedCalculated[Depth] == 0)
         {
             If IsBlackMove
             {
-                Call GenerateMovesForSource(Depth)(BlackKingIdx)(AttackTableOnly)(Quiescence);
-                If (GenerateMovesRequiresAttackRecalc == 1)
-                {
-                    Stop(this script);
-                }
+                KingIdx = BlackKingIdx;
             }
             Else
             {
-                Call GenerateMovesForSource(Depth)(WhiteKingIdx)(AttackTableOnly)(Quiescence);
-                If (GenerateMovesRequiresAttackRecalc == 1)
-                {
-                    Stop(this script);
-                }
+                KingIdx = WhiteKingIdx;
+            }
+            Call GenerateMovesForSource(Depth)(KingIdx)(AttackTableOnly)(Quiescence);
+            If (GenerateMovesRequiresAttackRecalc == 1)
+            {
+                Call Log("Warning: GenerateMovesImpl() attack table recalc triggered.")("")("")("")("")("")("")("");
+                Stop(this script);
             }
         }
         List.DeleteAll(PieceMobility);
@@ -2715,31 +2714,15 @@ Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bo
     List.DeleteAll(CalcMovesMoveList);
     Call PrepareCurrentKillerMoves(Depth);
     Call ClearMoveList(Depth);
-    If IsBlackMove
+    Caller.SourceIdx = 1;
+    Repeat (64)
     {
-        Caller.SourceIdx = 1;
-        Repeat (64)
+        If ((IsBlackMove And (Board[Caller.SourceIdx] > 0)) Or ((Not (IsBlackMove)) And (Board[Caller.SourceIdx] < 0)))
         {
-            If (Board[Caller.SourceIdx] > 0)
-            {
-                Piece = Board[Caller.SourceIdx];
-                Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(AttackTableOnly)(Quiescence);
-            }
-            Caller.SourceIdx += 1;
+            Piece = Board[Caller.SourceIdx];
+            Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(AttackTableOnly)(Quiescence);
         }
-    }
-    Else
-    {
-        Caller.SourceIdx = 64;
-        Repeat (64)
-        {
-            If (Board[Caller.SourceIdx] < 0)
-            {
-                Piece = Board[Caller.SourceIdx];
-                Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(AttackTableOnly)(Quiescence);
-            }
-            Caller.SourceIdx += -1;
-        }
+        Caller.SourceIdx += 1;
     }
     Call //("Castling moves");
     If ((Not (AttackTableOnly)) And (Not (Quiescence)))
@@ -2825,7 +2808,6 @@ Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bo
                         List.ReplaceItem(Ply1BestMoves, 2, Ply1BestMoves[1]);
                         List.ReplaceItem(Ply1BestMoves, 1, TTProbeNode.BestMoveRes);
                     }
-                    Call TTStoreNode(CurrentBoardHash)("")("")("")("")("")("")("")("")("")("")("")("")("");
                 }
             }
             List.ReplaceItem(CalcMovesScoreList, List.IndexOf(CalcMovesMoveList, Ply1BestMoves[1]), MaxPly1DeepeningMoveOrderScore);
@@ -5270,18 +5252,10 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
                 }
                 Idx += -2;
             }
-            If (Count < 1)
+            If (Count < (1 + IsEndgame))
             {
                 IsQuiescentCheckRes = 1;
                 Stop(this script);
-            }
-            If (IsEndgame2 == 1)
-            {
-                If (Count < 2)
-                {
-                    IsQuiescentCheckRes = 1;
-                    Stop(this script);
-                }
             }
         }
         Else
@@ -7763,16 +7737,16 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                     }
                 }
             }
-        }
-    }
-    If (IsFutile == 1)
-    {
-        If Quiescence
-        {
-            If ((((Depth % 2) == 1) And (Eval > SearchEvalResults[Depth])) Or (((Depth % 2) == 0) And (Eval < SearchEvalResults[Depth])))
+            If (IsFutile == 1)
             {
-                List.ReplaceItem(SearchEvalResults, Depth, Eval);
-                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
+                If Quiescence
+                {
+                    If ((((Depth % 2) == 1) And (Eval > SearchEvalResults[Depth])) Or (((Depth % 2) == 0) And (Eval < SearchEvalResults[Depth])))
+                    {
+                        List.ReplaceItem(SearchEvalResults, Depth, Eval);
+                        List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
+                    }
+                }
             }
         }
     }
@@ -7882,7 +7856,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     {
                         If ((CurrentValue / CurrentValue2) > 0.15)
                         {
-                            Reduction += (0 - 1);
+                            Reduction += -1;
                         }
                     }
                 }
@@ -8114,7 +8088,7 @@ Define Search_TagSearchExtension(string Depth) (warp=true)
 
 Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(string Horizon) (warp=true)
 {
-    If (Depth > 1)
+    If ((Depth > 1) And (Not (InitialDeepening)))
     {
         If (((Betas[Depth] - Alphas[Depth]) == 1) Or (1 == 0))
         {
