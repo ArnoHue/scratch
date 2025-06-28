@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (26.06.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.335 (28.06.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -2677,6 +2677,9 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool AttackTableOn
 
 Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool AttackTableOnly)(bool Quiescence) (warp=true)
 {
+    Call IsQuiescentCheckCond(Depth);
+    IsQuiescentCheckInvariantRes = IsQuiescentCheckRes;
+    GenerateMovesRequiresAttackRecalc = 0;
     List.DeleteAll(CalcMovesMoveList);
     List.DeleteAll(CalcMovesScoreList);
     Call GenerateMovesForSource(Depth)(SourceIdx)(AttackTableOnly)(Quiescence);
@@ -2970,7 +2973,8 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 15);
+    List.Add(AWSize, 10);
+    List.Add(AWSize, 25);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -2991,7 +2995,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = AWSize[AWCount];
-        If ((IdxDeepening > (7 - (IsScratch3 * 6))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
+        If ((IdxDeepening > (5 - (IsScratch3 * 3))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -5040,54 +5044,75 @@ Define IsCheckingPieceDiscovery(string SourceIdx)(string TargetIdx)(string Depth
     IsCheckingPieceRes = 0;
     If (BoardAttackedByOpponentSnapshot[(((Depth - 1) * 100) + SourceIdx)] > 0)
     {
-        Idx = BoardAttackedByOpponentPieceSnapshot[(((Depth - 1) * 100) + SourceIdx)];
-        If ((Board[Idx] * DepthEvalFactor[Depth]) > GoK_BlackKnight)
+        SourceIdx = BoardAttackedByOpponentPieceSnapshot[(((Depth - 1) * 100) + SourceIdx)];
+        If ((Board[SourceIdx] * DepthEvalFactor[Depth]) > GoK_BlackKnight)
         {
-            Call IsCheckingPiece(Idx);
+            Call IsCheckingPiece(SourceIdx);
         }
     }
 }
 
-Define IsCheckingPieceImpl(string SourceIdx)(string Piece) (warp=true)
+Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
 {
     IsCheckingPieceRes = 0;
+    Piece = Piece;
     If (abs(Piece) == GoK_BlackKing)
     {
         Stop(this script);
     }
     If (Piece > 0)
     {
-        KingIdx = WhiteKingIdx;
-    }
-    Else
-    {
-        KingIdx = BlackKingIdx;
-    }
-    If (MoveToHash[(((60000 * (Piece > 0)) + (PieceIdxLookup[abs(Piece)] * 10000)) + ((SourceIdx * 100) + KingIdx))] == 0)
-    {
-        Stop(this script);
-    }
-    If (abs(Piece) == GoK_BlackPawn)
-    {
-        If (IdxToFile[SourceIdx] == IdxToFile[KingIdx])
+        If (MoveToHash[((60000 + (PieceIdxLookup[Piece] * 10000)) + ((Idx * 100) + WhiteKingIdx))] == 0)
         {
             Stop(this script);
         }
-        IsCheckingPieceRes = 1;
-        Stop(this script);
+        If (Piece == GoK_BlackPawn)
+        {
+            If (IdxToFile[Idx] == IdxToFile[WhiteKingIdx])
+            {
+                Stop(this script);
+            }
+            IsCheckingPieceRes = 1;
+            Stop(this script);
+        }
+        If (Piece == GoK_BlackKnight)
+        {
+            IsCheckingPieceRes = 1;
+            Stop(this script);
+        }
+        CurrentMove = ((Idx * 100) + WhiteKingIdx);
     }
-    If (abs(Piece) == GoK_BlackKnight)
+    Else
     {
-        IsCheckingPieceRes = 1;
-        Stop(this script);
+        If (Piece < 0)
+        {
+            If (MoveToHash[((PieceIdxLookup[(0 - Piece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == 0)
+            {
+                Stop(this script);
+            }
+            If (Piece == GoK_WhitePawn)
+            {
+                If (IdxToFile[Idx] == IdxToFile[BlackKingIdx])
+                {
+                    Stop(this script);
+                }
+                IsCheckingPieceRes = 1;
+                Stop(this script);
+            }
+            If (Piece == GoK_WhiteKnight)
+            {
+                IsCheckingPieceRes = 1;
+                Stop(this script);
+            }
+            CurrentMove = ((Idx * 100) + BlackKingIdx);
+        }
     }
-    CurrentMove = ((SourceIdx * 100) + KingIdx);
-    Idx = SourceIdx;
+    SourceIdx = Idx;
     IdxInc = MoveToPathStepInc[CurrentMove];
     Repeat ((MoveToPathDelta[CurrentMove] - 1))
     {
-        Idx += IdxInc;
-        If (Not ((Board[Idx] == 0)))
+        SourceIdx += IdxInc;
+        If (Not ((Board[SourceIdx] == 0)))
         {
             Stop(this script);
         }
@@ -6222,66 +6247,32 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 If (Not ((TTProbeNode.BestMoveRes == "")))
                 {
-                    SourceIdx = floor((TTProbeNode.BestMoveRes / 100));
+                    MP.SourceIdx = floor((TTProbeNode.BestMoveRes / 100));
                     TargetIdx = floor((TTProbeNode.BestMoveRes % 100));
                     If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes == -1)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1)))
                     {
-                        If (Not ((SourceIdx == 0)))
+                        If (Not ((MP.SourceIdx == 0)))
                         {
-                            If ((Board[SourceIdx] * DepthEvalFactor[Depth]) > 0)
+                            If ((Board[MP.SourceIdx] * DepthEvalFactor[Depth]) > 0)
                             {
-                                If (Not ((MoveToHash[((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(Board[SourceIdx])] * 10000)) + ((SourceIdx * 100) + TargetIdx))] == 0)))
+                                Call ClearMoveList(Depth);
+                                Call AddMoveToList(TTProbeNode.BestMoveRes)(Depth);
+                                List.ReplaceItem(MovesIdx, Depth, 1);
+                                Call ApplyMove(Depth);
+                                Call GetNormalizedMove(AppliedMove[Depth]);
+                                List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
+                                List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+                                List.ReplaceItem(PickPhase, Depth, 2);
+                                List.ReplaceItem(PickMoveRes, Depth, 1);
+                                If (TargetPieces[Depth] == 0)
                                 {
-                                    IsReachable = 1;
-                                    SourcePiece = Board[SourceIdx];
-                                    If ((abs(SourcePiece) > GoK_BlackKnight) And (abs(SourcePiece) < GoK_BlackKing))
-                                    {
-                                        Idx = SourceIdx;
-                                        IdxInc = MoveToPathStepInc[TTProbeNode.BestMoveRes];
-                                        Repeat (MoveToPathDelta[TTProbeNode.BestMoveRes])
-                                        {
-                                            Idx += IdxInc;
-                                            If (Idx == TargetIdx)
-                                            {
-                                                If (((SourcePiece > 0) And (Not ((Board[Idx] > 0)))) Or ((SourcePiece < 0) And (Not ((Board[Idx] < 0)))))
-                                                {
-                                                    IsReachable = 0;
-                                                }
-                                            }
-                                            Else
-                                            {
-                                                If (Not ((Board[Idx] == 0)))
-                                                {
-                                                    IsReachable = 0;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    If (IsReachable == 1)
-                                    {
-                                        Call //("Hash move found => apply and return. Fill attack table only when in check");
-                                        MoveGen.Move = TTProbeNode.BestMoveRes;
-                                        Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(10);
-                                        Call ClearMoveList(Depth);
-                                        Call AddMoveToList(MoveGen.Move)(Depth);
-                                        List.ReplaceItem(MovesIdx, Depth, 1);
-                                        Call ApplyMove(Depth);
-                                        Call GetNormalizedMove(AppliedMove[Depth]);
-                                        List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
-                                        List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                                        List.ReplaceItem(PickPhase, Depth, 2);
-                                        List.ReplaceItem(PickMoveRes, Depth, 1);
-                                        If (TargetPieces[Depth] == 0)
-                                        {
-                                            List.ReplaceItem(HashMoveMetaData, Depth, 0);
-                                        }
-                                        Else
-                                        {
-                                            List.ReplaceItem(HashMoveMetaData, Depth, 1);
-                                        }
-                                        Stop(this script);
-                                    }
+                                    List.ReplaceItem(HashMoveMetaData, Depth, 0);
                                 }
+                                Else
+                                {
+                                    List.ReplaceItem(HashMoveMetaData, Depth, 1);
+                                }
+                                Stop(this script);
                             }
                         }
                     }
@@ -7157,10 +7148,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 If (((Not (Quiescence)) And (Depth > 1)) And (((CheckedState[Depth] == 1) And (Horizon > 1)) And (IsEndgame == 0)))
                 {
-                    If ((IsScratch3 == 1) And (1 == 0))
-                    {
-                        List.ReplaceItem(SearchExtension, Depth, 1);
-                    }
+                    List.ReplaceItem(SearchExtension, Depth, 1);
                 }
                 Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
                 Call Search_LMRNonPV(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
@@ -7248,9 +7236,12 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                             SearchEvalRes = Eval;
                                             If (Not ((Ply1BestMoves[1] == BestMoves[Depth])))
                                             {
-                                                If (Depth > 4)
+                                                If (Depth > 2)
                                                 {
-                                                    List.ReplaceItem(Ply1BestMoves, 3, Ply1BestMoves[2]);
+                                                    If (Not ((Ply1BestMoves[2] == BestMoves[Depth])))
+                                                    {
+                                                        List.ReplaceItem(Ply1BestMoves, 3, Ply1BestMoves[2]);
+                                                    }
                                                     List.ReplaceItem(Ply1BestMoves, 2, Ply1BestMoves[1]);
                                                 }
                                                 List.ReplaceItem(Ply1BestMoves, 1, BestMoves[Depth]);
@@ -7648,7 +7639,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
                 Idx += -2;
             }
         }
-        If (Search.Count > 1)
+        If (Search.Count > 2)
         {
             List.ReplaceItem(SearchEvalResults, Depth, DrawByRepetitionEval);
             List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
@@ -8647,7 +8638,8 @@ Define StoreKillerMove(string Depth)(string Move) (warp=true)
 
 Define TTProbeBoard(string BoardHash)(string Depth) (warp=true)
 {
-    Call TTProbeBoardImpl((BoardHash + ((Depth % 2) * 31)));
+    Call GetTTNodeHash(BoardHash)(Depth);
+    Call TTProbeBoardImpl(TTNodeHashResult);
 }
 
 Define TTProbeBoardImpl(string BoardHash) (warp=true)
@@ -8744,7 +8736,8 @@ Define TTStoreBoard(string BoardHash)(string Depth)(string Eval) (warp=true)
     {
         Stop(this script);
     }
-    Call TTStoreBoardImpl((BoardHash + ((Depth % 2) * 31)))(Eval);
+    Call GetTTNodeHash(BoardHash)(Depth);
+    Call TTStoreBoardImpl(TTNodeHashResult)(Eval);
 }
 
 Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
@@ -8842,10 +8835,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
                 List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
                 List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
                 List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
-                If (Not ((BestMove == "")))
-                {
-                    List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-                }
+                List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
             }
         }
         Else
