@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9244 (30.06.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9244 (03.07.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -923,7 +923,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
+                If (((Not (Quiescence)) And (Horizon < TTProbeHorizonRes)) Or (Quiescence And (TTProbeHorizonRes == -1)))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)]))))))
                     {
@@ -988,7 +988,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If ((Depth > 1) And (IsInNullMove == 0))
     {
         Call //("Draw-by-stalemate detection. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
-        If ((Not (Quiescence)) And (Depth < 8))
+        If (Not (Quiescence))
         {
             If (Not ((CheckedState[(Depth + 0)] == 1)))
             {
@@ -1127,15 +1127,10 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("E")("")(0)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
         Stop(this script);
     }
-    If (Not (Quiescence))
+    Call //("Invoke board evaluation to calculate intermediate results if required");
+    Call Evaluate((Depth - 1))((1 == 0));
+    If Quiescence
     {
-        Call //("Full search => invoke board evaluation to calculate intermediate results if required");
-        Call Evaluate((Depth - 1))((1 == 0));
-    }
-    Else
-    {
-        Call //("Quiescence search standing pat handling (unless in check and must evade)");
-        Call Evaluate((Depth - 1))((1 == 0));
         If (CheckedState[Depth] == 1)
         {
             If ((Depth % 2) == 1)
@@ -1149,6 +1144,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         }
         Else
         {
+            Call //("Standing pat");
             Call Evaluate((Depth - 1))((1 == 1));
             List.ReplaceItem(BoardEval, Depth, EvaluateRes);
             List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
@@ -1248,7 +1244,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     {
         If (CheckedState[Depth] == 0)
         {
-            If (((Not (Quiescence)) And (((Depth > 1) And (((MaxDepth + PlyExtension[Depth]) - Depth) < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
+            If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
             {
                 Call Evaluate((Depth - 1))((1 == 1));
                 List.ReplaceItem(BoardEval, Depth, EvaluateRes);
@@ -1407,11 +1403,11 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     If ((Depth % 2) == 1)
                     {
-                        Eval = ((EvaluateRes - TargetPieces[Depth]) + FutilityMargin);
+                        Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) + FutilityMargin);
                     }
                     Else
                     {
-                        Eval = ((EvaluateRes - TargetPieces[Depth]) - FutilityMargin);
+                        Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) - FutilityMargin);
                     }
                     If ((((Depth % 2) == 1) And (Not ((Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((Eval < Betas[(Depth + 0)])))))
                     {
@@ -1499,9 +1495,16 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         {
                             Idx += 1;
                         }
-                        If (Idx < 3)
+                        If (Idx < 1)
                         {
-                            Idx = 3;
+                            Idx = 1;
+                        }
+                        If (1 == 0)
+                        {
+                            If (Idx < 3)
+                            {
+                                Idx = 3;
+                            }
                         }
                         If (PickedMoveCount[Depth] > Idx)
                         {
@@ -1533,7 +1536,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                     }
                                 }
                             }
-                            If (1 == 0)
+                            If (1 == 1)
                             {
                                 If (HashMoveMetaData[Depth] == 1)
                                 {
@@ -1544,7 +1547,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             {
                                 Reduction += -1;
                             }
-                            If (1 == 1)
+                            If (1 == 0)
                             {
                                 If ((((Depth % 2) == 1) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) < 2)) Or (((Depth % 2) == 0) And ((BlackPawnCountLocal + BlackMinorCountLocal) < 2)))
                                 {
@@ -8105,6 +8108,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             {
                                 If (((Not ((abs(SourcePiece) == GoK_BlackPawn))) Or (IdxToFile[(SourceIdx + 0)] == IdxToFile[(TargetIdx + 0)])) Or (Not ((Board[(TargetIdx + 0)] == 0))))
                                 {
+                                    Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
                                     Call ClearMoveList(Depth);
                                     Call AddMoveToList(TTProbeBestMoveRes)(Depth);
                                     List.ReplaceItem(MovesIdx, Depth, 1);
