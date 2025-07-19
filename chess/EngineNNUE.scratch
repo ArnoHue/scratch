@@ -1,3 +1,4 @@
+
 //----- Green flag events ---------------------------------------------------------------------------------------------
 
 WhenGreenFlagClicked()
@@ -90,7 +91,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.335c (16.07.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.336 (18.07.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -4161,7 +4162,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(PassedWhitePawnOnEndgame, all);
     List.DeleteItem(CastlingState, all);
     List.DeleteItem(PawnShelterCapture, all);
-    List.DeleteItem(BoardEval, all);
+    List.DeleteItem(StaticEval, all);
     List.DeleteItem(QuiescentCheckMoveCount, all);
     List.DeleteItem(HashMoveMetaData, all);
     Repeat (MaxSearchDepthStackFrames)
@@ -4207,7 +4208,7 @@ Define InitBoard (warp=true)
         List.Add(PassedWhitePawnOnEndgame, 0);
         List.Add(CastlingState, 0);
         List.Add(PawnShelterCapture, 0);
-        List.Add(BoardEval, "");
+        List.Add(StaticEval, "");
         List.Add(QuiescentCheckMoveCount, "");
         List.Add(HashMoveMetaData, "");
     }
@@ -5278,7 +5279,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
             }
             Idx += -2;
         }
-        If (Count < 1)
+        If (Count < 2)
         {
             IsQuiescentCheckRes = 1;
             Stop(this script);
@@ -6276,7 +6277,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                         {
                             If ((Board[MP.SourceIdx] * DepthEvalFactor[Depth]) > 0)
                             {
-                                If (IsClassicEndgameEval == 1)
+                                If ((IsClassicEndgameEval == 1) Or (1 == 1))
                                 {
                                     Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
                                 }
@@ -6529,7 +6530,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
@@ -6961,7 +6962,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     List.ReplaceItem(NodeTypes, Depth, "E");
     List.ReplaceItem(BestMoves, Depth, "");
     List.ReplaceItem(AppliedMove, Depth, "");
-    List.ReplaceItem(BoardEval, Depth, "");
+    List.ReplaceItem(StaticEval, Depth, "");
     List.ReplaceItem(PV, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
     If (IsSearchTimeout == 1)
     {
@@ -7017,6 +7018,11 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
     If (Not (Quiescence))
     {
+        Call Search_ReverseFutilityPruning(Depth)(Horizon);
+        If (Not ((SearchEvalResults[Depth] == "")))
+        {
+            Stop(this script);
+        }
         Call Search_NullMovePruning(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
         If (Not ((SearchEvalResults[Depth] == "")))
         {
@@ -7043,7 +7049,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         {
             Call //("Invoke full eval to establish standing pat value");
             Call Evaluate((Depth - 1))((1 == 1));
-            List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+            List.ReplaceItem(StaticEval, Depth, EvaluationRes);
             List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
             List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, EvaluationIsDynamicRes);
             If ((Depth % 2) == 1)
@@ -7072,14 +7078,14 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
         }
     }
-    If (BoardEval[Depth] == "")
+    If (StaticEval[Depth] == "")
     {
         If (CheckedState[Depth] == 0)
         {
             If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
             {
                 Call Evaluate((Depth - 1))((1 == 1));
-                List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+                List.ReplaceItem(StaticEval, Depth, EvaluationRes);
             }
         }
     }
@@ -7115,7 +7121,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 0) Or (TTProbeNode.BestMoveRes == ""))
             {
-                Call SearchNextPly((Depth))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((Horizon))(3)((1 == 0));
+                Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(3)((1 == 0));
             }
         }
         If (IsBlockProfilerEnabled == 1)
@@ -7167,12 +7173,9 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
             Else
             {
-                If (((Not (Quiescence)) And (Depth > 1)) And (((CheckedState[Depth] == 1) And (Horizon > 1)) And (IsEndgame == 0)))
+                If (((Not (Quiescence)) And (Depth > 1)) And ((CheckedState[Depth] == 1) And (IsEndgame == 0)))
                 {
-                    If (IsScratch3 == 1)
-                    {
-                        List.ReplaceItem(SearchExtension, Depth, 1);
-                    }
+                    List.ReplaceItem(SearchExtension, Depth, 1);
                 }
                 Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
                 Call Search_LMRNonPV(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
@@ -7662,7 +7665,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
                 Idx += -2;
             }
         }
-        If (Search.Count > 2)
+        If (Search.Count > 1)
         {
             List.ReplaceItem(SearchEvalResults, Depth, DrawByRepetitionEval);
             List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
@@ -7674,7 +7677,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
 Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (warp=true)
 {
     IsFutile = 0;
-    If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And ((PromotionPieces[Depth] == 0) And (Not ((BoardEval[Depth] == "")))))
+    If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And ((PromotionPieces[Depth] == 0) And (Not ((StaticEval[Depth] == "")))))
     {
         FutilityMargin = "";
         If Quiescence
@@ -7698,11 +7701,11 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
         {
             If ((Depth % 2) == 1)
             {
-                Eval = ((BoardEval[Depth] - TargetPieces[Depth]) + FutilityMargin);
+                Eval = ((StaticEval[Depth] - TargetPieces[Depth]) + FutilityMargin);
             }
             Else
             {
-                Eval = ((BoardEval[Depth] - TargetPieces[Depth]) - FutilityMargin);
+                Eval = ((StaticEval[Depth] - TargetPieces[Depth]) - FutilityMargin);
             }
             If ((((Depth % 2) == 1) And (Not ((Eval > Alphas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Eval < Betas[Depth])))))
             {
@@ -7714,11 +7717,11 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                 {
                     If ((Depth % 2) == 1)
                     {
-                        Eval = (BoardEval[Depth] + FutilityMargin);
+                        Eval = (StaticEval[Depth] + FutilityMargin);
                     }
                     Else
                     {
-                        Eval = (BoardEval[Depth] - FutilityMargin);
+                        Eval = (StaticEval[Depth] - FutilityMargin);
                     }
                     If ((((Depth % 2) == 1) And (Not ((Eval > Alphas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Eval < Betas[Depth])))))
                     {
@@ -7792,7 +7795,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     {
         CurrentValue = (BlackQueenCountLocal + BlackRookCountLocal);
         CurrentValue2 = (WhiteQueenCountLocal + WhiteRookCountLocal);
-        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 2)))
+        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And ((PromotionPieces[Depth] == 0) And (SearchExtension[Depth] == 0)))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 2)))
         {
             Call //("LMR search");
             Reduction = 0;
@@ -7817,7 +7820,6 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     CurrentValue = 31;
                 }
                 Reduction = floor((1 + ((ln(Horizon) * ln(CurrentValue)) / 2)));
-                Reduction += (0 - SearchExtension[Depth]);
                 If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                 {
                     Reduction += -1;
@@ -7946,7 +7948,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                 If ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackMinorCountLocal) > 1)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 1)))
                 {
                     Call Evaluate((Depth - 1))((1 == 1));
-                    List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+                    List.ReplaceItem(StaticEval, Depth, EvaluationRes);
                     If ((((Depth % 2) == 1) And (Not ((EvaluationRes < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((EvaluationRes > Alphas[Depth])))))
                     {
                         Reduction = (2 + floor((Horizon / 4)));
@@ -8017,6 +8019,49 @@ Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
     Event.Broadcast("UI_ShowBestMove");
 }
 
+Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
+{
+    If (((Depth > 2) And (Horizon < 7)) And ((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+    {
+        Call Evaluate((Depth - 1))((1 == 1));
+        List.ReplaceItem(StaticEval, Depth, EvaluationRes);
+        Delta = 0;
+        If ((Not ((StaticEval[(Depth - 2)] == ""))) And (1 == 0))
+        {
+            If ((Depth % 2) == 1)
+            {
+                If (StaticEval[Depth] > StaticEval[(Depth - 2)])
+                {
+                    Delta = 1;
+                }
+            }
+            Else
+            {
+                If (StaticEval[Depth] < StaticEval[(Depth - 2)])
+                {
+                    Delta = 1;
+                }
+            }
+        }
+        If ((Depth % 2) == 1)
+        {
+            If (Not (((EvaluationRes - (78 * (Horizon - Delta))) < Betas[Depth])))
+            {
+                List.ReplaceItem(SearchEvalResults, Depth, Betas[Depth]);
+                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
+            }
+        }
+        Else
+        {
+            If (Not (((EvaluationRes + (78 * (Horizon - Delta))) > Alphas[Depth])))
+            {
+                List.ReplaceItem(SearchEvalResults, Depth, Alphas[Depth]);
+                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
+            }
+        }
+    }
+}
+
 Define Search_TagSearchExtension(string Depth) (warp=true)
 {
     If (1 == 0)
@@ -8084,10 +8129,17 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or ((Quiescence And (TTProbeNode.HorizonRes == -1)) And (floor((TTProbeNode.AgeRes / 100)) == floor((TT.CurrentAge / 100)))))
+                If ((((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1))) And (floor((TTProbeNode.AgeRes / 100)) == floor((TT.CurrentAge / 100))))
                 {
                     If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
                     {
+                        If ((Not ((TTProbeNode.NodeTypeRes == "E"))) And (Not ((TTProbeNode.BestMoveRes == ""))))
+                        {
+                            If ((floor((TTProbeNode.BestMoveRes / 100)) == 0) Or (Board[floor((TTProbeNode.BestMoveRes % 100))] == 0))
+                            {
+                                Call StoreKillerMove(Depth)(TTProbeNode.BestMoveRes);
+                            }
+                        }
                         If ((Not ((TTProbeNode.EvalIsDynamicRes == 1))) Or (TTProbeNode.AgeRes == TT.CurrentAge))
                         {
                             If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
@@ -9109,7 +9161,7 @@ Define _ClearLists (warp=true)
     List.DeleteItem(PassedWhitePawnOnEndgame, all);
     List.DeleteItem(CastlingState, all);
     List.DeleteItem(PawnShelterCapture, all);
-    List.DeleteItem(BoardEval, all);
+    List.DeleteItem(StaticEval, all);
     List.DeleteItem(QuiescentCheckMoveCount, all);
     List.DeleteItem(DepthEvalFactor, all);
     List.DeleteItem(CastlingStateLookup, all);
