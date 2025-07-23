@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9245 (23.07.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9245se (23.07.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -817,7 +817,7 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
     ProfBestMoveCountQ = 0;
     ProfBestMoveIdxSumQ = 0;
     MinMaxTimer = (Sensing.DaysSince2000() * 86400);
-    Call AlphaBetaMinMaxImpl(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0));
+    Call AlphaBetaMinMaxImpl(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
     MinMaxTimer = ((Sensing.DaysSince2000() * 86400) - MinMaxTimer);
     Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
     Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
@@ -841,7 +841,7 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
     NPS = Operator.Round(((NodeCount + NodeCountQ) / MinMaxTimer));
 }
 
-Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
+Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludeMove) (warp=true)
 {
     Call //("Search function (minimax / alpha-beta pruning)");
     List.ReplaceItem(MinMaxResults, Depth, "");
@@ -907,7 +907,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     Idx += -2;
                 }
             }
-            If (Count1 > 1)
+            If (Count1 > 2)
             {
                 List.ReplaceItem(MinMaxResults, Depth, DrawByRepetitionEval);
                 List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
@@ -1226,7 +1226,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                             List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
                         }
-                        Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(Reduction)((Not (Cutnode)));
+                        Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(Reduction)((Not (Cutnode)))("");
                         Score = MinMaxResults[(Depth + 1)];
                         ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
                         Call RevertMove((Depth + 0));
@@ -1286,7 +1286,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 0) Or (TTProbeBestMoveRes == ""))
             {
-                Call AlphaBetaMinMaxImpl((Depth + 1))(MinDepth)((MaxDepth - 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0));
+                Call AlphaBetaMinMaxImpl((Depth + 1))(MinDepth)((MaxDepth - 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0))("");
             }
         }
         If (IsBlockProfilerEnabled == 1)
@@ -1381,7 +1381,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
             Call //("Futility pruning");
             IsFutile = 0;
-            If ((CheckedState[Depth] == 0) And ((PutsInCheck[Depth] == 0) And ((PromotionPieces[Depth] == 0) And (Not ((BoardEval[Depth] == ""))))))
+            If ((CheckedState[Depth] == 0) And ((PutsInCheck[Depth] == 0) And ((PromotionPieces[Depth] == 0) And ((Not ((BoardEval[Depth] == ""))) And (Not ((AppliedMove[Depth] == ExcludeMove)))))))
             {
                 FutilityMargin = "";
                 If Quiescence
@@ -1455,7 +1455,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
             If (1 == 1)
             {
-                If (IsFutile == 0)
+                If ((IsFutile == 0) And (Not ((AppliedMove[Depth] == ExcludeMove))))
                 {
                     If (Quiescence And ((CheckedState[Depth] == 0) And (Not ((TargetPieces[Depth] == 0)))))
                     {
@@ -1467,7 +1467,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     }
                 }
             }
-            If (IsFutile == 1)
+            If ((IsFutile == 1) Or (AppliedMove[Depth] == ExcludeMove))
             {
                 Call RevertMove(Depth);
             }
@@ -1478,6 +1478,44 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     If (IsScratch3 == 1)
                     {
                         List.ReplaceItem(PlyExtension, Depth, 1);
+                    }
+                }
+                If (((Depth > 1) And (Horizon > 5)) And (HashMove[Depth] == AppliedMove[Depth]))
+                {
+                    Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
+                    If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+                    {
+                        If ((Not (Quiescence)) And (Not ((TTProbeHorizonRes < (Horizon - 3)))))
+                        {
+                            If ((((Depth % 2) == 1) And (TTProbeNodeTypeRes == "B")) Or (((Depth % 2) == 0) And (TTProbeNodeTypeRes == "A")))
+                            {
+                                SE.BoundEval = TTProbeNodeScoreRes;
+                                Call RevertMove(Depth);
+                                Call ClearMoveList((Depth + 1));
+                                Call AddMoveToList(0)((Depth + 1));
+                                List.ReplaceItem(MovesIdx, (Depth + 1), 1);
+                                Call ApplyMove((Depth + 1));
+                                If ((Depth % 2) == 1)
+                                {
+                                    List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
+                                    List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
+                                }
+                                Else
+                                {
+                                    List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
+                                    List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
+                                }
+                                Reduction = (Horizon - floor((Horizon / 2)));
+                                Call AlphaBetaMinMaxNextPly((Depth + 2))(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
+                                Score = MinMaxResults[(Depth + 2)];
+                                Call RevertMove((Depth + 1));
+                                Call ApplyMove(Depth);
+                                If ((((Depth % 2) == 1) And (Score < SE.BoundEval)) Or (((Depth % 2) == 0) And (Score > SE.BoundEval)))
+                                {
+                                    List.ReplaceItem(PlyExtension, Depth, 1);
+                                }
+                            }
+                        }
                     }
                 }
                 Call //("Late move reduction preparation");
@@ -1596,7 +1634,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                                 List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
                             }
-                            Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(Reduction)((1 == 1));
+                            Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(Reduction)((1 == 1))("");
                             Score = MinMaxResults[(Depth + 1)];
                             ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
                             IsReductionAndDone = 1;
@@ -1615,7 +1653,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                             List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
                         }
-                        Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(0)((Not (Cutnode)));
+                        Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(0)((Not (Cutnode)))("");
                         Score = MinMaxResults[(Depth + 1)];
                         ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
                         If ((Score > Alphas[Depth]) And (Score < Betas[Depth]))
@@ -1633,7 +1671,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                     List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(0)((1 == 0));
+                    Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(0)((1 == 0))("");
                     Score = MinMaxResults[(Depth + 1)];
                     ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
                 }
@@ -1950,16 +1988,16 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
 }
 
-Define AlphaBetaMinMaxNextPly(string CurrentDepth)(string MinDepth)(string MaxDepth)(bool CurrentInitialDeepening)(string QuiescenceDepth)(bool CurrentQuiescence)(bool PrevQuiescence)(string CurrentHorizon)(string Reduction)(bool CurrentCutnode) (warp=true)
+Define AlphaBetaMinMaxNextPly(string CurrentDepth)(string MinDepth)(string MaxDepth)(bool CurrentInitialDeepening)(string QuiescenceDepth)(bool CurrentQuiescence)(bool PrevQuiescence)(string CurrentHorizon)(string Reduction)(bool CurrentCutnode)(string ExcludeNode) (warp=true)
 {
     If ((QuiescenceDepth > 0) And ((CurrentHorizon - Reduction) == 1))
     {
         Call //("If on full search and max depth reached, extend or switch to quiescence. If on quiescence search, continue");
-        Call AlphaBetaMinMaxImpl((CurrentDepth + 1))(MinDepth)((MaxDepth + 1))(CurrentInitialDeepening)((QuiescenceDepth - 1))((CurrentQuiescence Or (PlyExtension[CurrentDepth] == 0)))(CurrentQuiescence)(CurrentQuiescence)(1)((1 == 1));
+        Call AlphaBetaMinMaxImpl((CurrentDepth + 1))(MinDepth)((MaxDepth + 1))(CurrentInitialDeepening)((QuiescenceDepth - 1))((CurrentQuiescence Or (PlyExtension[CurrentDepth] == 0)))(CurrentQuiescence)(CurrentQuiescence)(1)((1 == 1))(ExcludeNode);
     }
     Else
     {
-        Call AlphaBetaMinMaxImpl((CurrentDepth + 1))(MinDepth)(((MaxDepth + PlyExtension[CurrentDepth]) - Reduction))(CurrentInitialDeepening)(QuiescenceDepth)(CurrentQuiescence)(CurrentQuiescence)(CurrentQuiescence)((((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) - 1))(CurrentCutnode);
+        Call AlphaBetaMinMaxImpl((CurrentDepth + 1))(MinDepth)(((MaxDepth + PlyExtension[CurrentDepth]) - Reduction))(CurrentInitialDeepening)(QuiescenceDepth)(CurrentQuiescence)(CurrentQuiescence)(CurrentQuiescence)((((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) - 1))(CurrentCutnode)(ExcludeNode);
     }
 }
 
@@ -5463,7 +5501,6 @@ Define GetBestMoveMedDiff (warp=false)
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 25);
-    List.Add(AWSize, 35);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsMinMaxTimeout = 0;
@@ -6564,6 +6601,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(PawnShelterCapture, all);
     List.DeleteItem(BoardEval, all);
     List.DeleteItem(HashMoveMetaData, all);
+    List.DeleteItem(HashMove, all);
     Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(Alphas, "");
@@ -6613,6 +6651,7 @@ Define InitBoard (warp=true)
         List.Add(PawnShelterCapture, 0);
         List.Add(BoardEval, "");
         List.Add(HashMoveMetaData, "");
+        List.Add(HashMove, "");
     }
     List.DeleteItem(PV, all);
     Repeat ((MaxSearchDepthStackFrames * MaxSearchDepthStackFrames))
@@ -8019,6 +8058,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     {
         Call //("Phase 1: Look up hash-move from transposition table");
         List.ReplaceItem(HashMoveMetaData, Depth, "");
+        List.ReplaceItem(HashMove, Depth, "");
         List.ReplaceItem(PickedMoves, Depth, ":");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
         List.ReplaceItem(MovesCount, Depth, 0);
@@ -8080,6 +8120,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                                     List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
                                     List.ReplaceItem(PickPhase, Depth, 2);
                                     List.ReplaceItem(PickMoveRes, Depth, 1);
+                                    List.ReplaceItem(HashMove, Depth, AppliedMove[Depth]);
                                     List.ReplaceItem(HashMoveMetaData, Depth, (Not ((TargetPieces[Depth] == 0))));
                                     Stop(this script);
                                 }
