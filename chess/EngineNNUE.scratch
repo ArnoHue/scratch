@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.336 (23.07.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.336se (24.07.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1835,6 +1835,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         If (IsClassicEndgameEval == 0)
         {
             Call NNUE_Public_Evaluate((Depth + 1));
+            Call EvaluatePostProcess(Depth);
             EvaluationRes = Operator.Round(NNUE_EvalRes);
             EvaluationIsDynamicRes = 0;
             Call TTStoreBoard(CurrentBoardHash)((Depth + 1))(EvaluationRes);
@@ -1943,129 +1944,126 @@ Define EvaluateBoardBasic (warp=true)
 Define EvaluatePostProcess(string Depth) (warp=true)
 {
     Call //("Early promotion detection via Rule-of-Squares / Chebyshev distance");
-    If (IsClassicEndgameEval == 1)
+    If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
     {
-        If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
+        List.DeleteItem(BlackPawnCount, all);
+        List.DeleteItem(WhitePawnCount, all);
+        Repeat (8)
         {
-            List.DeleteItem(BlackPawnCount, all);
-            List.DeleteItem(WhitePawnCount, all);
-            Repeat (8)
+            List.Add(BlackPawnCount, 0);
+            List.Add(WhitePawnCount, 0);
+        }
+        List.DeleteItem(PawnAdvancePerFile, all);
+        Repeat (32)
+        {
+            List.Add(PawnAdvancePerFile, 0);
+        }
+        Idx = 1;
+        Repeat (64)
+        {
+            SourcePiece = Board[Idx];
+            If (SourcePiece == GoK_BlackPawn)
             {
-                List.Add(BlackPawnCount, 0);
-                List.Add(WhitePawnCount, 0);
-            }
-            List.DeleteItem(PawnAdvancePerFile, all);
-            Repeat (32)
-            {
-                List.Add(PawnAdvancePerFile, 0);
-            }
-            Idx = 1;
-            Repeat (64)
-            {
-                SourcePiece = Board[Idx];
-                If (SourcePiece == GoK_BlackPawn)
+                File = IdxToFile[Idx];
+                Rank = IdxToRank[Idx];
+                List.ReplaceItem(BlackPawnCount, File, (BlackPawnCount[File] + 1));
+                If ((PawnAdvancePerFile[(File + 16)] == 0) Or (Rank < PawnAdvancePerFile[(File + 16)]))
                 {
-                    File = IdxToFile[Idx];
-                    Rank = IdxToRank[Idx];
-                    List.ReplaceItem(BlackPawnCount, File, (BlackPawnCount[File] + 1));
-                    If ((PawnAdvancePerFile[(File + 16)] == 0) Or (Rank < PawnAdvancePerFile[(File + 16)]))
-                    {
-                        List.ReplaceItem(PawnAdvancePerFile, (File + 16), Rank);
-                    }
-                    If (Rank > PawnAdvancePerFile[(File + 24)])
-                    {
-                        List.ReplaceItem(PawnAdvancePerFile, (File + 24), Rank);
-                    }
+                    List.ReplaceItem(PawnAdvancePerFile, (File + 16), Rank);
                 }
-                If (SourcePiece == GoK_WhitePawn)
+                If (Rank > PawnAdvancePerFile[(File + 24)])
                 {
-                    File = IdxToFile[Idx];
-                    Rank = IdxToRank[Idx];
-                    List.ReplaceItem(WhitePawnCount, File, (WhitePawnCount[File] + 1));
-                    If (Rank > PawnAdvancePerFile[File])
-                    {
-                        List.ReplaceItem(PawnAdvancePerFile, File, Rank);
-                    }
-                    If ((PawnAdvancePerFile[(File + 8)] == 0) Or (Rank < PawnAdvancePerFile[(File + 8)]))
-                    {
-                        List.ReplaceItem(PawnAdvancePerFile, (File + 8), Rank);
-                    }
+                    List.ReplaceItem(PawnAdvancePerFile, (File + 24), Rank);
                 }
-                Idx += 1;
             }
-            Count = 0;
-            Count2 = 0;
-            Idx = 1;
-            Repeat (8)
+            If (SourcePiece == GoK_WhitePawn)
             {
-                WhitePawnForwardRank = PawnAdvancePerFile[(Idx + 8)];
-                BlackPawnForwardRank = PawnAdvancePerFile[(Idx + 24)];
-                If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+                File = IdxToFile[Idx];
+                Rank = IdxToRank[Idx];
+                List.ReplaceItem(WhitePawnCount, File, (WhitePawnCount[File] + 1));
+                If (Rank > PawnAdvancePerFile[File])
                 {
-                    If ((WhitePawnForwardRank < 7) And (WhitePawnForwardRank > 0))
+                    List.ReplaceItem(PawnAdvancePerFile, File, Rank);
+                }
+                If ((PawnAdvancePerFile[(File + 8)] == 0) Or (Rank < PawnAdvancePerFile[(File + 8)]))
+                {
+                    List.ReplaceItem(PawnAdvancePerFile, (File + 8), Rank);
+                }
+            }
+            Idx += 1;
+        }
+        Count = 0;
+        Count2 = 0;
+        Idx = 1;
+        Repeat (8)
+        {
+            WhitePawnForwardRank = PawnAdvancePerFile[(Idx + 8)];
+            BlackPawnForwardRank = PawnAdvancePerFile[(Idx + 24)];
+            If ((BlackQueenCountLocal + BlackMinorCountLocal) == 0)
+            {
+                If ((WhitePawnForwardRank < 7) And (WhitePawnForwardRank > 0))
+                {
+                    BlackPawnBackwardRank = PawnAdvancePerFile[(Idx + 16)];
+                    If ((WhitePawnForwardRank < BlackPawnBackwardRank) Or (BlackPawnBackwardRank == 0))
                     {
-                        BlackPawnBackwardRank = PawnAdvancePerFile[(Idx + 16)];
-                        If ((WhitePawnForwardRank < BlackPawnBackwardRank) Or (BlackPawnBackwardRank == 0))
+                        LeftOppPawnRank = PawnAdvancePerFile[((Idx + 16) - 1)];
+                        If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (WhitePawnForwardRank < LeftOppPawnRank))
                         {
-                            LeftOppPawnRank = PawnAdvancePerFile[((Idx + 16) - 1)];
-                            If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (WhitePawnForwardRank < LeftOppPawnRank))
+                            RightOppPawnRank = PawnAdvancePerFile[((Idx + 16) + 1)];
+                            If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (WhitePawnForwardRank < RightOppPawnRank))
                             {
-                                RightOppPawnRank = PawnAdvancePerFile[((Idx + 16) + 1)];
-                                If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (WhitePawnForwardRank < RightOppPawnRank))
+                                TargetIdx = Idx;
+                                Delta = (WhitePawnForwardRank - 1);
+                                If (Delta > 5)
                                 {
-                                    TargetIdx = Idx;
-                                    Delta = (WhitePawnForwardRank - 1);
-                                    If (Delta > 5)
+                                    Delta = 5;
+                                }
+                                If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
+                                {
+                                    If (Count == 0)
                                     {
-                                        Delta = 5;
+                                        EvaluationRes += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
                                     }
-                                    If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
-                                    {
-                                        If (Count == 0)
-                                        {
-                                            EvaluationRes += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
-                                        }
-                                        Count += 1;
-                                    }
+                                    Count += 1;
                                 }
                             }
                         }
                     }
                 }
-                If ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0)
+            }
+            If ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0)
+            {
+                If (BlackPawnForwardRank > 2)
                 {
-                    If (BlackPawnForwardRank > 2)
+                    WhitePawnBackwardRank = PawnAdvancePerFile[Idx];
+                    If (BlackPawnForwardRank > WhitePawnBackwardRank)
                     {
-                        WhitePawnBackwardRank = PawnAdvancePerFile[Idx];
-                        If (BlackPawnForwardRank > WhitePawnBackwardRank)
+                        LeftOppPawnRank = PawnAdvancePerFile[(Idx - 1)];
+                        If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (BlackPawnForwardRank > LeftOppPawnRank))
                         {
-                            LeftOppPawnRank = PawnAdvancePerFile[(Idx - 1)];
-                            If (((Idx == 1) Or (LeftOppPawnRank == 0)) Or (BlackPawnForwardRank > LeftOppPawnRank))
+                            RightOppPawnRank = PawnAdvancePerFile[(Idx + 1)];
+                            If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (BlackPawnForwardRank > RightOppPawnRank))
                             {
-                                RightOppPawnRank = PawnAdvancePerFile[(Idx + 1)];
-                                If (((Idx == 8) Or (RightOppPawnRank == 0)) Or (BlackPawnForwardRank > RightOppPawnRank))
+                                TargetIdx = (56 + Idx);
+                                Delta = (8 - BlackPawnForwardRank);
+                                If (Delta > 5)
                                 {
-                                    TargetIdx = (56 + Idx);
-                                    Delta = (8 - BlackPawnForwardRank);
-                                    If (Delta > 5)
+                                    Delta = 5;
+                                }
+                                If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
+                                {
+                                    If (Count2 == 0)
                                     {
-                                        Delta = 5;
+                                        EvaluationRes += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
                                     }
-                                    If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
-                                    {
-                                        If (Count2 == 0)
-                                        {
-                                            EvaluationRes += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
-                                        }
-                                        Count2 += 1;
-                                    }
+                                    Count2 += 1;
                                 }
                             }
                         }
                     }
                 }
-                Idx += 1;
             }
+            Idx += 1;
         }
     }
 }
@@ -4171,6 +4169,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardEval, all);
     List.DeleteItem(QuiescentCheckMoveCount, all);
     List.DeleteItem(HashMoveMetaData, all);
+    List.DeleteItem(HashMove, all);
     Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(Alphas, "");
@@ -4217,6 +4216,7 @@ Define InitBoard (warp=true)
         List.Add(BoardEval, "");
         List.Add(QuiescentCheckMoveCount, "");
         List.Add(HashMoveMetaData, "");
+        List.Add(HashMove, "");
     }
     List.DeleteItem(PV, all);
     Repeat ((MaxSearchDepthStackFrames * MaxSearchDepthStackFrames))
@@ -6237,6 +6237,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     If (PickPhase[Depth] == 1)
     {
         Call //("Phase 1: Look up hash-move from transposition table");
+        List.ReplaceItem(HashMove, Depth, "");
         List.ReplaceItem(HashMoveMetaData, Depth, "");
         List.ReplaceItem(PickedMoves, Depth, ":");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
@@ -6293,16 +6294,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                                 List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
                                 List.ReplaceItem(PickPhase, Depth, 2);
                                 List.ReplaceItem(PickMoveRes, Depth, 1);
-                                If (1 == 0)
+                                List.ReplaceItem(HashMove, Depth, AppliedMove[Depth]);
+                                If (TargetPieces[Depth] == 0)
                                 {
-                                    If (TargetPieces[Depth] == 0)
-                                    {
-                                        List.ReplaceItem(HashMoveMetaData, Depth, 0);
-                                    }
-                                    Else
-                                    {
-                                        List.ReplaceItem(HashMoveMetaData, Depth, 1);
-                                    }
+                                    List.ReplaceItem(HashMoveMetaData, Depth, 0);
+                                }
+                                Else
+                                {
+                                    List.ReplaceItem(HashMoveMetaData, Depth, 1);
                                 }
                                 Stop(this script);
                             }
@@ -6936,7 +6935,7 @@ Define Search(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool 
     ProfBestMoveCountQ = 0;
     ProfBestMoveIdxSumQ = 0;
     SearchTimer = (Sensing.DaysSince2000() * 86400);
-    Call SearchImpl(MinDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0));
+    Call SearchImpl(MinDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
     SearchTimer = ((Sensing.DaysSince2000() * 86400) - SearchTimer);
     Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
     Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
@@ -6960,7 +6959,7 @@ Define Search(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool 
     NPS = Operator.Round(((NodeCount + NodeCountQ) / SearchTimer));
 }
 
-Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
+Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
 {
     Call //("Search function (minimax / alpha-beta pruning)");
     List.ReplaceItem(SearchEvalResults, Depth, "");
@@ -7122,7 +7121,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 0) Or (TTProbeNode.BestMoveRes == ""))
             {
-                Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(3)((1 == 0));
+                Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(3)((1 == 0))("");
             }
         }
         If (IsBlockProfilerEnabled == 1)
@@ -7166,20 +7165,28 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 List.ReplaceItem(PutsInCheck, Depth, 1);
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)(0)("")("")("")("")("")("")("");
             }
-            Call Search_FutilityPruning(Depth)(Quiescence)(Horizon);
-            If (IsFutile == 1)
+            Call Search_FutilityPruning(Depth)(Quiescence)(Horizon)(ExcludedMove);
+            If ((IsFutile == 1) Or (AppliedMove[Depth] == ExcludedMove))
             {
                 Call //("If futile, ignore this move");
                 Call RevertMove(Depth);
             }
             Else
             {
-                If (((Not (Quiescence)) And (Depth > 1)) And (((CheckedState[Depth] == 1) And (Horizon > 1)) And (IsEndgame == 0)))
+                Call Search_SingularExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
+                If (SE.IsSingularExtension == 1)
                 {
-                    Call SEE(Depth);
-                    If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                    List.ReplaceItem(SearchExtension, Depth, 1);
+                }
+                If (1 == 0)
+                {
+                    If (((Not (Quiescence)) And (Depth > 1)) And (((CheckedState[Depth] == 1) And (Horizon > 1)) And (IsEndgame == 0)))
                     {
-                        List.ReplaceItem(SearchExtension, Depth, 1);
+                        Call SEE(Depth);
+                        If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                        {
+                            List.ReplaceItem(SearchExtension, Depth, 1);
+                        }
                     }
                 }
                 Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
@@ -7189,7 +7196,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                     Call //("Move was not pruned upfront, enter full depth + current window search");
                     List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                     List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0));
+                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
                     Eval = SearchEvalResults[(Depth + 1)];
                     EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                 }
@@ -7479,16 +7486,16 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
 }
 
-Define SearchNextPly(string CurrentDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(string Reduction)(bool Cutnode) (warp=true)
+Define SearchNextPly(string CurrentDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(string Reduction)(bool Cutnode)(string ExcludeMove) (warp=true)
 {
     If ((QuiescenceDepth > 0) And ((Horizon - Reduction) == 1))
     {
         Call //("If still on full search: max depth reached, extend or continue with quiescence. If on quiescence search, simply continue");
-        Call SearchImpl((CurrentDepth + 1))(InitialDeepening)((QuiescenceDepth - 1))((Quiescence Or (SearchExtension[CurrentDepth] == 0)))(ShowProgress)(1)((1 == 1));
+        Call SearchImpl((CurrentDepth + 1))(InitialDeepening)((QuiescenceDepth - 1))((Quiescence Or (SearchExtension[CurrentDepth] == 0)))(ShowProgress)(1)((1 == 1))(ExcludeMove);
     }
     Else
     {
-        Call SearchImpl((CurrentDepth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((((Horizon + SearchExtension[CurrentDepth]) - Reduction) - 1))(Cutnode);
+        Call SearchImpl((CurrentDepth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((((Horizon + SearchExtension[CurrentDepth]) - Reduction) - 1))(Cutnode)(ExcludeMove);
     }
 }
 
@@ -7679,10 +7686,10 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
     }
 }
 
-Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (warp=true)
+Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(string ExcludedMove) (warp=true)
 {
     IsFutile = 0;
-    If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And ((PromotionPieces[Depth] == 0) And (Not ((BoardEval[Depth] == "")))))
+    If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And ((PromotionPieces[Depth] == 0) And ((Not ((BoardEval[Depth] == ""))) And (Not ((AppliedMove[Depth] == ExcludedMove))))))
     {
         FutilityMargin = "";
         If Quiescence
@@ -7880,7 +7887,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                     List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
                 }
-                Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1));
+                Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
                 Eval = SearchEvalResults[(Depth + 1)];
                 EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                 Search.LmrNonPV.IsReSearchRequired = 0;
@@ -7903,7 +7910,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
                 List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
             }
-            Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)));
+            Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)))("");
             Eval = SearchEvalResults[(Depth + 1)];
             EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
             If ((Eval > Alphas[Depth]) And (Eval < Betas[Depth]))
@@ -7957,7 +7964,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                             List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
                             List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
                         }
-                        Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)));
+                        Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)))("");
                         Eval = SearchEvalResults[(Depth + 1)];
                         EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
                         Call RevertMove((Depth + 0));
@@ -8000,6 +8007,50 @@ Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
         }
     }
     Event.Broadcast("UI_ShowBestMove");
+}
+
+Define Search_SingularExtensions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool CutNode)(string ExcludedNode) (warp=true)
+{
+    SE.IsSingularExtension = 0;
+    If (((Depth > 1) And (Horizon > 5)) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedNode == "")))
+    {
+        Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
+        If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
+        {
+            If (Not ((TTProbeNode.HorizonRes < (Horizon - 3))))
+            {
+                If ((((Depth % 2) == 1) And (TTProbeNode.NodeTypeRes == "B")) Or (((Depth % 2) == 0) And (TTProbeNode.NodeTypeRes == "A")))
+                {
+                    SE.BoundEval = TTProbeNode.EvalRes;
+                    Call RevertMove(Depth);
+                    Call ClearMoveList((Depth + 1));
+                    Call AddMoveToList(0)((Depth + 1));
+                    List.ReplaceItem(MovesIdx, (Depth + 1), 1);
+                    Call ApplyMove((Depth + 1));
+                    If ((Depth % 2) == 1)
+                    {
+                        List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
+                        List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
+                    }
+                    Else
+                    {
+                        List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
+                        List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
+                    }
+                    Reduction = (Horizon - floor((Horizon / 2)));
+                    Call SearchNextPly((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(CutNode)(HashMove[Depth]);
+                    Eval = SearchEvalResults[(Depth + 2)];
+                    Call RevertMove((Depth + 1));
+                    Call ApplyMove(Depth);
+                    SE.IsSingularExtension = 0;
+                    If ((((Depth % 2) == 1) And (Eval < Betas[Depth])) Or (((Depth % 2) == 0) And (Eval > Alphas[Depth])))
+                    {
+                        SE.IsSingularExtension = 1;
+                    }
+                }
+            }
+        }
+    }
 }
 
 Define Search_TagSearchExtension(string Depth) (warp=true)
