@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.336_380_se (25.07.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.336_380_se (26.07.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -6999,7 +6999,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         Stop(this script);
     }
-    Call Search_TTProbeEval(Depth)(InitialDeepening)(Quiescence)(Horizon);
+    Call Search_TTProbeEval(Depth)(InitialDeepening)(Quiescence)(Horizon)("");
     If (Not ((SearchEvalResults[Depth] == "")))
     {
         Stop(this script);
@@ -7178,20 +7178,20 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
             Else
             {
-                Call Search_SingularExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
-                If (SE.IsSingularExtension == 1)
+                If (((Not (Quiescence)) And (Depth > 1)) And ((CheckedState[Depth] == 1) And (IsEndgame == 0)))
                 {
-                    List.ReplaceItem(SearchExtension, Depth, 1);
-                }
-                If (1 == 1)
-                {
-                    If (((Not (Quiescence)) And (Depth > 1)) And ((CheckedState[Depth] == 1) And (IsEndgame == 0)))
+                    Call SEE(Depth);
+                    If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
                     {
-                        Call SEE(Depth);
-                        If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
-                        {
-                            List.ReplaceItem(SearchExtension, Depth, 1);
-                        }
+                        List.ReplaceItem(SearchExtension, Depth, 1);
+                    }
+                }
+                If (SearchExtension[Depth] == 0)
+                {
+                    Call Search_SingularExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
+                    If (SE.IsSingularExtension == 1)
+                    {
+                        List.ReplaceItem(SearchExtension, Depth, 1);
                     }
                 }
                 Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
@@ -7399,7 +7399,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
     }
     Call //("Fast full search checkmate and stalemate detection");
-    If ((Not (Quiescence)) And (MovesCount[Depth] == 0))
+    If ((Not (Quiescence)) And ((MovesCount[Depth] == 0) And (ExcludedMove == "")))
     {
         List.ReplaceItem(NodeTypes, Depth, "E");
         If ((Depth % 2) == 1)
@@ -7452,7 +7452,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             List.ReplaceItem(BestMoves, Depth, CurrentMove);
         }
     }
-    If ((IsSearchTimeout == 0) And (Depth > 1))
+    If (((IsSearchTimeout == 0) And (Depth > 1)) And (ExcludedMove == ""))
     {
         Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
         If Quiescence
@@ -8014,10 +8014,10 @@ Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
     Event.Broadcast("UI_ShowBestMove");
 }
 
-Define Search_SingularExtensions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool CutNode)(string ExcludedNode) (warp=true)
+Define Search_SingularExtensions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedNode) (warp=true)
 {
     SE.IsSingularExtension = 0;
-    If (((Depth > 1) And (Horizon > 5)) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedNode == "")))
+    If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 5))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedNode == "")))
     {
         Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
         If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
@@ -8043,12 +8043,12 @@ Define Search_SingularExtensions(string Depth)(bool InitialDeepening)(string Qui
                         List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
                     }
                     Reduction = (Horizon - floor((Horizon / 2)));
-                    Call SearchNextPly((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(CutNode)(HashMove[Depth]);
+                    Call SearchNextPly((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
                     Eval = SearchEvalResults[(Depth + 2)];
                     Call RevertMove((Depth + 1));
                     Call ApplyMove(Depth);
                     SE.IsSingularExtension = 0;
-                    If ((((Depth % 2) == 1) And (Eval < Betas[Depth])) Or (((Depth % 2) == 0) And (Eval > Alphas[Depth])))
+                    If ((((Depth % 2) == 1) And (Eval < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (Eval > Alphas[(Depth + 2)])))
                     {
                         SE.IsSingularExtension = 1;
                     }
@@ -8115,9 +8115,9 @@ Define Search_TagSearchExtension(string Depth) (warp=true)
     }
 }
 
-Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(string Horizon) (warp=true)
+Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(string Horizon)(string ExcludedMove) (warp=true)
 {
-    If ((Depth > 1) And (Not (InitialDeepening)))
+    If (((Depth > 1) And (Not (InitialDeepening))) And (ExcludedMove == ""))
     {
         If (((Betas[Depth] - Alphas[Depth]) == 1) Or (1 == 0))
         {
