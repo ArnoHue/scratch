@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9245se (26.07.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.924 (27.07.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -923,7 +923,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (floor((TTProbeNodeAgeRes / 100)) == floor((TTCurrentAge / 100)))))
+                If ((((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1))) And (floor((TTProbeNodeAgeRes / 100)) == floor((TTCurrentAge / 100))))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)]))))))
                     {
@@ -1499,15 +1499,15 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                     Call ApplyMove((Depth + 1));
                                     If ((Depth % 2) == 1)
                                     {
+                                        SE.BoundEval += (0 - (Horizon * 3));
                                         List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
                                         List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
-                                        SE.BoundEval += (0 - (Horizon * 3));
                                     }
                                     Else
                                     {
+                                        SE.BoundEval += (Horizon * 3);
                                         List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
                                         List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
-                                        SE.BoundEval += (Horizon * 3);
                                     }
                                     Reduction = floor((Horizon / 2));
                                     Call AlphaBetaMinMaxNextPly((Depth + 2))(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
@@ -3194,7 +3194,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
         Call StoreAttackInfo(1)(1);
         Call CalcBoardAttackedByMove(2);
         Call StoreAttackInfo(2)(1);
-        Call PrepareEvalPiecesData;
+        Call PrepareEvalPiecesData(1);
         Call EvaluatePawns(1);
         Call EvaluateMajorsMinors(1);
         Call EvaluateThreats(1);
@@ -3209,7 +3209,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
     {
         List.ReplaceItem(PosScoreDeltaSum, Depth, PosScoreDelta[Depth]);
         List.ReplaceItem(CapturesDeltaSum, Depth, TargetPieces[Depth]);
-        Call PrepareEvalPiecesData;
+        Call PrepareEvalPiecesData(Depth);
         Call EvaluatePawns(Depth);
         List.ReplaceItem(EvalExtended1, Depth, EvalPawnsResult);
         Call EvaluateMajorsMinors(Depth);
@@ -3241,7 +3241,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             }
             Stop(this script);
         }
-        Call PrepareEvalPiecesData;
+        Call PrepareEvalPiecesData(Depth);
         Call EvaluatePawns(Depth);
         List.ReplaceItem(EvalExtended1, Depth, EvalPawnsResult);
         Call EvaluateMajorsMinors(Depth);
@@ -3313,6 +3313,33 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
 {
     Call TaperedEval.Init;
     EvalPieceIdx = 1;
+    Repeat (List.Length(EvalPiecesIdx_NonPawns))
+    {
+        IdxOuter = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
+        SourcePieceOuter = Board[(IdxOuter + 0)];
+        If (PieceMobility[IdxOuter] == 0)
+        {
+            If ((SourcePieceOuter == GoK_BlackKnight) Or (SourcePieceOuter == GoK_BlackBishop))
+            {
+                If ((IdxToRank[IdxOuter] == 8) And (BoardAttackedByBlack[IdxOuter] == 0))
+                {
+                    Call TaperedEval.AddIdentical(-250);
+                }
+            }
+            Else
+            {
+                If ((SourcePieceOuter == GoK_WhiteKnight) Or (SourcePieceOuter == GoK_WhiteBishop))
+                {
+                    If ((IdxToRank[IdxOuter] == 1) And (BoardAttackedByWhite[IdxOuter] == 0))
+                    {
+                        Call TaperedEval.AddIdentical(250);
+                    }
+                }
+            }
+        }
+        EvalPieceIdx += 1;
+    }
+    EvalPieceIdx = 1;
     Repeat (List.Length(EvalPiecesIdx_Rooks))
     {
         IdxOuter = EvalPiecesIdx_Rooks[(EvalPieceIdx + 0)];
@@ -3340,12 +3367,32 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                 Call TaperedEval.Add((8 * Factor))((6 * Factor));
             }
         }
-        If (1 == 0)
+        If (PieceMobility[IdxOuter] < 4)
         {
-            Call IsTrappedRook(IdxOuter);
-            If (IsTrapped == 1)
+            If (SourcePieceOuter > 0)
             {
-                Call TaperedEval.AddIdentical((-45 * Factor));
+                KingIdx = BlackKingIdx;
+            }
+            Else
+            {
+                KingIdx = WhiteKingIdx;
+            }
+            If ((IdxToFile[IdxOuter] < 4) == (IdxToFile[IdxOuter] < IdxToFile[KingIdx]))
+            {
+                If (SourcePieceOuter > 0)
+                {
+                    If ((IdxToRank[IdxOuter] < 3) And (IdxToRank[KingIdx] < 3))
+                    {
+                        Call TaperedEval.AddIdentical(-35);
+                    }
+                }
+                Else
+                {
+                    If ((IdxToRank[IdxOuter] > 6) And (IdxToRank[KingIdx] > 6))
+                    {
+                        Call TaperedEval.AddIdentical(35);
+                    }
+                }
             }
         }
         EvalPieceIdx += 1;
@@ -3384,7 +3431,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
         {
             If ((Operator.LetterOf(CurrentValue, (Idx + 2)) == 1) Or ((Operator.LetterOf(CurrentValue, (Idx + 3)) == 1) And (Operator.LetterOf(CurrentValue, (Idx + 4)) == 1)))
             {
-                Call TaperedEval.Add((-55 * Factor))((-35 * Factor));
+                Call TaperedEval.Add((-45 * Factor))((-25 * Factor));
             }
         }
         Side += 1;
@@ -3890,46 +3937,6 @@ Define EvaluateThreats(string Depth) (warp=true)
 Define EvaluateThreatsImpl(string Depth) (warp=true)
 {
     EvalThreatsResult = 0;
-    Idx = 1;
-    Repeat (64)
-    {
-        List.ReplaceItem(PieceMobility, (Idx + 0), 0);
-        List.ReplaceItem(PieceMobilityPrep, (((Idx - 1) * 32) + 1), 0);
-        Idx += 1;
-    }
-    CalcAttackStateWithMobility = 1;
-    Call CalcBoardAttackedByMove((Depth + 1));
-    Call CalcBoardAttackedByMove((Depth + 2));
-    CalcAttackStateWithMobility = 0;
-    EvalPieceIdx = 1;
-    Repeat (List.Length(EvalPiecesIdx_NonPawns))
-    {
-        Idx = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
-        CurrentPiece = Board[(Idx + 0)];
-        IdxSub = (((Idx - 1) * 32) + 1);
-        Count1 = PieceMobilityPrep[(IdxSub + 0)];
-        IdxSub += 1;
-        Repeat (Count1)
-        {
-            TargetIdx = PieceMobilityPrep[(IdxSub + 0)];
-            If (CurrentPiece > 0)
-            {
-                If ((BoardAttackedByWhite[(TargetIdx + 0)] == 0) And (Not ((Board[(TargetIdx + 0)] > 0))))
-                {
-                    List.ReplaceItem(PieceMobility, (Idx + 0), (PieceMobility[(Idx + 0)] + 1));
-                }
-            }
-            Else
-            {
-                If ((BoardAttackedByBlack[(TargetIdx + 0)] == 0) And (Not ((Board[(TargetIdx + 0)] < 0))))
-                {
-                    List.ReplaceItem(PieceMobility, (Idx + 0), (PieceMobility[(Idx + 0)] + 1));
-                }
-            }
-            IdxSub += 1;
-        }
-        EvalPieceIdx += 1;
-    }
     Call TaperedEval.Init;
     EvalPieceIdx = 1;
     Repeat (List.Length(EvalPiecesIdx_NonPawns))
@@ -5518,7 +5525,7 @@ Define GetBestMoveMedDiff (warp=false)
         QuiescenceDepth = (MaxSearchDepth - IdxDeepening);
         AWCount = 1;
         AWDelta = AWSize[1];
-        If ((1 == 1) And ((IdxDeepening > (5 - (2 * IsScratch3))) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
+        If ((1 == 0) And ((IdxDeepening > (5 - (2 * IsScratch3))) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -6424,13 +6431,13 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
     IdxOuter = 1;
     Repeat (List.Length(HistoryMoveScores))
     {
-        List.ReplaceItem(HistoryMoveScores, IdxOuter, Operator.Round((HistoryMoveScores[IdxOuter] * ((1 - InitialDeepening) * 0.1))));
+        List.ReplaceItem(HistoryMoveScores, IdxOuter, 0);
         IdxOuter += 1;
     }
     IdxOuter = 1;
     Repeat (List.Length(MaxHistoryMoveScore))
     {
-        List.ReplaceItem(MaxHistoryMoveScore, IdxOuter, Operator.Round((MaxHistoryMoveScore[IdxOuter] * ((1 - InitialDeepening) * 0.1))));
+        List.ReplaceItem(MaxHistoryMoveScore, IdxOuter, 0);
         IdxOuter += 1;
     }
     Call SetInitialEnPassantTarget(1);
@@ -7700,131 +7707,6 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     }
 }
 
-Define IsTrappedRook(string RookIdx) (warp=true)
-{
-    IsTrapped = 0;
-    If (Not ((abs(Board[(RookIdx + 0)]) == GoK_BlackRook)))
-    {
-        Stop(this script);
-    }
-    If (Board[(RookIdx + 0)] > 0)
-    {
-        If (IdxToRank[(RookIdx + 0)] > 2)
-        {
-            Stop(this script);
-        }
-        IsTrapped = 1;
-        If (IdxToRank[(RookIdx + 0)] == 2)
-        {
-            If ((RookIdx == 12) Or (RookIdx == 13))
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            If (Board[(RookIdx + 8)] == 0)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(12);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(13);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-        }
-        Else
-        {
-            If ((RookIdx == 4) Or (RookIdx == 5))
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            If ((Board[(RookIdx + 8)] == 0) And ((Board[(RookIdx + 16)] == 0) And (Board[(RookIdx + 24)] == 0)))
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(4);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(5);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-        }
-    }
-    Else
-    {
-        If (IdxToRank[(RookIdx + 0)] < 7)
-        {
-            Stop(this script);
-        }
-        IsTrapped = 1;
-        If (IdxToRank[(RookIdx + 0)] == 7)
-        {
-            If ((RookIdx == 52) Or (RookIdx == 53))
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            If (Board[(RookIdx - 8)] == 0)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(52);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(53);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-        }
-        Else
-        {
-            If ((RookIdx == 60) Or (RookIdx == 61))
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            If ((Board[(RookIdx - 8)] == 0) And ((Board[(RookIdx - 16)] == 0) And (Board[(RookIdx - 24)] == 0)))
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(60);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-            Call IsPseudoReachableForRook(RookIdx)(61);
-            If (IsReachableRes == 1)
-            {
-                IsTrapped = 0;
-                Stop(this script);
-            }
-        }
-    }
-}
-
 Define IsWhiteKingCheckMate (warp=true)
 {
     IsWhiteKingCheckMateRes = 0;
@@ -8405,7 +8287,7 @@ Define PrepareCurrentKillerMoves(string Depth) (warp=true)
     List.Add(CurrentKillerMoves, KillerMoves[(Idx + 1)]);
 }
 
-Define PrepareEvalPiecesData (warp=true)
+Define PrepareEvalPiecesData(string Depth) (warp=true)
 {
     List.DeleteAll(EvalPiecesIdx_All);
     List.DeleteAll(EvalPiecesIdx_Pawns);
@@ -8476,6 +8358,46 @@ Define PrepareEvalPiecesData (warp=true)
             {
                 List.ReplaceItem(PawnAdvancePerFile, (File + 8), Rank);
             }
+        }
+        EvalPieceIdx += 1;
+    }
+    Idx = 1;
+    Repeat (64)
+    {
+        List.ReplaceItem(PieceMobility, (Idx + 0), 0);
+        List.ReplaceItem(PieceMobilityPrep, (((Idx - 1) * 32) + 1), 0);
+        Idx += 1;
+    }
+    CalcAttackStateWithMobility = 1;
+    Call CalcBoardAttackedByMove((Depth + 1));
+    Call CalcBoardAttackedByMove((Depth + 2));
+    CalcAttackStateWithMobility = 0;
+    EvalPieceIdx = 1;
+    Repeat (List.Length(EvalPiecesIdx_NonPawns))
+    {
+        Idx = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
+        CurrentPiece = Board[(Idx + 0)];
+        IdxSub = (((Idx - 1) * 32) + 1);
+        Count1 = PieceMobilityPrep[(IdxSub + 0)];
+        IdxSub += 1;
+        Repeat (Count1)
+        {
+            TargetIdx = PieceMobilityPrep[(IdxSub + 0)];
+            If (CurrentPiece > 0)
+            {
+                If ((BoardAttackedByWhite[(TargetIdx + 0)] == 0) And (Not ((Board[(TargetIdx + 0)] > 0))))
+                {
+                    List.ReplaceItem(PieceMobility, (Idx + 0), (PieceMobility[(Idx + 0)] + 1));
+                }
+            }
+            Else
+            {
+                If ((BoardAttackedByBlack[(TargetIdx + 0)] == 0) And (Not ((Board[(TargetIdx + 0)] < 0))))
+                {
+                    List.ReplaceItem(PieceMobility, (Idx + 0), (PieceMobility[(Idx + 0)] + 1));
+                }
+            }
+            IdxSub += 1;
         }
         EvalPieceIdx += 1;
     }
