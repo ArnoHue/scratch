@@ -6545,14 +6545,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         Call //("Create attack tables in case not found in TT");
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
         Call //("Invoke full move generator. When in check, only create evasions");
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         If (GenerateMovesRequiresAttackRecalc == 1)
         {
             Call //("Move generator will raise this error when creating king moves without having provided current attack tables (can only happen during quiescence search) => create them and invoke again");
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
@@ -7193,13 +7193,13 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 If (((Not (Quiescence)) And (Depth > 1)) And (CheckedState[Depth] == 1))
                 {
-                    If (1 == 1)
+                    Call SEE(Depth);
+                    If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
                     {
-                        Call SEE(Depth);
-                        If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
-                        {
-                            List.ReplaceItem(SearchExtension, Depth, 1);
-                        }
+                        List.ReplaceItem(SearchExtension, Depth, 1);
+                    }
+                    If (IsScratch3 == 1)
+                    {
                     }
                 }
                 If (SearchExtension[Depth] == 0)
@@ -7717,9 +7717,9 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
             FutilityMargin = "";
             If Quiescence
             {
-                If (Not ((TargetPieces[Depth] == 0)))
+                If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackRookCountLocal) > 0)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteRookCountLocal) < 0))))
                 {
-                    FutilityMargin = 450;
+                    FutilityMargin = 400;
                 }
             }
             Else
@@ -7728,7 +7728,11 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
                 {
                     If ((TargetPieces[Depth] == 0) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
                     {
-                        FutilityMargin = (Horizon * 175);
+                        Rank = IdxToRank[floor((AppliedMove[Depth] % 200))];
+                        If (((Not ((SourcePieces[Depth] == GoK_BlackPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_WhitePawn))) Or (Rank > 3)))
+                        {
+                            FutilityMargin = (Horizon * 125);
+                        }
                     }
                 }
             }
@@ -7787,7 +7791,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
             {
                 If Quiescence
                 {
-                    If ((CheckedState[Depth] == 0) And ((Not ((TargetPieces[Depth] == 0))) And (PromotionPieces[Depth] == 0)))
+                    If ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0))
                     {
                         Call SEE(Depth);
                         If ((((Depth % 2) == 1) And (SEE.Result < 0)) Or (((Depth % 2) == 0) And (SEE.Result > 0)))
@@ -8010,7 +8014,7 @@ Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
 Define Search_SingularExtensions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
 {
     SE.IsSingularExtension = 0;
-    If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 5))) And (ExcludedMove == ""))
+    If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 7))) And (ExcludedMove == ""))
     {
         Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
         If ((TTProbeRes == 1) And ((Not ((TTProbeNode.BestMoveRes == ""))) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))))
@@ -8265,20 +8269,21 @@ Define SEE(string MoveDepth) (warp=true)
             List.ReplaceItem(MovesIdx, Depth, 1);
             Call ApplyMoveLight(Depth);
             SEE.Result += (0 - TargetPieces[(Depth + 0)]);
-            If (Side == 1)
+            If (Not ((abs(SourcePieces[(Depth + 0)]) == GoK_BlackKing)))
             {
-                If ((SEE.Result + 1) < 0)
+                If (Side == 1)
                 {
-                    SEE.Result = (SEE.Result + 1);
-                    IsDone = 1;
+                    If (SEE.Result < 0)
+                    {
+                        IsDone = 1;
+                    }
                 }
-            }
-            Else
-            {
-                If ((SEE.Result - 1) > 0)
+                Else
                 {
-                    SEE.Result = (SEE.Result - 1);
-                    IsDone = 1;
+                    If (SEE.Result > 0)
+                    {
+                        IsDone = 1;
+                    }
                 }
             }
             If (abs(TargetPieces[(Depth + 0)]) == GoK_BlackKing)
