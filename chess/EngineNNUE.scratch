@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (09.08.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (11.08.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -7041,10 +7041,41 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     }
     If (Not (Quiescence))
     {
-        Call Search_NullMovePruning(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
-        If (Not ((SearchEvalResults[Depth] == "")))
+        If (((Depth > 1) And (IsInNullMove == 0)) And ((ExcludedMove == "") And (CheckedState[Depth] == 0)))
         {
-            Stop(this script);
+            Call //("IIR");
+            HorizonLoc = Horizon;
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If (TTProbeRes == 0)
+            {
+                If (Horizon > 2)
+                {
+                    HorizonLoc += -1;
+                }
+                If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
+                {
+                    HorizonLoc += -1;
+                }
+            }
+            If (HorizonLoc < 1)
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+                Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
+                List.ReplaceItem(SearchEvalResults, Depth, SearchEvalResults[(Depth + 1)]);
+                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, SearchEvalResultsIsDynamic[(Depth + 1)]);
+                Stop(this script);
+            }
+            Call Search_ReverseFutilityPruning(Depth)(Horizon);
+            If (Not ((SearchEvalResults[Depth] == "")))
+            {
+                Stop(this script);
+            }
+            Call Search_NullMovePruning(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
+            If (Not ((SearchEvalResults[Depth] == "")))
+            {
+                Stop(this script);
+            }
         }
     }
     Else
@@ -7698,7 +7729,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
                 Idx += -2;
             }
         }
-        If (Search.Count > 1)
+        If (Search.Count > (1 + IsEndgame2))
         {
             List.ReplaceItem(SearchEvalResults, Depth, DrawByRepetitionEval);
             List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
@@ -8009,6 +8040,49 @@ Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
         }
     }
     Event.Broadcast("UI_ShowBestMove");
+}
+
+Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
+{
+    If ((1 == 0) And ((((Depth > 1) And (Horizon < 7)) And ((IsInNullMove == 0) And (IsEndgame == 0))) And ((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1))))
+    {
+        If ((Depth % 2) == 1)
+        {
+            If (abs(Betas[Depth]) > AbsMinCheckmateEval)
+            {
+                Stop(this script);
+            }
+        }
+        Else
+        {
+            If (abs(Alphas[Depth]) > AbsMinCheckmateEval)
+            {
+                Stop(this script);
+            }
+        }
+        Call TTProbeNode(CurrentBoardHash)(Depth);
+        If (((TTProbeRes == 0) Or (TTProbeNode.BestMoveRes == 0)) Or (Not ((Board[floor((TTProbeNode.BestMoveRes % 100))] == 0))))
+        {
+            Call Evaluate((Depth - 1))((1 == 1));
+            List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+            If ((Depth % 2) == 1)
+            {
+                If (Not (((EvaluationRes - (160 + (160 * Horizon))) < Betas[Depth])))
+                {
+                    List.ReplaceItem(SearchEvalResults, Depth, Betas[Depth]);
+                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
+                }
+            }
+            Else
+            {
+                If (Not (((EvaluationRes + (160 + (160 * Horizon))) > Alphas[Depth])))
+                {
+                    List.ReplaceItem(SearchEvalResults, Depth, Alphas[Depth]);
+                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 0);
+                }
+            }
+        }
+    }
 }
 
 Define Search_SingularExtensions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
