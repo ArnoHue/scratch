@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (13.08.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (15.08.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1289,6 +1289,14 @@ Define ApplyMove(num Depth) (warp=true)
             NodeCountQ += 1;
         }
     }
+}
+
+Define ApplyMoveFull(string Depth) (warp=true)
+{
+    Call ApplyMove(Depth);
+    Call GetNormalizedMove(AppliedMove[Depth]);
+    List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
+    List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
 }
 
 Define ApplyMoveLight(string Depth) (warp=true)
@@ -5944,7 +5952,7 @@ Define NNUE_Init (warp=true)
         List.Add(NNUE_Accumulator, 0);
     }
     List.DeleteAll(NNUE_Accumulator_MetaState);
-    Repeat (50)
+    Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(NNUE_Accumulator_MetaState, 0);
     }
@@ -6078,6 +6086,10 @@ Define NNUE_Public_OnMakeMoveStart(string Depth) (warp=true)
 
 Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)(string TargetPiece) (warp=true)
 {
+    If (IsBlockProfilerEnabled == 1)
+    {
+        Call ProfilerMethodEnter((((6 + Quiescence[Depth]) * MaxSearchDepthStackFrames) + Depth));
+    }
     Call NNUE_StartBulkActivation(Depth);
     If (Move == "")
     {
@@ -6127,6 +6139,10 @@ Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)
         }
     }
     Call NNUE_StopBulkActivation(Depth);
+    If (IsBlockProfilerEnabled == 1)
+    {
+        Call ProfilerMethodExit((((6 + Quiescence[Depth]) * MaxSearchDepthStackFrames) + Depth));
+    }
 }
 
 Define NNUE_Public_Refresh (warp=true)
@@ -6304,21 +6320,9 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                                 Call ClearMoveList(Depth);
                                 Call AddMoveToList(TTProbeNode.BestMoveRes)(Depth);
                                 List.ReplaceItem(MovesIdx, Depth, 1);
-                                Call ApplyMove(Depth);
-                                Call GetNormalizedMove(AppliedMove[Depth]);
-                                List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
-                                List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
                                 List.ReplaceItem(PickPhase, Depth, 2);
                                 List.ReplaceItem(PickMoveRes, Depth, 1);
-                                List.ReplaceItem(HashMove, Depth, AppliedMove[Depth]);
-                                If (TargetPieces[Depth] == 0)
-                                {
-                                    List.ReplaceItem(HashMoveMetaData, Depth, 0);
-                                }
-                                Else
-                                {
-                                    List.ReplaceItem(HashMoveMetaData, Depth, 1);
-                                }
+                                List.ReplaceItem(HashMove, Depth, TTProbeNode.BestMoveRes);
                                 Stop(this script);
                             }
                         }
@@ -6445,10 +6449,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call ApplyMove(Depth);
-            Call GetNormalizedMove(AppliedMove[Depth]);
-            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
-            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
             List.ReplaceItem(PickMoveRes, Depth, 1);
             Stop(this script);
         }
@@ -6530,10 +6530,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         If (MovesIdx[Depth] < MovesCount[Depth])
         {
             List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call ApplyMove(Depth);
-            Call GetNormalizedMove(AppliedMove[Depth]);
-            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
-            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
             List.ReplaceItem(PickMoveRes, Depth, 1);
             Stop(this script);
         }
@@ -6580,9 +6576,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     Call GetNormalizedMove(CurrentMove);
                 }
             }
-            Call ApplyMove(Depth);
             List.ReplaceItem(PickMoveRes, Depth, 1);
-            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
             Stop(this script);
         }
         Call //("* as PickPhase indicates we are done");
@@ -7185,6 +7179,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         }
         If (PickMoveRes[Depth] == 1)
         {
+            Call ApplyMoveLight(Depth);
             Call //("Show progress and collect statistics");
             If (ShowProgress And ((Depth == 1) Or (Horizon > (4 - (3 * IsScratch3)))))
             {
@@ -7215,22 +7210,16 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("")("");
             }
             Call Search_FutilityPruning(Depth)(Quiescence)(Horizon)(ExcludedMove);
-            If ((IsFutile == 1) Or (AppliedMove[Depth] == ExcludedMove))
+            Call RevertMoveLight(Depth);
+            If ((IsFutile == 0) And (Not ((AppliedMove[Depth] == ExcludedMove))))
             {
-                Call //("If futile, ignore this move");
-                Call RevertMove(Depth);
-            }
-            Else
-            {
+                Call ApplyMoveFull(Depth);
                 If (((Not (Quiescence)) And (Depth > 1)) And (CheckedState[Depth] == 1))
                 {
                     Call SEE(Depth);
                     If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
                     {
                         List.ReplaceItem(SearchExtension, Depth, 1);
-                    }
-                    If (IsScratch3 == 1)
-                    {
                     }
                 }
                 If (SearchExtension[Depth] == 0)
@@ -7727,7 +7716,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
                 Idx += -2;
             }
         }
-        If (Search.Count > (1 + IsEndgame2))
+        If (Search.Count > 1)
         {
             List.ReplaceItem(SearchEvalResults, Depth, DrawByRepetitionEval);
             List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, 1);
@@ -7748,7 +7737,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
             {
                 If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackRookCountLocal) > 0)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteRookCountLocal) < 0))))
                 {
-                    FutilityMargin = 450;
+                    FutilityMargin = 400;
                 }
             }
             Else
@@ -7760,7 +7749,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
                         Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
                         If (((Not ((SourcePieces[Depth] == GoK_BlackPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_WhitePawn))) Or (Rank > 3)))
                         {
-                            FutilityMargin = (Horizon * 350);
+                            FutilityMargin = (Horizon * 125);
                         }
                     }
                 }
@@ -7868,7 +7857,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
         {
             Call //("LMR search");
             Reduction = 0;
-            If (PickedMoveCount[Depth] > (3 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))
+            If (PickedMoveCount[Depth] > (2 + (1 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))
             {
                 CurrentValue = 1;
                 Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
@@ -8188,7 +8177,7 @@ Define Search_TagSearchExtension(string Depth) (warp=true)
 
 Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(string Horizon)(string ExcludedMove) (warp=true)
 {
-    If (((Depth > 1) And (Not (InitialDeepening))) And (ExcludedMove == ""))
+    If ((Depth > 1) And (ExcludedMove == ""))
     {
         If (((Betas[Depth] - Alphas[Depth]) == 1) Or (1 == 0))
         {
@@ -8196,7 +8185,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (TTProbeNode.HorizonRes > Horizon)) Or ((Quiescence And (TTProbeNode.HorizonRes == -1)) And ((IsScratch3 == 0) And (TTProbeNode.AgeRes == TT.CurrentAge))))
+                If (((Not (Quiescence)) And (TTProbeNode.HorizonRes > Horizon)) Or ((Quiescence And (TTProbeNode.HorizonRes == -1)) And (IsScratch3 == 0)))
                 {
                     If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
                     {
@@ -8891,7 +8880,7 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
     {
         HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
         Idx = 1;
-        Repeat Until ((TTBoardAge[(HashBucket + 0)] < (TT.CurrentAge - 0)) Or ((TTBoardHash[(HashBucket + 0)] == BoardHash) Or (TTBoardHash[(HashBucket + 0)] == 0)))
+        Repeat Until ((TTBoardAge[(HashBucket + 0)] < (TT.CurrentAge - 1)) Or ((TTBoardHash[(HashBucket + 0)] == BoardHash) Or (TTBoardHash[(HashBucket + 0)] == 0)))
         {
             If (Idx > 4)
             {
@@ -8941,7 +8930,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
     {
         HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
         Idx = 1;
-        Repeat Until ((TTNodeAge[(HashBucket + 0)] < (TT.CurrentAge - 0)) Or ((TTNodeHash[(HashBucket + 0)] == NodeHash) Or (TTNodeHash[(HashBucket + 0)] == 0)))
+        Repeat Until ((TTNodeAge[(HashBucket + 0)] < (TT.CurrentAge - 1)) Or ((TTNodeHash[(HashBucket + 0)] == NodeHash) Or (TTNodeHash[(HashBucket + 0)] == 0)))
         {
             If (Idx > 4)
             {
