@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (18.08.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (21.08.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -5288,22 +5288,25 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
-    If ((Level > 4) And (CheckedState[Depth] == 0))
+    If (1 == 1)
     {
-        Count = 0;
-        Idx = (Depth - 1);
-        Repeat Until (Idx < 2)
+        If ((Level > 4) And (CheckedState[Depth] == 0))
         {
-            If ((CheckedState[Idx] == 1) And ((Quiescence[(Idx - 1)] == 1) And (TargetPieces[(Idx - 1)] == 0)))
+            Count = 0;
+            Idx = (Depth - 1);
+            Repeat Until (Idx < 2)
             {
-                Count += 1;
+                If ((CheckedState[Idx] == 1) And ((Quiescence[(Idx - 1)] == 1) And (TargetPieces[(Idx - 1)] == 0)))
+                {
+                    Count += 1;
+                }
+                Idx += -2;
             }
-            Idx += -2;
-        }
-        If (Count < 1)
-        {
-            IsQuiescentCheckRes = 1;
-            Stop(this script);
+            If (Count < (2 - IsEndgame))
+            {
+                IsQuiescentCheckRes = 1;
+                Stop(this script);
+            }
         }
     }
 }
@@ -6543,14 +6546,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         Call //("Create attack tables in case not found in TT");
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
         Call //("Invoke full move generator. When in check, only create evasions");
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         If (GenerateMovesRequiresAttackRecalc == 1)
         {
             Call //("Move generator will raise this error when creating king moves without having provided current attack tables (can only happen during quiescence search) => create them and invoke again");
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((Depth > 2) And (CheckedState[Depth] == 1))));
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
@@ -7226,12 +7229,15 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 Call ApplyMoveFull(Depth);
                 If (SearchExtension[Depth] == 0)
                 {
-                    If (((Not (Quiescence)) And (Depth > 1)) And (CheckedState[Depth] == 1))
+                    If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 2))) And (CheckedState[Depth] == 1))
                     {
-                        Call SEE(Depth);
-                        If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                        If (IsEndgame == 1)
                         {
-                            List.ReplaceItem(SearchExtension, Depth, 1);
+                            Call SEE(Depth);
+                            If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                            {
+                                List.ReplaceItem(SearchExtension, Depth, 1);
+                            }
                         }
                     }
                 }
@@ -7864,11 +7870,11 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     {
         CurrentValue = (BlackQueenCountLocal + BlackRookCountLocal);
         CurrentValue2 = (WhiteQueenCountLocal + WhiteRookCountLocal);
-        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 2)))
+        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And (TargetPieces[Depth] == 0)) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 2)))
         {
             Call //("LMR search");
             Reduction = 0;
-            If (PickedMoveCount[Depth] > (2 + (1 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))
+            If (PickedMoveCount[Depth] > (3 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))
             {
                 CurrentValue = 1;
                 Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
@@ -7887,7 +7893,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         Reduction += 1;
                     }
                 }
-                If (1 == 1)
+                If (1 == 0)
                 {
                     If Cutnode
                     {
@@ -8198,11 +8204,11 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or ((Quiescence And (TTProbeNode.HorizonRes == -1)) And (IsScratch3 == 0)))
+                If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1)))
                 {
-                    If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
+                    If ((TTProbeNode.NodeTypeRes == "E") Or (((((Depth % 2) == 1) And (TTProbeNode.NodeTypeRes == "A")) And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))) Or ((((Depth % 2) == 0) And (TTProbeNode.NodeTypeRes == "B")) And (Not ((TTProbeNode.EvalRes < Betas[Depth]))))))
                     {
-                        If ((Not ((TTProbeNode.EvalIsDynamicRes == 1))) Or (TTProbeNode.AgeRes == TT.CurrentAge))
+                        If ((TTProbeNode.EvalIsDynamicRes == 0) Or (floor((TTProbeNode.AgeRes % 100)) == floor((TT.CurrentAge % 100))))
                         {
                             If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
                             {
@@ -8807,8 +8813,8 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
         }
     }
     TTProbeRes = 1;
-    TTProbeBoard.AgeRes = TTBoardAge[HashBucket];
-    TTProbeBoard.EvalSumRes = TTBoardEvalSum[HashBucket];
+    TTProbeBoard.AgeRes = TTBoardAge[(HashBucket + 0)];
+    TTProbeBoard.EvalSumRes = TTBoardEvalSum[(HashBucket + 0)];
     TTProbeBoard.EvalSumIsDynamic = 0;
     TTProbeBoard.Eval1Res = "";
     TTProbeBoard.Eval2Res = "";
@@ -8855,16 +8861,16 @@ Define TTProbeNodeImpl(string NodeHash)(string Depth)(string BoardHash) (warp=tr
         Stop(this script);
     }
     TTProbeRes = 1;
-    TTProbeNode.BestMoveRes = TTNodeBestMove[HashBucket];
-    TTProbeNode.EvalRes = TTNodeEval[HashBucket];
-    TTProbeNode.EvalIsDynamicRes = TTNodeEvalIsDynamic[HashBucket];
-    TTProbeNode.NodeTypeRes = TTNodeType[HashBucket];
-    TTProbeNode.CheckedRes = TTNodeChecked[HashBucket];
-    TTProbeNode.CheckedAttackLinesRes = TTNodeCheckedAttackLines[HashBucket];
-    TTProbeNode.HorizonRes = TTNodeHorizon[HashBucket];
-    TTProbeNode.BoardAttackedByOpp = TTNodeBoardAttackedByOpp[HashBucket];
-    TTProbeNode.BoardAttackedByOppPiece = TTNodeBoardAttackedByOppPiece[HashBucket];
-    TTProbeNode.AgeRes = TTNodeAge[HashBucket];
+    TTProbeNode.BestMoveRes = TTNodeBestMove[(HashBucket + 0)];
+    TTProbeNode.EvalRes = TTNodeEval[(HashBucket + 0)];
+    TTProbeNode.EvalIsDynamicRes = TTNodeEvalIsDynamic[(HashBucket + 0)];
+    TTProbeNode.NodeTypeRes = TTNodeType[(HashBucket + 0)];
+    TTProbeNode.CheckedRes = TTNodeChecked[(HashBucket + 0)];
+    TTProbeNode.CheckedAttackLinesRes = TTNodeCheckedAttackLines[(HashBucket + 0)];
+    TTProbeNode.HorizonRes = TTNodeHorizon[(HashBucket + 0)];
+    TTProbeNode.BoardAttackedByOpp = TTNodeBoardAttackedByOpp[(HashBucket + 0)];
+    TTProbeNode.BoardAttackedByOppPiece = TTNodeBoardAttackedByOppPiece[(HashBucket + 0)];
+    TTProbeNode.AgeRes = TTNodeAge[(HashBucket + 0)];
     TTProbeNode.BlackMobRes = 0;
     TTProbeNode.WhiteMobRes = 0;
     TTProbeNode.QSMeta = 0;
@@ -8889,23 +8895,14 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
         Idx += 1;
         HashBucket += 1;
     }
-    If (Not (((TTBoardHash[(HashBucket + 0)] == BoardHash) Or (TTBoardHash[(HashBucket + 0)] == 0))))
+    If (Idx > 4)
     {
         HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
         Idx = 1;
-        Repeat Until ((TTBoardAge[(HashBucket + 0)] < (TT.CurrentAge - 1)) Or ((TTBoardHash[(HashBucket + 0)] == BoardHash) Or (TTBoardHash[(HashBucket + 0)] == 0)))
-        {
-            If (Idx > 4)
-            {
-                Stop(this script);
-            }
-            Idx += 1;
-            HashBucket += 1;
-        }
     }
-    List.ReplaceItem(TTBoardAge, HashBucket, TT.CurrentAge);
-    List.ReplaceItem(TTBoardHash, HashBucket, BoardHash);
-    List.ReplaceItem(TTBoardEvalSum, HashBucket, BoardScoreSum);
+    List.ReplaceItem(TTBoardAge, (HashBucket + 0), TT.CurrentAge);
+    List.ReplaceItem(TTBoardHash, (HashBucket + 0), BoardHash);
+    List.ReplaceItem(TTBoardEvalSum, (HashBucket + 0), BoardScoreSum);
 }
 
 Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string BlackMob)(string WhiteMob)(string BoardAttackedByOpp)(string BoardAttackedByOppPiece)(string CheckedAttackLines)(string IsDynamic)(string QSMeta) (warp=true)
@@ -8939,19 +8936,9 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
         Idx += 1;
         HashBucket += 1;
     }
-    If (Not (((TTNodeHash[(HashBucket + 0)] == NodeHash) Or (TTNodeHash[(HashBucket + 0)] == 0))))
+    If (Idx > 4)
     {
         HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
-        Idx = 1;
-        Repeat Until ((TTNodeAge[(HashBucket + 0)] < (TT.CurrentAge - 1)) Or ((TTNodeHash[(HashBucket + 0)] == NodeHash) Or (TTNodeHash[(HashBucket + 0)] == 0)))
-        {
-            If (Idx > 4)
-            {
-                Stop(this script);
-            }
-            Idx += 1;
-            HashBucket += 1;
-        }
     }
     If (TTNodeHash[(HashBucket + 0)] == NodeHash)
     {
@@ -8959,23 +8946,23 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
         {
             If ((Not ((BoardAttackedByOpp == ""))) And (TTNodeBoardAttackedByOpp[HashBucket] == ""))
             {
-                List.ReplaceItem(TTNodeBoardAttackedByOpp, HashBucket, BoardAttackedByOpp);
-                List.ReplaceItem(TTNodeBoardAttackedByOppPiece, HashBucket, BoardAttackedByOppPiece);
-                List.ReplaceItem(TTNodeCheckedAttackLines, HashBucket, CheckedAttackLines);
+                List.ReplaceItem(TTNodeBoardAttackedByOpp, (HashBucket + 0), BoardAttackedByOpp);
+                List.ReplaceItem(TTNodeBoardAttackedByOppPiece, (HashBucket + 0), BoardAttackedByOppPiece);
+                List.ReplaceItem(TTNodeCheckedAttackLines, (HashBucket + 0), CheckedAttackLines);
             }
             If (Not ((Checked == "")))
             {
-                List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
+                List.ReplaceItem(TTNodeChecked, (HashBucket + 0), Checked);
             }
             HorizonLoc = TTNodeHorizon[(HashBucket + 0)];
             If (((Not ((Score == ""))) And (Not ((Horizon == "")))) And (((Not ((Horizon < HorizonLoc))) Or (HorizonLoc == "")) Or (TTNodeEval[(HashBucket + 0)] == "")))
             {
-                List.ReplaceItem(TTNodeType, HashBucket, Type);
-                List.ReplaceItem(TTNodeEval, HashBucket, Score);
-                List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
-                List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-                List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
-                List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
+                List.ReplaceItem(TTNodeType, (HashBucket + 0), Type);
+                List.ReplaceItem(TTNodeEval, (HashBucket + 0), Score);
+                List.ReplaceItem(TTNodeEvalIsDynamic, (HashBucket + 0), IsDynamic);
+                List.ReplaceItem(TTNodeHorizon, (HashBucket + 0), Horizon);
+                List.ReplaceItem(TTNodeAge, (HashBucket + 0), TT.CurrentAge);
+                List.ReplaceItem(TTNodeBestMove, (HashBucket + 0), BestMove);
             }
         }
         Else
@@ -8988,19 +8975,19 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
     }
     Else
     {
-        List.ReplaceItem(TTNodeBestMove, HashBucket, BestMove);
-        List.ReplaceItem(TTNodeBoardAttackedByOpp, HashBucket, BoardAttackedByOpp);
-        List.ReplaceItem(TTNodeBoardAttackedByOppPiece, HashBucket, BoardAttackedByOppPiece);
-        List.ReplaceItem(TTNodeChecked, HashBucket, Checked);
-        List.ReplaceItem(TTNodeCheckedAttackLines, HashBucket, CheckedAttackLines);
-        List.ReplaceItem(TTNodeHash, HashBucket, NodeHash);
-        List.ReplaceItem(TTNodeBoardHash, HashBucket, BoardHash);
-        List.ReplaceItem(TTNodeDepth, HashBucket, Depth);
-        List.ReplaceItem(TTNodeType, HashBucket, Type);
-        List.ReplaceItem(TTNodeEval, HashBucket, Score);
-        List.ReplaceItem(TTNodeEvalIsDynamic, HashBucket, IsDynamic);
-        List.ReplaceItem(TTNodeHorizon, HashBucket, Horizon);
-        List.ReplaceItem(TTNodeAge, HashBucket, TT.CurrentAge);
+        List.ReplaceItem(TTNodeBestMove, (HashBucket + 0), BestMove);
+        List.ReplaceItem(TTNodeBoardAttackedByOpp, (HashBucket + 0), BoardAttackedByOpp);
+        List.ReplaceItem(TTNodeBoardAttackedByOppPiece, (HashBucket + 0), BoardAttackedByOppPiece);
+        List.ReplaceItem(TTNodeChecked, (HashBucket + 0), Checked);
+        List.ReplaceItem(TTNodeCheckedAttackLines, (HashBucket + 0), CheckedAttackLines);
+        List.ReplaceItem(TTNodeHash, (HashBucket + 0), NodeHash);
+        List.ReplaceItem(TTNodeBoardHash, (HashBucket + 0), BoardHash);
+        List.ReplaceItem(TTNodeDepth, (HashBucket + 0), Depth);
+        List.ReplaceItem(TTNodeType, (HashBucket + 0), Type);
+        List.ReplaceItem(TTNodeEval, (HashBucket + 0), Score);
+        List.ReplaceItem(TTNodeEvalIsDynamic, (HashBucket + 0), IsDynamic);
+        List.ReplaceItem(TTNodeHorizon, (HashBucket + 0), Horizon);
+        List.ReplaceItem(TTNodeAge, (HashBucket + 0), TT.CurrentAge);
     }
 }
 
