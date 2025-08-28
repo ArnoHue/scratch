@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.924 (27.08.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.924 (29.08.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -911,7 +911,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                     Idx += -2;
                 }
             }
-            If (Count1 > (1 + IsEndgame2))
+            If (Count1 > 2)
             {
                 List.ReplaceItem(MinMaxResults, Depth, DrawByRepetitionEval);
                 List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 1);
@@ -927,7 +927,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (floor((TTProbeNodeAgeRes % 100)) == floor((TTCurrentAge % 100)))))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)]))))))
                     {
@@ -1759,9 +1759,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 {
                                     If (Depth > 1)
                                     {
+                                        Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
                                         If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
                                         {
-                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
                                         }
                                         Call //("Cutoff");
                                         List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
@@ -1842,9 +1842,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 List.ReplaceItem(Betas, Depth, Score);
                                 If (Not ((Score > Alphas[Depth])))
                                 {
+                                    Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
                                     If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
                                     {
-                                        Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
                                     }
                                     List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                     List.ReplaceItem(PickPhase, Depth, "*");
@@ -5815,41 +5815,18 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
 {
     MoveScoreRes = 0;
     Factor = (((SourcePieceParam > 0) * 2) - 1);
-    IsAttacked = 0;
-    If (BoardAttackedCalculated[(Depth + 0)] == 1)
-    {
-        If (SourcePieceParam > 0)
-        {
-            If (Operator.LetterOf(BoardAttackedByWhiteSnapshot[(Depth + 0)], ToIdx) > 0)
-            {
-                IsAttacked = 1;
-            }
-        }
-        Else
-        {
-            If (Operator.LetterOf(BoardAttackedByBlackSnapshot[(Depth + 0)], ToIdx) > 0)
-            {
-                IsAttacked = 1;
-            }
-        }
-    }
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
     If (CheckedState[(Depth + 0)] == 1)
     {
         Call //("2: Check evasions");
-        Delta = 0;
-        If (IsAttacked == 0)
-        {
-            Delta = 1000;
-        }
         If (abs(SourcePieceParam) == GoK_BlackKing)
         {
-            MoveScoreRes = ((9000000 + Delta) * Factor);
+            MoveScoreRes = (9000000 * Factor);
             Stop(this script);
         }
         If (Operator.LetterOf(CheckedStateAttackLines[(Depth + 0)], ToIdx) == 1)
         {
-            MoveScoreRes = ((8900000 + Delta) * Factor);
+            MoveScoreRes = (8900000 * Factor);
             Stop(this script);
         }
     }
@@ -5889,10 +5866,15 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             Stop(this script);
         }
     }
+    If (((abs(SourcePieceParam) == GoK_BlackPawn) And (EnPassantTarget[(Depth + 0)] == ToIdx)) And (abs((IdxToFile[(FromIdx + 0)] - IdxToFile[(ToIdx + 0)])) == 1))
+    {
+        MoveScoreRes = (7000106 * Factor);
+        Stop(this script);
+    }
     If (Not ((TargetPieceParam == 0)))
     {
-        MvvLvaScore = ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]));
-        If (Quiescence[Depth] == 1)
+        MvvLvaScore = ((PieceIdxLookup[(abs(TargetPieceParam) + 0)] * 100) + (7 - PieceIdxLookup[(abs(SourcePieceParam) + 0)]));
+        If (Quiescence[(Depth + 0)] == 1)
         {
             MoveScoreRes = ((7000000 + MvvLvaScore) * Factor);
             Stop(this script);
@@ -5917,7 +5899,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             }
         }
     }
-    CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))];
+    CurrentValue = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[(abs(SourcePieceParam) + 0)] * 100) + ToIdx))];
     CurrentValue2 = MaxHistoryMoveScore[((Depth % 2) + 1)];
     If ((CurrentValue > 0) And (CurrentValue2 > 0))
     {
@@ -7719,25 +7701,22 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
-    If (IsScratch3 == 1)
+    If ((Level > 4) And (CheckedState[Depth] == 0))
     {
-        If ((Level > 4) And (CheckedState[Depth] == 0))
+        Count1 = 0;
+        Idx = (Depth - 1);
+        Repeat Until (Idx < 2)
         {
-            Count1 = 0;
-            Idx = (Depth - 1);
-            Repeat Until (Idx < 2)
+            If ((CheckedState[Idx] == 1) And ((Quiescence[(Idx - 1)] == 1) And (TargetPieces[(Idx - 1)] == 0)))
             {
-                If ((CheckedState[Idx] == 1) And ((Quiescence[(Idx - 1)] == 1) And (TargetPieces[(Idx - 1)] == 0)))
-                {
-                    Count1 += 1;
-                }
-                Idx += -2;
+                Count1 += 1;
             }
-            If (Count1 < 1)
-            {
-                IsQuiescentCheckRes = 1;
-                Stop(this script);
-            }
+            Idx += -2;
+        }
+        If (Count1 < 1)
+        {
+            IsQuiescentCheckRes = 1;
+            Stop(this script);
         }
     }
 }
@@ -8271,13 +8250,13 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     If (PickPhase[(Depth + 0)] == 6)
     {
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence And (CheckedState[(Depth + 0)] == 0)));
         If (GenerateMovesRequiresAttackRecalc == 1)
         {
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence And (CheckedState[(Depth + 0)] == 0)));
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
@@ -9073,6 +9052,10 @@ Define SortMoveList(string Depth) (warp=true)
 
 Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(string TargetIdx)(string SourcePieceAbs)(string KillerMoveIdx) (warp=true)
 {
+    If (Not ((Board[TargetIdx] == 0)))
+    {
+        Stop(this script);
+    }
     If (SourcePieceAbs == GoK_BlackPawn)
     {
         If ((TargetIdx > 56) Or (TargetIdx < 9))
