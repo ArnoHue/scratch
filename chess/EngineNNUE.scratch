@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (29.08.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (31.08.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3011,7 +3011,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 25);
+    List.Add(AWSize, 30);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -6933,6 +6933,8 @@ Define SayAsync(string Text)(num Duration) (warp=false)
 
 Define Search(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool ShowProgress) (warp=true)
 {
+    SearchAlpha = Alpha;
+    SearchBeta = Beta;
     SearchEvalRes = "";
     SearchMoveRes = "";
     Call InitSearch((MaxDepth - 1))(InitialDeepening);
@@ -7216,6 +7218,13 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("")("");
             }
             Call Search_FutilityPruning(Depth)(Quiescence)(Horizon)(ExcludedMove);
+            If (IsFutile == 1)
+            {
+                If ((Depth == 1) And (IsSearchTimeout == 0))
+                {
+                    List.Add(SearchRootMovesDone, AppliedMove[Depth]);
+                }
+            }
             Call RevertMoveLight(Depth);
             If (IsFutile == 0)
             {
@@ -7252,12 +7261,13 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                     Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
                     Eval = SearchEvalResults[(Depth + 1)];
                     EvalIsDynamic = SearchEvalResultsIsDynamic[(Depth + 1)];
-                    If (IsSearchTimeout == 0)
+                }
+                If ((Depth == 1) And (IsSearchTimeout == 0))
+                {
+                    List.Add(SearchRootMovesDone, AppliedMove[Depth]);
+                    If ((Eval > Alphas[Depth]) And (Eval < Betas[Depth]))
                     {
-                        If (Depth == 1)
-                        {
-                            List.ReplaceItem(Ply1Scores, floor((AppliedMove[Depth] * 10)), Eval);
-                        }
+                        List.ReplaceItem(Ply1Scores, floor((AppliedMove[Depth] * 10)), Eval);
                     }
                 }
                 Call //("Revert applied move, restore board to previous state");
@@ -7277,10 +7287,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
                 If ((Depth % 2) == 1)
                 {
-                    If (Depth == 1)
-                    {
-                        List.Add(SearchRootMovesDone, Moves1[MovesIdx[1]]);
-                    }
                     If ((Eval > SearchEvalResults[Depth]) Or (SearchEvalResults[Depth] == ""))
                     {
                         List.ReplaceItem(SearchEvalResults, Depth, Eval);
@@ -7327,8 +7333,11 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                         If (Not ((Eval < (0 - AbsMaxCheckmateEval))))
                                         {
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
-                                            SearchMoveRes = BestMoves[Depth];
-                                            SearchEvalRes = Eval;
+                                            If ((Eval > SearchAlpha) And (Eval < SearchBeta))
+                                            {
+                                                SearchMoveRes = BestMoves[Depth];
+                                                SearchEvalRes = Eval;
+                                            }
                                             Call Search_OnBestRootMoveFound(SearchMoveRes)(SearchEvalRes);
                                         }
                                     }
@@ -7889,18 +7898,18 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         Reduction += 1;
                     }
                 }
-                If (1 == 0)
+                If (1 == 1)
                 {
                     If Cutnode
                     {
                         Reduction += 1;
                     }
                 }
-                If (1 == 1)
+                If (1 == 0)
                 {
-                    If (Reduction > 3)
+                    If (Reduction > 2)
                     {
-                        Reduction = 3;
+                        Reduction = 2;
                     }
                 }
                 If (Reduction > (Horizon - 1))
@@ -8016,10 +8025,13 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
 
 Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
 {
-    Call OnEvaluationChanged(Eval);
-    If (1 == 1)
+    If ((Eval > SearchAlpha) And (Eval < SearchBeta))
     {
-        Call Log(IdxDeepening)(" : ")(Move)(" : ")(Eval)("")("")("");
+        Call OnEvaluationChanged(Eval);
+        If (1 == 1)
+        {
+            Call Log(IdxDeepening)(" : ")(Move)(" : ")(Eval)("")("")("");
+        }
     }
     If (Move == GoK_BlackKingsideCastling)
     {
