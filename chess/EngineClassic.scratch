@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9247 (06.09.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9247 (07.09.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3211,6 +3211,11 @@ Define EvaluateMajorsMinors(string Depth) (warp=true)
 
 Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
 {
+    EvalMajorsMinorsResult = 0;
+    If (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) == 0)
+    {
+        Stop(this script);
+    }
     Call TaperedEval.Init;
     EvalPieceIdx = 1;
     Repeat (List.Length(EvalPiecesIdx_NonPawns))
@@ -3477,6 +3482,7 @@ Define EvaluatePawns(string Depth) (warp=true)
 
 Define EvaluatePawnsImpl(string Depth) (warp=true)
 {
+    EvalPawnsResult = 0;
     Call TaperedEval.Init;
     Call TaperedEval.Add(0)((30 * BlackPawnCountLocal));
     Call TaperedEval.Add(0)((-30 * WhitePawnCountLocal));
@@ -3682,6 +3688,8 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
     Call //("Early promotion detection via Rule-of-Squares / Chebyshev distance");
     If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
     {
+        PromoRank1 = -1;
+        PromoRank2 = -1;
         Count1 = 0;
         Count2 = 0;
         Idx = 1;
@@ -3710,10 +3718,9 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                                 If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
                                 {
-                                    If (Count1 == 0)
+                                    If ((PromoRank1 == -1) Or (WhitePawnForwardRank < PromoRank1))
                                     {
-                                        EvalPawnsResult += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
-                                        Count1 += 1;
+                                        PromoRank1 = WhitePawnForwardRank;
                                     }
                                 }
                             }
@@ -3742,10 +3749,9 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                                 If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
                                 {
-                                    If (Count2 == 0)
+                                    If ((PromoRank2 == -1) Or (BlackPawnForwardRank > PromoRank2))
                                     {
-                                        EvalPawnsResult += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
-                                        Count2 += 1;
+                                        PromoRank2 = BlackPawnForwardRank;
                                     }
                                 }
                             }
@@ -3755,10 +3761,39 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
             }
             Idx += 1;
         }
+        If ((Not ((PromoRank2 == -1))) And (PromoRank1 == -1))
+        {
+            EvalPawnsResult += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
+        }
+        Else
+        {
+            If ((Not ((PromoRank1 == -1))) And (PromoRank2 == -1))
+            {
+                EvalPawnsResult += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
+            }
+            Else
+            {
+                If ((9 - PromoRank1) == PromoRank2)
+                {
+                    PromoRank1 += ((Depth + 1) % 2);
+                    PromoRank2 += (Depth % 2);
+                }
+                If ((9 - PromoRank1) > PromoRank2)
+                {
+                    EvalPawnsResult += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
+                }
+                Else
+                {
+                    If (PromoRank2 > (9 - PromoRank1))
+                    {
+                        EvalPawnsResult += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
+                    }
+                }
+            }
+        }
     }
-    If (((BlackQueenCountLocal + BlackMinorCountLocal) == 0) Or ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0))
+    If ((((BlackQueenCountLocal + BlackMinorCountLocal) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)) Or (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) > 0)))
     {
-        Side = 0;
         If ((BlackQueenCountLocal + BlackMinorCountLocal) > 0)
         {
             Side = 1;
@@ -3770,59 +3805,56 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                 Side = 2;
             }
         }
-        If (Not ((Side == 0)))
+        CurrentValue = ChebyshevDistance[((WhiteKingIdx * 100) + BlackKingIdx)];
+        If (Side == 1)
         {
-            CurrentValue = ChebyshevDistance[((WhiteKingIdx * 100) + BlackKingIdx)];
-            If (Side == 1)
+            EvalPawnsResult += (-20 * CurrentValue);
+        }
+        Else
+        {
+            EvalPawnsResult += (20 * CurrentValue);
+        }
+        If (Side == 1)
+        {
+            KingIdx = WhiteKingIdx;
+        }
+        Else
+        {
+            KingIdx = BlackKingIdx;
+        }
+        File = IdxToFile[KingIdx];
+        Rank = IdxToRank[KingIdx];
+        Delta = 0;
+        Delta2 = 0;
+        If (Rank < 4)
+        {
+            Delta = (4 - Rank);
+        }
+        Else
+        {
+            If (Rank > 5)
             {
-                EvalPawnsResult += (-20 * CurrentValue);
+                Delta = (Rank - 5);
             }
-            Else
+        }
+        If (File < 4)
+        {
+            Delta2 = (4 - File);
+        }
+        Else
+        {
+            If (File > 5)
             {
-                EvalPawnsResult += (20 * CurrentValue);
+                Delta2 = (File - 5);
             }
-            If (Side == 1)
-            {
-                KingIdx = WhiteKingIdx;
-            }
-            Else
-            {
-                KingIdx = BlackKingIdx;
-            }
-            File = IdxToFile[KingIdx];
-            Rank = IdxToRank[KingIdx];
-            Delta = 0;
-            Delta2 = 0;
-            If (Rank < 4)
-            {
-                Delta = (4 - Rank);
-            }
-            Else
-            {
-                If (Rank > 5)
-                {
-                    Delta = (Rank - 5);
-                }
-            }
-            If (File < 4)
-            {
-                Delta2 = (4 - File);
-            }
-            Else
-            {
-                If (File > 5)
-                {
-                    Delta2 = (File - 5);
-                }
-            }
-            If (Side == 1)
-            {
-                EvalPawnsResult += (20 * (Delta + Delta2));
-            }
-            Else
-            {
-                EvalPawnsResult += (-20 * (Delta + Delta2));
-            }
+        }
+        If (Side == 1)
+        {
+            EvalPawnsResult += (20 * (Delta + Delta2));
+        }
+        Else
+        {
+            EvalPawnsResult += (-20 * (Delta + Delta2));
         }
     }
 }
@@ -3842,6 +3874,10 @@ Define EvaluateThreats(string Depth) (warp=true)
 Define EvaluateThreatsImpl(string Depth) (warp=true)
 {
     EvalThreatsResult = 0;
+    If (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) == 0)
+    {
+        Stop(this script);
+    }
     Call TaperedEval.Init;
     EvalPieceIdx = 1;
     Repeat (List.Length(EvalPiecesIdx_NonPawns))
