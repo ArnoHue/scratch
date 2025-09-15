@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (13.09.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.337 (14.09.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -602,7 +602,7 @@ Define AddMoveImplLookup(string SourceIdx)(string TargetIdx)(string Depth)(bool 
 {
     If IsKing
     {
-        If (Not (CalcAttackState))
+        If ((Not (CalcAttackState)) And (Not (CapturesOnly)))
         {
             If ((Depth % 2) == 1)
             {
@@ -6410,54 +6410,27 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         Else
         {
-            Call //("Generate attack tables if not done before");
-            Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
-            Call //("Update current depth attack tables (esp. attacks of current turn) from previous depth if applicable");
-            Idx = (((Depth - 2) * 100) + 1);
-            Idx2 = (((Depth - 1) * 100) + 1);
-            Repeat (64)
-            {
-                If (BoardAttackedCalculated[Depth] == 0)
-                {
-                    List.ReplaceItem(BoardAttackedByOpponentSnapshot, Idx2, BoardAttackedByOwnSnapshot[Idx]);
-                    List.ReplaceItem(BoardAttackedByOpponentPieceSnapshot, Idx2, BoardAttackedByOwnPieceSnapshot[Idx]);
-                }
-                List.ReplaceItem(BoardAttackedByOwnSnapshot, Idx2, BoardAttackedByOpponentSnapshot[Idx]);
-                List.ReplaceItem(BoardAttackedByOwnPieceSnapshot, Idx2, BoardAttackedByOpponentPieceSnapshot[Idx]);
-                Idx += 1;
-                Idx2 += 1;
-            }
             List.DeleteAll(TmpList1);
             List.DeleteAll(TmpList2);
             List.DeleteAll(TmpList3);
             List.DeleteAll(TmpList4);
-            Call //("Fixup for outdated attack tables: Inspect applied moves, find attack sources not present in current attack table");
-            Idx = (Depth - 2);
-            Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
-            {
-                Caller.SourceIdx = floor((AppliedMove[Idx] % 100));
-                If (Caller.SourceIdx > 0)
-                {
-                    If ((Board[Caller.SourceIdx] * DepthEvalFactor[Depth]) > 0)
-                    {
-                        If (Not (List.ContainsItem(TmpList3, Caller.SourceIdx)))
-                        {
-                            List.Add(TmpList3, Caller.SourceIdx);
-                            List.Add(TmpList4, ((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(Board[Caller.SourceIdx])] * 10000)) + (Caller.SourceIdx * 100)));
-                        }
-                    }
-                }
-                Idx += -2;
-            }
             Call //("Look for net positive attacks via attack tables");
+            Call CalcBoardAttackedByMove((Depth + 2));
             MoveGen.TargetIdx = 1;
             Repeat (64)
             {
                 If ((Board[MoveGen.TargetIdx] * DepthEvalFactor[Depth]) < 0)
                 {
-                    If (BoardAttackedByOwnSnapshot[(((Depth - 1) * 100) + MoveGen.TargetIdx)] > 0)
+                    If ((((Depth % 2) == 1) And (BoardAttackedByBlack[MoveGen.TargetIdx] > 0)) Or (((Depth % 2) == 0) And (BoardAttackedByWhite[MoveGen.TargetIdx] > 0)))
                     {
-                        MoveGen.SourceIdx = BoardAttackedByOwnPieceSnapshot[(((Depth - 1) * 100) + MoveGen.TargetIdx)];
+                        If ((Depth % 2) == 1)
+                        {
+                            MoveGen.SourceIdx = BoardAttackedByBlackPiece[MoveGen.TargetIdx];
+                        }
+                        Else
+                        {
+                            MoveGen.SourceIdx = BoardAttackedByWhitePiece[MoveGen.TargetIdx];
+                        }
                         MoveGen.SourcePiece = Board[MoveGen.SourceIdx];
                         If ((MoveGen.SourcePiece * DepthEvalFactor[Depth]) > 0)
                         {
@@ -6466,17 +6439,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                                 Call StagedMoveGenMVVLVA(Depth)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(MoveGen.SourcePiece))(abs(Board[MoveGen.TargetIdx]))(floor((AppliedMove[(Depth - 1)] % 100)));
                             }
                         }
-                    }
-                    Call //("Look for net positive attacks created previous plies (and attack table not up to date) ");
-                    MoveGen.Idx = 1;
-                    Repeat (List.Length(TmpList3))
-                    {
-                        If (Not ((MoveToHash[(TmpList4[MoveGen.Idx] + MoveGen.TargetIdx)] == 0)))
-                        {
-                            MoveGen.SourceIdx = TmpList3[MoveGen.Idx];
-                            Call StagedMoveGenMVVLVA(Depth)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(Board[MoveGen.SourceIdx]))(abs(Board[MoveGen.TargetIdx]))(floor((AppliedMove[(Depth - 1)] % 100)));
-                        }
-                        MoveGen.Idx += 1;
                     }
                 }
                 MoveGen.TargetIdx += 1;
@@ -7072,22 +7034,22 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         List.ReplaceItem(Quiescence, (Depth + 0), 0);
     }
     Call //("Fast checkmate/draw detection + TT evaluation probing");
-    Call Search_DetectDrawByRepetition(Depth)(Quiescence);
-    If (Not ((SearchEvalResults[(Depth + 0)] == "")))
-    {
-        Stop(this script);
-    }
-    Call Search_TTProbeEval(Depth)(InitialDeepening)(Quiescence)(Horizon)(ExcludedMove);
-    If (Not ((SearchEvalResults[(Depth + 0)] == "")))
-    {
-        Stop(this script);
-    }
     Call Search_DetectCheckmate(Depth);
     If (Not ((SearchEvalResults[(Depth + 0)] == "")))
     {
         Stop(this script);
     }
+    Call Search_DetectDrawByRepetition(Depth)(Quiescence);
+    If (Not ((SearchEvalResults[(Depth + 0)] == "")))
+    {
+        Stop(this script);
+    }
     Call Search_DetectDraw(Depth)(Horizon);
+    If (Not ((SearchEvalResults[(Depth + 0)] == "")))
+    {
+        Stop(this script);
+    }
+    Call Search_TTProbeEval(Depth)(InitialDeepening)(Quiescence)(Horizon)(ExcludedMove);
     If (Not ((SearchEvalResults[(Depth + 0)] == "")))
     {
         Stop(this script);
