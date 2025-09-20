@@ -1645,9 +1645,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             }
                             If (1 == 1)
                             {
-                                If ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackMinorCountLocal) < 2)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) < 2)))
+                                If ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackMinorCountLocal) < 5)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) < 5)))
                                 {
-                                    Reduction += 1;
+                                    Reduction += -1;
                                 }
                             }
                             If (1 == 1)
@@ -3162,7 +3162,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             EvaluateRes += 19;
         }
         EvaluateResIsDynamic = 0;
-        If (1 == 0)
+        If (1 == 1)
         {
             Call CalculateMaterialImbalance(1);
             CountOuter1 = MaterialImbalanceRes;
@@ -3223,24 +3223,143 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
     EvalPieceIdx = 1;
     Repeat (List.Length(EvalPiecesIdx_NonPawns))
     {
-        IdxOuter = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
-        SourcePieceOuter = Board[(IdxOuter + 0)];
-        If (PieceMobility[IdxOuter] == 0)
+        Idx = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
+        CurrentPiece = Board[(Idx + 0)];
+        Factor = (((CurrentPiece > 0) * 2) - 1);
+        CurrentPieceAbs = abs(CurrentPiece);
+        If (CurrentPiece > 0)
         {
-            If ((SourcePieceOuter == GoK_BlackKnight) Or (SourcePieceOuter == GoK_BlackBishop))
+            Attacked = BoardAttackedByWhite[(Idx + 0)];
+            AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
+            Defended = BoardAttackedByBlack[(Idx + 0)];
+            DefenderIdx = BoardAttackedByBlackPiece[(Idx + 0)];
+            KingIdx = BlackKingIdx;
+        }
+        Else
+        {
+            Attacked = BoardAttackedByBlack[(Idx + 0)];
+            AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
+            Defended = BoardAttackedByWhite[(Idx + 0)];
+            DefenderIdx = BoardAttackedByWhitePiece[(Idx + 0)];
+            KingIdx = WhiteKingIdx;
+        }
+        AttackerPieceAbs = abs(Board[(AttackerIdx + 0)]);
+        DefenderPieceAbs = abs(Board[(DefenderIdx + 0)]);
+        If (Not ((CurrentPieceAbs == GoK_BlackKing)))
+        {
+            IdxSub = ((PieceMobility[(Idx + 0)] * 2) + 1);
+            If (CurrentPieceAbs == GoK_BlackRook)
             {
-                If ((IdxToRank[IdxOuter] > 6) And (Not ((BoardAttackedByBlack[IdxOuter] > BoardAttackedByWhite[IdxOuter]))))
-                {
-                    Call TaperedEval.AddIdentical(-250);
-                }
+                Call TaperedEval.Add((RookMobilityBonus[(IdxSub + 0)] * Factor))((RookMobilityBonus[(IdxSub + 1)] * Factor));
             }
             Else
             {
-                If ((SourcePieceOuter == GoK_WhiteKnight) Or (SourcePieceOuter == GoK_WhiteBishop))
+                If (CurrentPieceAbs == GoK_BlackBishop)
                 {
-                    If ((IdxToRank[IdxOuter] < 3) And (Not ((BoardAttackedByWhite[IdxOuter] > BoardAttackedByBlack[IdxOuter]))))
+                    Call TaperedEval.Add((BishopMobilityBonus[(IdxSub + 0)] * Factor))((BishopMobilityBonus[(IdxSub + 1)] * Factor));
+                }
+                Else
+                {
+                    If (CurrentPieceAbs == GoK_BlackKnight)
                     {
-                        Call TaperedEval.AddIdentical(250);
+                        Call TaperedEval.Add((KnightMobilityBonus[(IdxSub + 0)] * Factor))((KnightMobilityBonus[(IdxSub + 1)] * Factor));
+                    }
+                    Else
+                    {
+                        If (CurrentPieceAbs == GoK_BlackQueen)
+                        {
+                            Call TaperedEval.Add((QueenMobilityBonus[(IdxSub + 0)] * Factor))((QueenMobilityBonus[(IdxSub + 1)] * Factor));
+                        }
+                    }
+                }
+            }
+        }
+        If ((CurrentPieceAbs == GoK_BlackKnight) Or (CurrentPieceAbs == GoK_BlackBishop))
+        {
+            Rank = IdxToRank[(Idx + 0)];
+            If ((Rank > (2 + (CurrentPiece > 0))) And (Rank < (6 + (CurrentPiece > 0))))
+            {
+                If ((Defended > 0) And (DefenderPieceAbs == GoK_BlackPawn))
+                {
+                    If ((Attacked == 0) Or (AttackerPieceAbs > GoK_BlackPawn))
+                    {
+                        Call //("Outposts");
+                        If (CurrentPieceAbs == GoK_BlackKnight)
+                        {
+                            Call TaperedEval.Add((34 * Factor))((11 * Factor));
+                        }
+                        Else
+                        {
+                            Call TaperedEval.Add((17 * Factor))((6 * Factor));
+                        }
+                    }
+                }
+            }
+            If (Board[(Idx - Factor)] == (GoK_BlackPawn * Factor))
+            {
+                Call TaperedEval.Add((8 * Factor))((1 * Factor));
+            }
+            Delta = ChebyshevDistance[((Idx * 100) + KingIdx)];
+            Call TaperedEval.Add(((-3 * Delta) * Factor))(((-4 * Delta) * Factor));
+            If (CurrentPieceAbs == GoK_BlackBishop)
+            {
+                CurrentValue = 0;
+                EvalPieceIdx2 = 1;
+                Repeat (List.Length(EvalPiecesIdx_Pawns))
+                {
+                    IdxSub = EvalPiecesIdx_Pawns[(EvalPieceIdx2 + 0)];
+                    If ((Idx % 2) == (IdxSub % 2))
+                    {
+                        If (((CurrentPiece > 0) And (Board[(IdxSub + 0)] > 0)) Or ((CurrentPiece < 0) And (Board[(IdxSub + 0)] < 0)))
+                        {
+                            CurrentValue += (1 + ((IdxToFile[(IdxSub + 0)] == 4) Or (IdxToFile[(IdxSub + 0)] == 5)));
+                        }
+                    }
+                    EvalPieceIdx2 += 1;
+                }
+                Call TaperedEval.Add((-1 * (CurrentValue * Factor)))((-3 * (CurrentValue * Factor)));
+                If ((Idx % 2) == 1)
+                {
+                    Call IsReachableSlider(Idx)(28);
+                    If (IsReachableRes == 1)
+                    {
+                        Call IsReachableSlider(Idx)(37);
+                        If (IsReachableRes == 1)
+                        {
+                            Call TaperedEval.Add((21 * Factor))(0);
+                        }
+                    }
+                }
+                Else
+                {
+                    Call IsReachableSlider(Idx)(29);
+                    If (IsReachableRes == 1)
+                    {
+                        Call IsReachableSlider(Idx)(36);
+                        If (IsReachableRes == 1)
+                        {
+                            Call TaperedEval.Add((21 * Factor))(0);
+                        }
+                    }
+                }
+            }
+            If (1 == 0)
+            {
+                If (PieceMobility[(Idx + 0)] == 0)
+                {
+                    If (CurrentPiece > 0)
+                    {
+                        If ((Rank > 6) And (Not ((BoardAttackedByBlack[(Idx + 0)] > BoardAttackedByWhite[(Idx + 0)]))))
+                        {
+                            Call TaperedEval.AddIdentical(-250);
+                        }
+                    }
+                    Else
+                    {
+                        If ((Rank < 3) And (Not ((BoardAttackedByWhite[(Idx + 0)] > BoardAttackedByBlack[(Idx + 0)]))))
+                        {
+                            Call TaperedEval.AddIdentical(250);
+                        }
                     }
                 }
             }
@@ -3275,7 +3394,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                 Call TaperedEval.Add((8 * Factor))((6 * Factor));
             }
         }
-        If (PieceMobility[IdxOuter] < 4)
+        If (PieceMobility[(IdxOuter + 0)] < 4)
         {
             If (SourcePieceOuter > 0)
             {
@@ -3285,18 +3404,18 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
             {
                 KingIdx = WhiteKingIdx;
             }
-            If ((IdxToFile[IdxOuter] < 4) == (IdxToFile[IdxOuter] < IdxToFile[KingIdx]))
+            If ((IdxToFile[(IdxOuter + 0)] < 4) == (IdxToFile[(IdxOuter + 0)] < IdxToFile[(KingIdx + 0)]))
             {
                 If (SourcePieceOuter > 0)
                 {
-                    If ((IdxToRank[IdxOuter] < 3) And (IdxToRank[KingIdx] < 3))
+                    If ((IdxToRank[(IdxOuter + 0)] < 3) And (IdxToRank[(KingIdx + 0)] < 3))
                     {
                         Call TaperedEval.AddIdentical(-35);
                     }
                 }
                 Else
                 {
-                    If ((IdxToRank[IdxOuter] > 6) And (IdxToRank[KingIdx] > 6))
+                    If ((IdxToRank[(IdxOuter + 0)] > 6) And (IdxToRank[(KingIdx + 0)] > 6))
                     {
                         Call TaperedEval.AddIdentical(35);
                     }
@@ -3892,77 +4011,6 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
     EvalPieceIdx = 1;
     Repeat (List.Length(EvalPiecesIdx_NonPawns))
     {
-        SourceIdx = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
-        CurrentPiece = Board[(SourceIdx + 0)];
-        CurrentPieceAbs = abs(CurrentPiece);
-        If (Not ((CurrentPieceAbs == GoK_BlackKing)))
-        {
-            If (CurrentPiece > 0)
-            {
-                TargetIdx = WhiteKingIdx;
-            }
-            Else
-            {
-                TargetIdx = BlackKingIdx;
-            }
-            Factor = (((CurrentPiece > 0) * 2) - 1);
-            FactorOuter = Factor;
-            If (1 == 0)
-            {
-                If ((List.Length(BoardHistoryHash) + Depth) < 24)
-                {
-                    Factor = (Factor * ((List.Length(BoardHistoryHash) + Depth) / 24));
-                }
-            }
-            CurrentValue = (14 - (abs((IdxToFile[(SourceIdx + 0)] - IdxToFile[(TargetIdx + 0)])) + abs((IdxToRank[(SourceIdx + 0)] - IdxToRank[(TargetIdx + 0)]))));
-            IdxSub = ((PieceMobility[(SourceIdx + 0)] * 2) + 1);
-            If (CurrentPieceAbs == GoK_BlackRook)
-            {
-                If (1 == 0)
-                {
-                    Call TaperedEval.Add(Operator.Round(((CurrentValue * 2.5) * FactorOuter)))(0);
-                }
-                Call TaperedEval.Add((RookMobilityBonus[(IdxSub + 0)] * Factor))((RookMobilityBonus[(IdxSub + 1)] * Factor));
-            }
-            Else
-            {
-                If (CurrentPieceAbs == GoK_BlackBishop)
-                {
-                    If (1 == 0)
-                    {
-                        Call TaperedEval.Add(Operator.Round(((CurrentValue * 2.5) * FactorOuter)))(0);
-                    }
-                    Call TaperedEval.Add((BishopMobilityBonus[(IdxSub + 0)] * Factor))((BishopMobilityBonus[(IdxSub + 1)] * Factor));
-                }
-                Else
-                {
-                    If (CurrentPieceAbs == GoK_BlackKnight)
-                    {
-                        If (1 == 0)
-                        {
-                            Call TaperedEval.Add(Operator.Round(((CurrentValue * 3) * FactorOuter)))(0);
-                        }
-                        Call TaperedEval.Add((KnightMobilityBonus[(IdxSub + 0)] * Factor))((KnightMobilityBonus[(IdxSub + 1)] * Factor));
-                    }
-                    Else
-                    {
-                        If (CurrentPieceAbs == GoK_BlackQueen)
-                        {
-                            If (1 == 0)
-                            {
-                                Call TaperedEval.Add(Operator.Round(((CurrentValue * 2) * FactorOuter)))(0);
-                            }
-                            Call TaperedEval.Add((QueenMobilityBonus[(IdxSub + 0)] * Factor))((QueenMobilityBonus[(IdxSub + 1)] * Factor));
-                        }
-                    }
-                }
-            }
-        }
-        EvalPieceIdx += 1;
-    }
-    EvalPieceIdx = 1;
-    Repeat (List.Length(EvalPiecesIdx_All))
-    {
         Idx = EvalPiecesIdx_All[(EvalPieceIdx + 0)];
         CurrentPiece = Board[(Idx + 0)];
         Factor = (((CurrentPiece > 0) * 2) - 1);
@@ -4026,31 +4074,6 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
         }
         AttackerPieceAbs = abs(Board[(AttackerIdx + 0)]);
         DefenderPieceAbs = abs(Board[(DefenderIdx + 0)]);
-        If (1 == 1)
-        {
-            If ((CurrentPieceAbs == GoK_BlackKnight) Or (CurrentPieceAbs == GoK_BlackBishop))
-            {
-                Rank = IdxToRank[(Idx + 0)];
-                If ((Rank > (2 + (CurrentPiece > 0))) And (Rank < (6 + (CurrentPiece > 0))))
-                {
-                    If ((Defended > 0) And (DefenderPieceAbs == GoK_BlackPawn))
-                    {
-                        If ((Attacked == 0) Or (AttackerPieceAbs > GoK_BlackPawn))
-                        {
-                            Call //("Outposts");
-                            If (CurrentPieceAbs == GoK_BlackKnight)
-                            {
-                                Call TaperedEval.Add((34 * Factor))((11 * Factor));
-                            }
-                            Else
-                            {
-                                Call TaperedEval.Add((17 * Factor))((6 * Factor));
-                            }
-                        }
-                    }
-                }
-            }
-        }
         If (Attacked > 0)
         {
             StronglyProtectedCurrentPiece = (((Defended > 0) And (DefenderPieceAbs == GoK_BlackPawn)) Or ((Defended > 1) And (Attacked < 2)));
@@ -7692,23 +7715,6 @@ Define IsLowerCase(string Char) (warp=true)
     }
 }
 
-Define IsPseudoReachableForRook(string FromIdx)(string ToIdx) (warp=true)
-{
-    IsReachableRes = 0;
-    TargetIdx = FromIdx;
-    IdxInc = MovePathStepInc[((FromIdx * 100) + ToIdx)];
-    Repeat (MovePathDelta[((FromIdx * 100) + ToIdx)])
-    {
-        TargetIdx += IdxInc;
-        CurrentPieceAbs = abs(Board[(TargetIdx + 0)]);
-        If ((DefenderPieceAbs == GoK_BlackKing) Or (CurrentPieceAbs == GoK_BlackPawn))
-        {
-            Stop(this script);
-        }
-    }
-    IsReachableRes = 1;
-}
-
 Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
@@ -7737,12 +7743,39 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     {
         If (IsEndgame == 1)
         {
-            If ((Quiescence[(Depth - 1)] == 0) Or ((Quiescence[(Depth - 3)] == 0) And (CheckedState[(Depth - 1)] == 1)))
+            If ((Quiescence[(Depth - 1)] == 0) And (CheckedState[(Depth - 1)] == 1))
             {
                 IsQuiescentCheckRes = 1;
             }
         }
     }
+}
+
+Define IsReachableSlider(string FromIdx)(string ToIdx) (warp=true)
+{
+    IsReachableRes = 0;
+    Piece = Board[(FromIdx + 0)];
+    If ((abs(Piece) < GoK_BlackBishop) Or (abs(Piece) > GoK_BlackQueen))
+    {
+        Stop(this script);
+    }
+    CurrentMove = ((FromIdx * 100) + ToIdx);
+    IdxIsReachable = ((PieceIdxLookup[abs(Piece)] * 10000) + CurrentMove);
+    If (((Piece > 0) And (MovePosLookupBlackLegal[IdxIsReachable] == 0)) Or ((Piece < 0) And (MovePosLookupWhiteLegal[IdxIsReachable] == 0)))
+    {
+        Stop(this script);
+    }
+    IdxIsReachable = FromIdx;
+    IdxInc = MovePathStepInc[(CurrentMove + 0)];
+    Repeat ((MovePathDelta[(CurrentMove + 0)] - 1))
+    {
+        SourceIdx += IdxInc;
+        If (Not ((Board[(SourceIdx + 0)] == 0)))
+        {
+            Stop(this script);
+        }
+    }
+    IsReachableRes = 1;
 }
 
 Define IsWhiteKingCheckMate (warp=true)
