@@ -3691,15 +3691,8 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
             {
                 If (WhitePawnForwardRank > 0)
                 {
-                    ForwardIdx = (((WhitePawnForwardRank - 1) * 8) + Idx);
-                    If (WhitePawnForwardRank > 2)
-                    {
-                        WhiteEndgameTargetIdx = (ForwardIdx - 8);
-                    }
-                    Else
-                    {
-                        WhiteEndgameTargetIdx = ForwardIdx;
-                    }
+                    BlockerIdx = (((WhitePawnForwardRank - 1) * 8) + (Idx - 8));
+                    WhiteEndgameTargetIdx = BlockerIdx;
                     If (WhitePawnForwardRank < 7)
                     {
                         Call TaperedEval.AddIdentical((-3 * (7 - WhitePawnForwardRank)));
@@ -3716,12 +3709,15 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                         CurrentValue2 = (((Idx == 8) Or (RightOppPawnRank == 0)) Or (Not ((WhitePawnForwardRank > RightOppPawnRank))));
                         If ((CurrentValue == 1) And (CurrentValue2 == 1))
                         {
-                            Call TaperedEval.AddIdentical(Operator.Round((0 - ((PawnPassedRankBonus[(9 - WhitePawnForwardRank)] - PawnPassedFilePenalty[Idx]) / 1))));
-                            Call TaperedEval.Add(0)((-5 * ChebyshevDistance[((WhiteEndgameTargetIdx * 100) + BlackKingIdx)]));
-                            Call TaperedEval.Add(0)((2 * ChebyshevDistance[((WhiteEndgameTargetIdx * 100) + WhiteKingIdx)]));
+                            Call TaperedEval.AddIdentical(Operator.Round((0 - ((PawnPassedRankBonus[(9 - WhitePawnForwardRank)] - PawnPassedFilePenalty[Idx]) / (1 + (0.5 * (Board[BlockerIdx] > 0)))))));
+                            If ((IsEndgameLocal == 1) And (WhiteEndgameTargetIdx == 0))
+                            {
+                                Call TaperedEval.Add(0)((-5 * ChebyshevDistance[((WhiteEndgameTargetIdx * 100) + BlackKingIdx)]));
+                                Call TaperedEval.Add(0)((2 * ChebyshevDistance[((WhiteEndgameTargetIdx * 100) + WhiteKingIdx)]));
+                            }
                         }
                     }
-                    Call TaperedEval.AddIdentical((10 * (Board[ForwardIdx] == GoK_BlackPawn)));
+                    Call TaperedEval.AddIdentical((10 * (Board[BlockerIdx] == GoK_BlackPawn)));
                 }
             }
             If (((Idx == 1) Or (WhitePawnCount[(Idx - 1)] == 0)) And ((Idx == 8) Or (WhitePawnCount[(Idx + 1)] == 0)))
@@ -3771,15 +3767,8 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
             {
                 If (BlackPawnForwardRank > 0)
                 {
-                    ForwardIdx = (((BlackPawnForwardRank - 1) * 8) + (Idx + 8));
-                    If (BlackPawnForwardRank < 7)
-                    {
-                        BlackEndgameTargetIdx = (ForwardIdx + 8);
-                    }
-                    Else
-                    {
-                        BlackEndgameTargetIdx = ForwardIdx;
-                    }
+                    BlockerIdx = (((BlackPawnForwardRank - 1) * 8) + (Idx + 8));
+                    BlackEndgameTargetIdx = BlockerIdx;
                     If (BlackPawnForwardRank > 2)
                     {
                         Call TaperedEval.AddIdentical((3 * (BlackPawnForwardRank - 2)));
@@ -3796,12 +3785,15 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                         CurrentValue2 = (((Idx == 8) Or (RightOppPawnRank == 0)) Or (Not ((BlackPawnForwardRank < RightOppPawnRank))));
                         If ((CurrentValue == 1) And (CurrentValue2 == 1))
                         {
-                            Call TaperedEval.AddIdentical(Operator.Round(((PawnPassedRankBonus[BlackPawnForwardRank] - PawnPassedFilePenalty[Idx]) / 1)));
-                            Call TaperedEval.Add(0)((5 * ChebyshevDistance[((BlackEndgameTargetIdx * 100) + WhiteKingIdx)]));
-                            Call TaperedEval.Add(0)((-2 * ChebyshevDistance[((BlackEndgameTargetIdx * 100) + BlackKingIdx)]));
+                            Call TaperedEval.AddIdentical(Operator.Round(((PawnPassedRankBonus[BlackPawnForwardRank] - PawnPassedFilePenalty[Idx]) / (1 + (0.5 * (Board[BlockerIdx] < 0))))));
+                            If ((IsEndgameLocal == 1) And (BlackEndgameTargetIdx == 0))
+                            {
+                                Call TaperedEval.Add(0)((5 * ChebyshevDistance[((BlackEndgameTargetIdx * 100) + WhiteKingIdx)]));
+                                Call TaperedEval.Add(0)((-2 * ChebyshevDistance[((BlackEndgameTargetIdx * 100) + BlackKingIdx)]));
+                            }
                         }
                     }
-                    Call TaperedEval.AddIdentical((-10 * (Board[ForwardIdx] == GoK_WhitePawn)));
+                    Call TaperedEval.AddIdentical((-10 * (Board[BlockerIdx] == GoK_WhitePawn)));
                 }
             }
             If (((Idx == 1) Or (BlackPawnCount[(Idx - 1)] == 0)) And ((Idx == 8) Or (BlackPawnCount[(Idx + 1)] == 0)))
@@ -4615,7 +4607,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             }
             Call TaperedEval.Add((0 - CurrentValue))((0 - CurrentValue2));
         }
-        Call TaperedEval.Add(KingRingPawnProtection[(Side + 0)])(0);
+        Call TaperedEval.Add(Operator.Round((KingRingPawnProtection[(Side + 0)] * 0.7)))(0);
         Call TaperedEval.Add((-4 * KingFlankAttacks))(0);
         Call TaperedEval.Add((-8 * KingPawnlessFlank))((-35 * KingPawnlessFlank));
         Call TaperedEval.GetSumResult;
@@ -7814,7 +7806,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     IsQuiescentCheckRes = 0;
     If (Level > 4)
     {
-        If ((IsScratch3 == 1) Or (IsEndgame == 1))
+        If ((IsScratch3 == 1) Or (1 == 1))
         {
             If (Quiescence[(Depth - 1)] == 0)
             {
@@ -7970,11 +7962,11 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "PawnStorm")
             {
-                List.Add(PawnStorm, Operator.Round((CurrentValue * 1)));
+                List.Add(PawnStorm, Operator.Round((CurrentValue * 0.8)));
             }
             If (ListName == "PawnShelter")
             {
-                List.Add(PawnShelter, Operator.Round((CurrentValue * 1)));
+                List.Add(PawnShelter, Operator.Round((CurrentValue * 1.2)));
             }
             If (ListName == "ImbalanceSameSide")
             {
@@ -8454,6 +8446,17 @@ Define PrepareCurrentKillerMoves(string Depth) (warp=true)
 
 Define PrepareEvalPiecesData(string Depth) (warp=true)
 {
+    IsEndgameLocal = 0;
+    Call GetAttackForce((1 == 0));
+    If (AttackForce < 12)
+    {
+        IsEndgameLocal = 1;
+    }
+    Call GetAttackForce((1 == 1));
+    If (AttackForce < 12)
+    {
+        IsEndgameLocal = 1;
+    }
     List.DeleteAll(EvalPiecesIdx_All);
     List.DeleteAll(EvalPiecesIdx_Pawns);
     List.DeleteAll(EvalPiecesIdx_NonPawns);
@@ -10042,3 +10045,4 @@ Define _ClearLists (warp=true)
     List.DeleteItem(MovePosLookupWhiteMg, all);
     List.DeleteItem(MinMaxPly1Scores, all);
 }
+
