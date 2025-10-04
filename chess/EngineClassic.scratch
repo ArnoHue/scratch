@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (03.10.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (04.10.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -861,18 +861,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
     }
-    Call //("Search tree leaf reached");
-    If (Depth == MaxDepth)
-    {
-        Call TTProbeBoard(CurrentBoardHash)((Depth - 1));
-        If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
-        {
-            List.ReplaceItem(MinMaxResults, Depth, TTProbeBoardScoreSumRes);
-            List.ReplaceItem(ScoreTypes, Depth, "E");
-            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-            Stop(this script);
-        }
-    }
     If (Depth > 1)
     {
         Call //("Virtual king captures on previous ply => depth-corrected checkmate evaluation");
@@ -935,32 +923,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
                 List.ReplaceItem(MinMaxResultsIsDynamic, (Depth + 0), 1);
                 Stop(this script);
-            }
-        }
-    }
-    If ((Depth > 1) And (ExcludeMove == ""))
-    {
-        If (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) Or (1 == 1))
-        {
-            Call //("Probe transposition table for cached node evaluations");
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
-            {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And ((TTProbeHorizonRes < 0) And (Not ((TTProbeHorizonRes < (-2 + ((CheckedState[Depth] == 1) Or (Not (PrevQuiescence))))))))) And ((IsScratch3 == 0) Or (TTProbeNodeAgeRes == TTCurrentAge))))
-                {
-                    If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)]))))))
-                    {
-                        If ((TTProbeNodeScoreIsDynamicRes == 0) Or (TTProbeNodeAgeRes == TTCurrentAge))
-                        {
-                            If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
-                            {
-                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
-                                Stop(this script);
-                            }
-                        }
-                    }
-                }
             }
         }
     }
@@ -1074,6 +1036,39 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
         }
     }
+    If (Depth == MaxDepth)
+    {
+        Call Evaluate((Depth - 1))((1 == 1));
+        List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
+        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+        Stop(this script);
+    }
+    If ((Depth > 1) And (ExcludeMove == ""))
+    {
+        If (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) Or (1 == 1))
+        {
+            Call //("Probe transposition table for cached node evaluations");
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+            {
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And ((TTProbeHorizonRes < 0) And (Not ((TTProbeHorizonRes < (-2 + ((CheckedState[Depth] == 1) Or (Not (PrevQuiescence))))))))) And ((IsScratch3 == 0) Or (TTProbeNodeAgeRes == TTCurrentAge))))
+                {
+                    If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)]))))))
+                    {
+                        If ((TTProbeNodeScoreIsDynamicRes == 0) Or (TTProbeNodeAgeRes == TTCurrentAge))
+                        {
+                            If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, TTProbeNodeScoreIsDynamicRes);
+                                Stop(this script);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     Call //("Search function (minimax / alpha-beta pruning)");
     List.ReplaceItem(MinMaxResults, (Depth + 0), "");
     List.ReplaceItem(MinMaxResultsIsDynamic, (Depth + 0), 0);
@@ -1132,6 +1127,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If Quiescence
     {
         List.ReplaceItem(Quiescence, (Depth + 0), 1);
+        List.ReplaceItem(QuiescenceDone, (Depth + 0), 0);
     }
     Else
     {
@@ -1158,17 +1154,15 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call Evaluate((Depth - 1))((1 == 1));
             List.ReplaceItem(BoardEval, Depth, EvaluateRes);
             List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
+            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+            If (EvaluateResIsQuiescenceDone == 1)
+            {
+                Stop(this script);
+            }
             If ((Depth % 2) == 1)
             {
                 If (Not ((EvaluateRes < Betas[Depth])))
                 {
-                    List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
-                    If (1 == 0)
-                    {
-                        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("B")("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
-                    }
                     Stop(this script);
                 }
                 If (EvaluateRes > Alphas[Depth])
@@ -1180,12 +1174,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 If (Not ((EvaluateRes > Alphas[Depth])))
                 {
-                    List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
-                    If (1 == 0)
-                    {
-                        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("A")("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
-                    }
                     Stop(this script);
                 }
                 If (EvaluateRes < Betas[Depth])
@@ -1568,10 +1556,23 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     If (1 == 1)
                     {
-                        Call SEE(Depth);
-                        If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                        Count1 = 0;
+                        Idx = (Depth - 1);
+                        Repeat Until (Idx == 0)
                         {
-                            List.ReplaceItem(PlyExtension, Depth, 1);
+                            If (PlyExtension[Idx] == 1)
+                            {
+                                Count1 += 1;
+                            }
+                            Idx += -1;
+                        }
+                        If (Count1 < 1)
+                        {
+                            Call SEE(Depth);
+                            If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                            {
+                                List.ReplaceItem(PlyExtension, Depth, 1);
+                            }
                         }
                     }
                 }
@@ -1746,6 +1747,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
                 Call //("Revert applied move, restore board to previous state");
                 Call RevertMove(Depth);
+                List.ReplaceItem(PlyExtension, Depth, 0);
                 If (IsMinMaxTimeout == 1)
                 {
                     If (Quiescence[Depth] == 0)
@@ -3046,6 +3048,7 @@ Define ClearTTImpl(string Size) (warp=true)
     List.DeleteItem(TTBoardScore2, all);
     List.DeleteItem(TTBoardScore3, all);
     List.DeleteItem(TTBoardScoreSum, all);
+    List.DeleteItem(TTBoardQuiescenceDone, all);
     Repeat (Size)
     {
         List.Add(TTNodeHash, 0);
@@ -3066,6 +3069,7 @@ Define ClearTTImpl(string Size) (warp=true)
         List.Add(TTBoardScore2, "");
         List.Add(TTBoardScore3, "");
         List.Add(TTBoardScoreSum, "");
+        List.Add(TTBoardQuiescenceDone, "");
     }
 }
 
@@ -3158,6 +3162,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
         If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
         {
             EvaluateRes = TTProbeBoardScoreSumRes;
+            EvaluateResIsQuiescenceDone = TTProbeBoardQuiescenceDone;
             If (IsBlockProfilerEnabled == 1)
             {
                 Call Profile_MethodExit(Depth);
@@ -3165,6 +3170,19 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             Stop(this script);
         }
         Call PrepareEvalPiecesData(Depth);
+        If (CheckedState[Depth] == 0)
+        {
+            Idx = 1;
+            EvaluateResIsQuiescenceDone = 1;
+            Repeat (64)
+            {
+                If ((((Depth % 2) == 1) And ((BoardAttackedByWhite[Idx] > 0) And (Board[Idx] > 0))) Or (((Depth % 2) == 0) And ((BoardAttackedByBlack[Idx] > 0) And (Board[Idx] < 0))))
+                {
+                    EvaluateResIsQuiescenceDone = 0;
+                }
+                Idx += 1;
+            }
+        }
         Call EvaluatePawns(Depth);
         List.ReplaceItem(EvalExtended1, Depth, EvalPawnsResult);
         Call EvaluateMajorsMinors(Depth);
@@ -3190,7 +3208,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             CountOuter2 = MaterialImbalanceRes;
             EvaluateRes += Operator.Round(((CountOuter1 - CountOuter2) / 1));
         }
-        Call TTStoreBoard(CurrentBoardHash)(Depth)("")("")("")(EvaluateRes);
+        Call TTStoreBoard(CurrentBoardHash)(Depth)("")("")("")(EvaluateRes)(QuiescenceDone[Depth]);
     }
     If (IsBlockProfilerEnabled == 1)
     {
@@ -3229,7 +3247,7 @@ Define EvaluateMajorsMinors(string Depth) (warp=true)
     }
     Call //("Tapered evaluation, interpolating between midgame and game");
     Call EvaluateMajorsMinorsImpl(Depth);
-    Call TTStoreBoard(CurrentBoardHash)(Depth)("")(EvalMajorsMinorsResult)("")("");
+    Call TTStoreBoard(CurrentBoardHash)(Depth)("")(EvalMajorsMinorsResult)("")("")("");
 }
 
 Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
@@ -3619,7 +3637,7 @@ Define EvaluatePawns(string Depth) (warp=true)
         Stop(this script);
     }
     Call EvaluatePawnsImpl(Depth);
-    Call TTStoreBoard(TTHash)(Depth)(EvalPawnsResult)("")("")("");
+    Call TTStoreBoard(TTHash)(Depth)(EvalPawnsResult)("")("")("")("");
 }
 
 Define EvaluatePawnsImpl(string Depth) (warp=true)
@@ -4125,7 +4143,7 @@ Define EvaluateThreats(string Depth) (warp=true)
         Stop(this script);
     }
     Call EvaluateThreatsImpl(Depth);
-    Call TTStoreBoard(CurrentBoardHash)(Depth)("")("")(EvalThreatsResult)("");
+    Call TTStoreBoard(CurrentBoardHash)(Depth)("")("")(EvalThreatsResult)("")("");
 }
 
 Define EvaluateThreatsImpl(string Depth) (warp=true)
@@ -6861,6 +6879,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardEval, all);
     List.DeleteItem(HashMoveMetaData, all);
     List.DeleteItem(HashMove, all);
+    List.DeleteItem(QuiescenceDone, all);
     Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(Alphas, "");
@@ -6911,6 +6930,7 @@ Define InitBoard (warp=true)
         List.Add(BoardEval, "");
         List.Add(HashMoveMetaData, "");
         List.Add(HashMove, "");
+        List.Add(QuiescenceDone, 0);
     }
     List.DeleteItem(BoardAttackedByOpponentSnapshot, all);
     List.DeleteItem(BoardAttackedByOpponentSnapshot, all);
@@ -8678,7 +8698,6 @@ Define PrepareEvalPiecesData(string Depth) (warp=true)
         }
         CalcAttackStateWithMobility = 1;
         Call CalcBoardAttackedByMove((Depth + 1));
-        Call StoreAttackInfo((Depth + 1))(Depth);
         Call CalcBoardAttackedByMove((Depth + 2));
         CalcAttackStateWithMobility = 0;
         EvalPieceIdx = 1;
@@ -9759,6 +9778,7 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
     TTProbeBoardScore3Res = TTBoardScore3[(HashBucket + 0)];
     TTProbeBoardScoreSumRes = TTBoardScoreSum[(HashBucket + 0)];
     TTProbeBoardAgeRes = TTBoardAge[(HashBucket + 0)];
+    TTProbeBoardQuiescenceDone = QuiescenceDone[(HashBucket + 0)];
 }
 
 Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
@@ -9767,22 +9787,22 @@ Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
     Call TTProbeNodeImpl(TTNodeHashResult);
 }
 
-Define TTProbeNodeImpl(string BoardHash) (warp=true)
+Define TTProbeNodeImpl(string NodeHash) (warp=true)
 {
-    HashBucket = ((BoardHash % (List.Length(TTNodeHash) - 5)) + 1);
-    If (Not ((TTNodeHash[(HashBucket + 0)] == (BoardHash + 0))))
+    HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
+    If (Not ((TTNodeHash[(HashBucket + 0)] == (NodeHash + 0))))
     {
         HashBucket += 1;
-        If (Not ((TTNodeHash[(HashBucket + 0)] == (BoardHash + 0))))
+        If (Not ((TTNodeHash[(HashBucket + 0)] == (NodeHash + 0))))
         {
             HashBucket += 1;
-            If (Not ((TTNodeHash[(HashBucket + 0)] == (BoardHash + 0))))
+            If (Not ((TTNodeHash[(HashBucket + 0)] == (NodeHash + 0))))
             {
                 HashBucket += 1;
-                If (Not ((TTNodeHash[(HashBucket + 0)] == (BoardHash + 0))))
+                If (Not ((TTNodeHash[(HashBucket + 0)] == (NodeHash + 0))))
                 {
                     HashBucket += 1;
-                    If (Not ((TTNodeHash[(HashBucket + 0)] == (BoardHash + 0))))
+                    If (Not ((TTNodeHash[(HashBucket + 0)] == (NodeHash + 0))))
                     {
                         TTProbeRes = 0;
                         Stop(this script);
@@ -9804,17 +9824,17 @@ Define TTProbeNodeImpl(string BoardHash) (warp=true)
     TTProbeNodeScoreIsDynamicRes = TTNodeIsDynamic[(HashBucket + 0)];
 }
 
-Define TTStoreBoard(string BoardHash)(string Depth)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum) (warp=true)
+Define TTStoreBoard(string BoardHash)(string Depth)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum)(string BoardQuiescenceDone) (warp=true)
 {
     If (IsMinMaxTimeout == 1)
     {
         Stop(this script);
     }
     Call GetTTNodeHash(BoardHash)(Depth);
-    Call TTStoreBoardImpl(TTNodeHashResult)(BoardScore1)(BoardScore2)(BoardScore3)(BoardScoreSum);
+    Call TTStoreBoardImpl(TTNodeHashResult)(BoardScore1)(BoardScore2)(BoardScore3)(BoardScoreSum)(BoardQuiescenceDone);
 }
 
-Define TTStoreBoardImpl(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum) (warp=true)
+Define TTStoreBoardImpl(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum)(string BoardQuiescenceDone) (warp=true)
 {
     HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
     Hash = TTBoardHash[(HashBucket + 0)];
@@ -9856,6 +9876,10 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScore1)(string BoardScore2
         {
             List.ReplaceItem(TTBoardScoreSum, (HashBucket + 0), BoardScoreSum);
         }
+        If (Not ((BoardQuiescenceDone == "")))
+        {
+            List.ReplaceItem(TTBoardQuiescenceDone, (HashBucket + 0), BoardQuiescenceDone);
+        }
         List.ReplaceItem(TTBoardAge, (HashBucket + 0), TTCurrentAge);
     }
     Else
@@ -9865,6 +9889,7 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScore1)(string BoardScore2
         List.ReplaceItem(TTBoardScore2, (HashBucket + 0), BoardScore2);
         List.ReplaceItem(TTBoardScore3, (HashBucket + 0), BoardScore3);
         List.ReplaceItem(TTBoardScoreSum, (HashBucket + 0), BoardScoreSum);
+        List.ReplaceItem(TTBoardQuiescenceDone, (HashBucket + 0), BoardQuiescenceDone);
         List.ReplaceItem(TTBoardAge, (HashBucket + 0), TTCurrentAge);
     }
 }
@@ -9891,18 +9916,18 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
     Call TTStoreNodeImpl(TTNodeHashResult)(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(BlackMob)(WhiteMob)(BoardAttackedByOpp)(BoardAttackedByOppPiece)(CheckedAttackLines)(IsDynamic);
 }
 
-Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string BlackMob)(string WhiteMob)(string BoardAttackedByOpp)(string BoardAttackedByOppPiece)(string CheckedAttackLines)(string IsDynamic) (warp=true)
+Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string BlackMob)(string WhiteMob)(string BoardAttackedByOpp)(string BoardAttackedByOppPiece)(string CheckedAttackLines)(string IsDynamic) (warp=true)
 {
-    HashBucket = ((BoardHash % (List.Length(TTNodeHash) - 5)) + 1);
+    HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
     Hash = TTNodeHash[(HashBucket + 0)];
     Idx = 1;
-    Repeat Until (((Hash == BoardHash) Or (Hash == 0)) Or (Idx > 4))
+    Repeat Until (((Hash == NodeHash) Or (Hash == 0)) Or (Idx > 4))
     {
         Idx += 1;
         HashBucket += 1;
         Hash = TTNodeHash[(HashBucket + 0)];
     }
-    If ((Not ((Hash == BoardHash))) And (Not ((Hash == 0))))
+    If ((Not ((Hash == NodeHash))) And (Not ((Hash == 0))))
     {
         Idx = 1;
         Repeat Until (TTNodeAge[(HashBucket + 0)] < (TTCurrentAge - 1))
@@ -9915,7 +9940,7 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
             HashBucket += 1;
         }
     }
-    If (TTNodeHash[(HashBucket + 0)] == BoardHash)
+    If (TTNodeHash[(HashBucket + 0)] == NodeHash)
     {
         If (Not ((BoardAttackedByOpp == "")))
         {
@@ -9940,7 +9965,7 @@ Define TTStoreNodeImpl(string BoardHash)(string Depth)(string Score)(string Best
     }
     Else
     {
-        List.ReplaceItem(TTNodeHash, (HashBucket + 0), BoardHash);
+        List.ReplaceItem(TTNodeHash, (HashBucket + 0), NodeHash);
         List.ReplaceItem(TTNodeDepth, (HashBucket + 0), Depth);
         List.ReplaceItem(TTNodeHorizon, (HashBucket + 0), Horizon);
         List.ReplaceItem(TTNodeType, (HashBucket + 0), Type);
