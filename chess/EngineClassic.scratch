@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (24.10.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (26.10.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1543,7 +1543,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
             Else
             {
-                If (((Not (Quiescence)) And (Depth > 1)) And ((CheckedState[Depth] == 1) Or ((IsScratch3 == 1) And (PlyExtensionTagged[Depth] == 1))))
+                TargetIdx = floor((AppliedMove[Depth] % 100));
+                Rank = IdxToRank[TargetIdx];
+                If (((Not (Quiescence)) And (Depth > 1)) And ((CheckedState[Depth] == 1) Or ((((SourcePieces[Depth] == GoK_BlackPawn) And (((Rank == 6) Or (Rank == 7)) And (Not ((Board[(TargetIdx + 8)] < 0))))) Or ((SourcePieces[Depth] == GoK_WhitePawn) And (((Rank == 2) Or (Rank == 3)) And (Not ((Board[(TargetIdx - 8)] < 0)))))) Or ((IsScratch3 == 1) And (PlyExtensionTagged[Depth] == 1)))))
                 {
                     IsEndgameLocal = 0;
                     Call GetAttackForce((1 == 0));
@@ -3287,22 +3289,13 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
         CurrentPieceAbs = abs(CurrentPiece);
         If (CurrentPiece > 0)
         {
-            Attacked = BoardAttackedByWhite[(Idx + 0)];
-            AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
-            Defended = BoardAttackedByBlack[(Idx + 0)];
-            DefenderIdx = BoardAttackedByBlackPiece[(Idx + 0)];
             KingIdx = BlackKingIdx;
         }
         Else
         {
-            Attacked = BoardAttackedByBlack[(Idx + 0)];
-            AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
-            Defended = BoardAttackedByWhite[(Idx + 0)];
-            DefenderIdx = BoardAttackedByWhitePiece[(Idx + 0)];
             KingIdx = WhiteKingIdx;
         }
-        AttackerPieceAbs = abs(Board[(AttackerIdx + 0)]);
-        DefenderPieceAbs = abs(Board[(DefenderIdx + 0)]);
+        Call GetAttackDefenseInfo(Idx);
         If ((Not ((CurrentPieceAbs == GoK_BlackKing))) And (IsMobilityEval == 1))
         {
             IdxSub = ((PieceMobility[(Idx + 0)] * 2) + 1);
@@ -3571,13 +3564,19 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                     Idx = (((Rank - 1) * 8) + File);
                     If (Not ((Board[(Idx + 0)] == (GoK_BlackPawn * Factor))))
                     {
+                        Attacked = 0;
+                        AttackerIdx = 0;
                         If (Side == 1)
                         {
-                            Attacked = (abs(Board[(BoardAttackedByWhitePiece[(Idx + 0)] + 0)]) == GoK_BlackPawn);
+                            AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
                         }
                         Else
                         {
-                            Attacked = (abs(Board[(BoardAttackedByBlackPiece[(Idx + 0)] + 0)]) == GoK_BlackPawn);
+                            AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
+                        }
+                        If (Not ((AttackerIdx == 0)))
+                        {
+                            Attacked = (abs(Board[(AttackerIdx + 0)]) == GoK_BlackPawn);
                         }
                         If (Attacked == 0)
                         {
@@ -4176,44 +4175,6 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
         CurrentPiece = Board[(Idx + 0)];
         Factor = (((CurrentPiece > 0) * 2) - 1);
         CurrentPieceAbs = abs(CurrentPiece);
-        AttackerIdx = 0;
-        DefenderIdx = 0;
-        AttackerPieceAbs = 0;
-        DefenderPieceAbs = 0;
-        If (CurrentPiece > 0)
-        {
-            Attacked = BoardAttackedByWhite[(Idx + 0)];
-            If (Attacked > 0)
-            {
-                AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
-            }
-            Defended = BoardAttackedByBlack[(Idx + 0)];
-            If (Defended > 0)
-            {
-                DefenderIdx = BoardAttackedByBlackPiece[(Idx + 0)];
-            }
-        }
-        Else
-        {
-            Attacked = BoardAttackedByBlack[(Idx + 0)];
-            If (Attacked > 0)
-            {
-                AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
-            }
-            Defended = BoardAttackedByWhite[(Idx + 0)];
-            If (Defended > 0)
-            {
-                DefenderIdx = BoardAttackedByWhitePiece[(Idx + 0)];
-            }
-        }
-        If (Attacked > 0)
-        {
-            AttackerPieceAbs = abs(Board[(AttackerIdx + 0)]);
-        }
-        If (Defended > 0)
-        {
-            DefenderPieceAbs = abs(Board[(DefenderIdx + 0)]);
-        }
         If (CurrentPieceAbs > GoK_BlackPawn)
         {
             File = IdxToFile[(Idx + 0)];
@@ -4253,8 +4214,17 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                 }
             }
         }
+        If (CurrentPiece > 0)
+        {
+            Attacked = BoardAttackedByWhite[(Idx + 0)];
+        }
+        Else
+        {
+            Attacked = BoardAttackedByBlack[(Idx + 0)];
+        }
         If (Attacked > 0)
         {
+            Call GetAttackDefenseInfo(Idx);
             StronglyProtectedCurrentPiece = (((Defended > 0) And (DefenderPieceAbs == GoK_BlackPawn)) Or ((Defended > Attacked) Or ((Defended == Attacked) And (Not ((AttackerPieceAbs < CurrentPieceAbs))))));
             StronglyProtectedCurrentPieceNonPawn = ((CurrentPieceAbs > GoK_BlackPawn) And (StronglyProtectedCurrentPiece == 1));
             IsWeakCurrentPiece = ((Attacked > 0) And (StronglyProtectedCurrentPiece == 0));
@@ -4322,8 +4292,6 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
         }
         EvalPieceIdx += 1;
     }
-    Call TaperedEval.GetSumResult;
-    EvalThreatsResult = TaperedEval.SumResult;
     Call TaperedEval.Init;
     List.DeleteAll(KingRingAttackersCount);
     List.DeleteAll(KingRingAttacksCount);
@@ -4497,18 +4465,10 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             }
             If (Attacked > 0)
             {
+                Call GetAttackDefenseInfo(Idx);
                 TargetPiece = Board[(Idx + 0)];
                 If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
                 {
-                    If (Side == 1)
-                    {
-                        AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
-                    }
-                    Else
-                    {
-                        AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
-                    }
-                    AttackerPieceAbs = abs(Board[(AttackerIdx + 0)]);
                     If ((AttackerPieceAbs > GoK_BlackPawn) And (Not ((AttackerPieceAbs == GoK_BlackKing))))
                     {
                         Found = 0;
@@ -4553,28 +4513,6 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                             }
                             If (Found == 1)
                             {
-                                DefenderPiece = 0;
-                                DefenderIdx = 0;
-                                If (Side == 1)
-                                {
-                                    Defended = BoardAttackedByBlack[(Idx + 0)];
-                                    If (Defended > 0)
-                                    {
-                                        DefenderIdx = BoardAttackedByBlackPiece[(Idx + 0)];
-                                    }
-                                }
-                                Else
-                                {
-                                    Defended = BoardAttackedByWhite[(Idx + 0)];
-                                    If (Defended > 0)
-                                    {
-                                        DefenderIdx = BoardAttackedByWhitePiece[(Idx + 0)];
-                                    }
-                                }
-                                If (Defended > 0)
-                                {
-                                    DefenderPiece = Board[(DefenderIdx + 0)];
-                                }
                                 IsWeak = (((Attacked > 0) And (Defended < 2)) And ((Defended == 0) Or ((abs(DefenderPiece) > GoK_BlackRook) And (AttackerPieceAbs < GoK_BlackQueen))));
                                 If ((Defended == 0) Or ((IsWeak == 1) And (Attacked > 1)))
                                 {
@@ -5571,6 +5509,53 @@ Define GenerateMovesPublic(string Depth) (warp=true)
     List.ReplaceItem(CastlingState, Depth, "");
 }
 
+Define GetAttackDefenseInfo(string Idx) (warp=true)
+{
+    Attacked = 0;
+    Defended = 0;
+    AttackerIdx = 0;
+    DefenderIdx = 0;
+    AttackerPieceAbs = 0;
+    DefenderPieceAbs = 0;
+    If (Board[(Idx + 0)] > 0)
+    {
+        Attacked = BoardAttackedByWhite[(Idx + 0)];
+        Defended = BoardAttackedByBlack[(Idx + 0)];
+        If (Attacked > 0)
+        {
+            AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
+        }
+        If (Defended > 0)
+        {
+            DefenderIdx = BoardAttackedByBlackPiece[(Idx + 0)];
+        }
+    }
+    Else
+    {
+        If (Board[(Idx + 0)] < 0)
+        {
+            Attacked = BoardAttackedByBlack[(Idx + 0)];
+            Defended = BoardAttackedByWhite[(Idx + 0)];
+            If (Attacked > 0)
+            {
+                AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
+            }
+            If (Defended > 0)
+            {
+                DefenderIdx = BoardAttackedByWhitePiece[(Idx + 0)];
+            }
+        }
+    }
+    If (Attacked > 0)
+    {
+        AttackerPieceAbs = abs(Board[(AttackerIdx + 0)]);
+    }
+    If (Defended > 0)
+    {
+        DefenderPieceAbs = abs(Board[(DefenderIdx + 0)]);
+    }
+}
+
 Define GetAttackForce(bool Black) (warp=true)
 {
     If Black
@@ -5689,8 +5674,8 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
+    List.Add(AWSize, 25);
     List.Add(AWSize, 35);
-    List.Add(AWSize, 55);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsMinMaxTimeout = 0;
@@ -5706,11 +5691,11 @@ Define GetBestMoveMedDiff (warp=false)
         }
         Else
         {
-            QuiescenceDepth = 10;
+            QuiescenceDepth = 8;
         }
         AWCount = 1;
         AWDelta = AWSize[1];
-        If ((1 == 1) And ((IdxDeepening > (4 - (1 * IsScratch3))) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
+        If ((1 == 0) And ((IdxDeepening > (4 - (1 * IsScratch3))) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -5856,7 +5841,7 @@ Define GetKingShelterStorm(string KingIdx)(bool IsBlack)(string ShelterFactor) (
             {
                 KingShelterStorm += Operator.Round((PawnShelter[(((File - 1) * 8) + 1)] * 1));
             }
-            If ((abs((IdxToFile[WhiteKingIdx] - File)) > 1) Or (1 == 1))
+            If ((abs((IdxToFile[WhiteKingIdx] - File)) > 1) Or (1 == 0))
             {
                 If ((WhitePawnForwardRank > 0) And (KingRank < WhitePawnForwardRank))
                 {
@@ -5885,7 +5870,7 @@ Define GetKingShelterStorm(string KingIdx)(bool IsBlack)(string ShelterFactor) (
             {
                 KingShelterStorm += Operator.Round((PawnShelter[(((File - 1) * 8) + 1)] * 1));
             }
-            If ((abs((IdxToFile[BlackKingIdx] - File)) > 1) Or (1 == 1))
+            If ((abs((IdxToFile[BlackKingIdx] - File)) > 1) Or (1 == 0))
             {
                 If ((BlackPawnForwardRank > 0) And (KingRank > BlackPawnForwardRank))
                 {
@@ -6996,7 +6981,7 @@ Define InitKingSafety (warp=true)
     List.DeleteItem(PawnStorm, all);
     Call LoadList(" 0, -16, -11,  -7,  -4,  -2,   0,   0,     0, -20, -15, -10,  -6,  -3,   0,   0,     0, -16, -11,  -7,  -4,  -2,   0,   0,     0,  -8,  -6,  -4,  -2,   0,  2,   0,     0,  -6,  -4,  -2,   0,  2,  4,   0,     0, -16, -11,  -7,  -4,  -2,   0,   0,     0, -20, -15, -10,  -6,  -3,   0,   0,     0, -16, -11,  -7,  -4,  -2,   0,   0")("PawnStorm");
     List.DeleteItem(PawnShelter, all);
-    Call LoadList("-20, 16, 12,  8,  4,  -2,  -6,   0,   -28, 22, 18, 12,  6,  -4, -10,   0,   -20, 16, 12,  8,  4,  -2,  -6,   0,     0,   0,   0,   0,   0,   0,   0,   0,     0,   0,   0,   0,   0,   0,   0,   0,   -20, 16, 12,  8,  4,  -2,  -6,   0,   -28, 22, 18, 12,  6,  -4, -10,   0,   -20, 16, 12,  8,  4,  -2,  -6,   0")("PawnShelter");
+    Call LoadList("-14, 24, 16,  6,  4,  -2,  -6,   0,    -14, 32, 18, 8,  6,  -4, -8,   0,    -14, 22, 12,  6,  4,  -2,  -6,   0,      0,   0,   0,   0,   0,   0,   0,   0,      0,   0,   0,   0,   0,   0,   0,   0,    -14, 22, 12,  6,  4,  -2,  -6,   0,    -14, 32, 16, 8,  6,  -4, -8,   0,    -14, 24, 12,  6,  4,  -2,  -6,   0")("PawnShelter");
     List.DeleteItem(PawnPassedFilePenalty, all);
     Call LoadList("-10, 0, 10, 15, 15, 10, 0, -10")("PawnPassedFilePenalty");
     List.DeleteItem(PawnPassedRankBonus, all);
@@ -9556,14 +9541,14 @@ Define StoreMinMaxDrawResult(string BoardHash)(string Depth) (warp=true)
 
 Define TaperedEval.Add(string Mg)(string Eg) (warp=true)
 {
-    TaperedEval.Mg += Operator.Round(Mg);
-    TaperedEval.Eg += Operator.Round(Eg);
+    TaperedEval.Mg += Mg;
+    TaperedEval.Eg += Eg;
 }
 
 Define TaperedEval.AddIdentical(string Val) (warp=true)
 {
-    TaperedEval.Mg += Operator.Round(Val);
-    TaperedEval.Eg += Operator.Round(Val);
+    TaperedEval.Mg += Val;
+    TaperedEval.Eg += Val;
 }
 
 Define TaperedEval.GetPiecePosResult(string Piece)(string Idx) (warp=true)
@@ -10133,4 +10118,6 @@ Define _ClearLists (warp=true)
     List.DeleteItem(MinMaxPly1Scores, all);
     List.DeleteItem(BoardAttackedByOpponentSnapshot, all);
     List.DeleteItem(BoardAttackedByOpponentPieceSnapshot, all);
+    List.DeleteItem(Logfile, all);
+    List.DeleteItem(PV, all);
 }
