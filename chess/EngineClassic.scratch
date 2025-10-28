@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (26.10.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (28.10.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -6024,17 +6024,20 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
     }
     Call //("5. Counter Moves");
-    If (HistoryCounterMoves[AppliedMove[(Depth - 1)]] == Move)
+    If (Depth > 1)
     {
-        MoveScoreRes = (4000000 * GMS.Factor);
-        Stop(this script);
+        If (HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((AppliedMove[(Depth - 1)] % 100))])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))] == Move)
+        {
+            MoveScoreRes = (4000000 * GMS.Factor);
+            Stop(this script);
+        }
     }
     If (1 == 1)
     {
         If (floor((Move / 100)) == 0)
         {
             Call //("Castling");
-            MoveScoreRes = (2000 * GMS.Factor);
+            MoveScoreRes = (10000 * GMS.Factor);
             Stop(this script);
         }
     }
@@ -6046,25 +6049,8 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             Stop(this script);
         }
     }
-    GMS.Val1 = HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))];
-    GMS.Val2 = MaxHistoryMoveScore[((Depth % 2) + 1)];
-    If ((GMS.Val1 > 0) And (GMS.Val2 > 0.02))
-    {
-        Call //("6: Quiets with high history score");
-        MoveScoreRes = Operator.Round(((1000 + ((GMS.Val1 / GMS.Val2) * 100)) * GMS.Factor));
-        Stop(this script);
-    }
-    GMS.Idx = ((PieceIdxLookup[abs(SourcePieceParam)] * 10000) + ((FromIdx * 100) + ToIdx));
-    If (SourcePieceParam > 0)
-    {
-        MoveScoreRes = MovePosLookupBlackMg[(GMS.Idx + 0)];
-        Stop(this script);
-    }
-    Else
-    {
-        MoveScoreRes = MovePosLookupWhiteMg[(GMS.Idx + 0)];
-        Stop(this script);
-    }
+    Call //("6: Quiets with high history score");
+    MoveScoreRes = ((1000 + HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))]) * GMS.Factor);
 }
 
 Define GetNormalizedMove(string Move) (warp=true)
@@ -6584,18 +6570,18 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
         }
         Else
         {
-            Factor = 0.95;
+            Factor = 1;
         }
         IdxOuter = 1;
         Repeat (List.Length(HistoryMoveScores))
         {
-            List.ReplaceItem(HistoryMoveScores, IdxOuter, Operator.Round((HistoryMoveScores[IdxOuter] * Factor)));
+            List.ReplaceItem(HistoryMoveScores, (IdxOuter + 0), Operator.Round((HistoryMoveScores[(IdxOuter + 0)] * Factor)));
             IdxOuter += 1;
         }
         IdxOuter = 1;
         Repeat (List.Length(MaxHistoryMoveScore))
         {
-            List.ReplaceItem(MaxHistoryMoveScore, IdxOuter, Operator.Round((MaxHistoryMoveScore[IdxOuter] * Factor)));
+            List.ReplaceItem(MaxHistoryMoveScore, (IdxOuter + 0), Operator.Round((MaxHistoryMoveScore[(IdxOuter + 0)] * Factor)));
             IdxOuter += 1;
         }
     }
@@ -8371,10 +8357,13 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             List.DeleteAll(TmpList2);
             FactorOuter = (((Depth % 2) * 2) - 1);
             Call PrepareCurrentKillerMoves(Depth);
-            CurrentValue = HistoryCounterMoves[AppliedMove[(Depth - 1)]];
-            If (Not ((CurrentValue == "")))
+            If (Depth > 1)
             {
-                List.InsertItem(CurrentKillerMoves, 1, CurrentValue);
+                CurrentValue = HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((AppliedMove[(Depth - 1)] % 100))])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))];
+                If (Not ((CurrentValue == "")))
+                {
+                    List.InsertItem(CurrentKillerMoves, 1, CurrentValue);
+                }
             }
             IdxOuter3 = List.Length(CurrentKillerMoves);
             Repeat Until (IdxOuter3 == 0)
@@ -9524,13 +9513,16 @@ Define StoreKillerMove(string Depth)(string Move)(string MaxDepth) (warp=true)
         List.ReplaceItem(KillerMoves, (IdxSub + 1), Move);
     }
     Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 100) + floor((Move % 100))));
-    CurrentValue = (HistoryMoveScores[Idx] + ((IdxDeepening + 5) - Depth));
+    CurrentValue = (HistoryMoveScores[Idx] + ((MaxDepth - Depth) * (MaxDepth - Depth)));
     List.ReplaceItem(HistoryMoveScores, Idx, CurrentValue);
     If (CurrentValue > MaxHistoryMoveScore[((Depth % 2) + 1)])
     {
         List.ReplaceItem(MaxHistoryMoveScore, ((Depth % 2) + 1), CurrentValue);
     }
-    List.ReplaceItem(HistoryCounterMoves, AppliedMove[(Depth - 1)], Move);
+    If (Depth > 1)
+    {
+        List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((AppliedMove[(Depth - 1)] % 100))])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
+    }
 }
 
 Define StoreMinMaxDrawResult(string BoardHash)(string Depth) (warp=true)
