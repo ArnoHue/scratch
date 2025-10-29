@@ -1376,13 +1376,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 List.ReplaceItem(PutsInCheck, Depth, 1);
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("");
             }
-            If ((Not (Quiescence)) And ((Level > 3) And ((IsScratch3 == 1) And (Not ((AppliedMove[Depth] == ExcludeMove))))))
+            If ((Not (Quiescence)) And ((Level > 3) And (Not ((AppliedMove[Depth] == ExcludeMove)))))
             {
                 SourceIdxOuter2 = floor((AppliedMove[Depth] % 100));
                 SourcePieceOuter2 = Board[SourceIdxOuter2];
-                If (((IsScratch3 == 1) And (Depth < 5)) And ((IsEndgame == 0) And (abs(SourcePieceOuter2) < GoK_BlackRook)))
+                If (Horizon > 1)
                 {
-                    Call //("Fork detection for Scratch 3 runtime. Forks at low search depth will trigger search extension");
+                    Call //("Fork detection, will trigger search extension or prevent reduction");
                     Factor = (((Depth % 2) * 2) - 1);
                     IdxOuter2 = ((PieceIdxLookup[abs(SourcePieceOuter2)] * 10000) + (SourceIdxOuter2 * 100));
                     CountOuter1 = 0;
@@ -1617,14 +1617,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 IsReductionAndDone = 0;
                 If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
                 {
-                    If (((Horizon > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) > 0))
+                    If (((Horizon > 2) And ((CheckedState[Depth] == 0) And ((PlyExtensionTagged[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) > 0))
                     {
                         If ((Not ((abs(SourcePieces[Depth]) == GoK_BlackPawn))) Or ((Not ((IdxToRank[floor((AppliedMove[Depth] % 100))] == 2))) And (Not ((IdxToRank[floor((AppliedMove[Depth] % 100))] == 7)))))
                         {
                             Reduction = 0;
                             If (PickedMoveCount[Depth] > 1)
                             {
-                                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
+                                Reduction = floor(((1 + (TargetPieces[Depth] == 0)) + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / (2 + (Not ((TargetPieces[Depth] == 0)))))));
                                 If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                                 {
                                     Reduction += -1;
@@ -1636,7 +1636,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                         Reduction += -1;
                                     }
                                 }
-                                If (1 == 0)
+                                If (1 == 1)
                                 {
                                     If ((Depth > 2) And ((Not ((BoardEval[Depth] == ""))) And (Not ((BoardEval[(Depth - 2)] == "")))))
                                     {
@@ -3203,7 +3203,7 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             EvaluateRes += 11;
         }
         EvaluateResIsDynamic = 0;
-        If (1 == 0)
+        If (IsExtendedEvalLocal == 0)
         {
             Call CalculateMaterialImbalance(1);
             CountOuter1 = MaterialImbalanceRes;
@@ -3240,7 +3240,7 @@ Define EvaluateBoard (warp=true)
 Define EvaluateMajorsMinors(string Depth) (warp=true)
 {
     EvalMajorsMinorsResult = 0;
-    If (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) < 5)
+    If (IsExtendedEvalLocal == 0)
     {
         Stop(this script);
     }
@@ -4140,11 +4140,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
 Define EvaluateThreats(string Depth) (warp=true)
 {
     EvalThreatsResult = 0;
-    If (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) < 5)
-    {
-        Stop(this script);
-    }
-    If (IsScratch3 == 1)
+    If (IsExtendedEvalLocal == 0)
     {
         Stop(this script);
     }
@@ -5683,11 +5679,11 @@ Define GetBestMoveMedDiff (warp=false)
         }
         Else
         {
-            QuiescenceDepth = 10;
+            QuiescenceDepth = 8;
         }
         AWCount = 1;
         AWDelta = AWSize[1];
-        If ((1 == 1) And ((IdxDeepening > (4 - (1 * IsScratch3))) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
+        If ((1 == 1) And ((IdxDeepening > (7 - (3 * IsScratch3))) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval))))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -8493,6 +8489,14 @@ Define PrepareEvalPiecesData(string Depth) (warp=true)
     {
         IsEndgameLocal = 1;
     }
+    If ((IsScratch3 == 1) Or (((WhiteQueenCountLocal == 0) And (BlackQueenCountLocal == 0)) And ((WhiteMinorCountLocal + BlackMinorCountLocal) < 5)))
+    {
+        IsExtendedEvalLocal = 0;
+    }
+    Else
+    {
+        IsExtendedEvalLocal = 1;
+    }
     List.DeleteAll(EvalPiecesIdx_All);
     List.DeleteAll(EvalPiecesIdx_Pawns);
     List.DeleteAll(EvalPiecesIdx_NonPawns);
@@ -8592,7 +8596,7 @@ Define PrepareEvalPiecesData(string Depth) (warp=true)
         List.ReplaceItem(PieceMobilityPrep, (((Idx - 1) * 32) + 1), 0);
         Idx += 1;
     }
-    If (IsScratch3 == 1)
+    If (IsExtendedEvalLocal == 0)
     {
         Call ClearBoardAttackedByMove((Depth + 1));
         Call StoreAttackInfo((Depth + 1))(Depth);
