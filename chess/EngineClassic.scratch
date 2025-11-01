@@ -1,3 +1,4 @@
+
 //----- Green flag events ---------------------------------------------------------------------------------------------
 
 WhenGreenFlagClicked()
@@ -9037,8 +9038,6 @@ Define SEE(string MoveDepth) (warp=true)
     {
         Stop(this script);
     }
-    List.DeleteAll(SEE.TmpList1);
-    List.DeleteAll(SEE.TmpList2);
     List.DeleteAll(SEE.TmpList3);
     List.DeleteAll(SEE.TmpList4);
     Idx = 1;
@@ -9053,8 +9052,16 @@ Define SEE(string MoveDepth) (warp=true)
         List.Add(SEE.TmpList4, CalcMovesScoreList[(Idx + 0)]);
         Idx += 1;
     }
-    Side = 1;
-    Repeat (2)
+    If ((MoveDepth % 2) == 1)
+    {
+        Side = 2;
+    }
+    Else
+    {
+        Side = 1;
+    }
+    IsDone = 0;
+    Repeat Until (IsDone == 1)
     {
         List.DeleteAll(CalcMovesMoveList);
         List.DeleteAll(CalcMovesScoreList);
@@ -9067,86 +9074,31 @@ Define SEE(string MoveDepth) (warp=true)
                 If ((Not ((abs(SEE.SourcePiece) == GoK_BlackPawn))) Or (Not ((IdxToFile[(SEE.SourceIdx + 0)] == IdxToFile[(SEE.TargetIdx + 0)]))))
                 {
                     SEE.Idx = ((PieceIdxLookup[abs(SEE.SourcePiece)] * 10000) + ((SEE.SourceIdx * 100) + SEE.TargetIdx));
-                    If (Side == 1)
+                    If (((Side == 1) And (MovePosLookupBlackLegal[(SEE.Idx + 0)] == 1)) Or ((Side == 2) And (MovePosLookupWhiteLegal[(SEE.Idx + 0)] == 1)))
                     {
-                        If (MovePosLookupBlackLegal[(SEE.Idx + 0)] == 1)
+                        If (Not ((abs(SEE.SourcePiece) == GoK_BlackKing)))
                         {
-                            List.Add(CalcMovesMoveList, SEE.SourceIdx);
-                            List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
-                        }
-                    }
-                    Else
-                    {
-                        If (MovePosLookupWhiteLegal[(SEE.Idx + 0)] == 1)
-                        {
-                            List.Add(CalcMovesMoveList, SEE.SourceIdx);
-                            List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
+                            Call SEE.IsCounterCaptureReachable(abs(Board[(SEE.SourceIdx + 0)]))(SEE.SourceIdx)(SEE.TargetIdx);
+                            If (IsReachableRes == 1)
+                            {
+                                List.Add(CalcMovesMoveList, SEE.SourceIdx);
+                                List.Add(CalcMovesScoreList, abs(SEE.SourcePiece));
+                            }
                         }
                     }
                 }
             }
             SEE.SourceIdx += 1;
         }
-        Call SortMoveList((MoveDepth + ((MoveDepth % 2) + Side)));
-        SEE.Idx = 1;
-        Repeat (List.Length(CalcMovesMoveList))
+        If (List.Length(CalcMovesMoveList) == 0)
         {
-            If (Side == 1)
-            {
-                List.Add(SEE.TmpList1, CalcMovesMoveList[(SEE.Idx + 0)]);
-            }
-            Else
-            {
-                List.Add(SEE.TmpList2, CalcMovesMoveList[(SEE.Idx + 0)]);
-            }
-            SEE.Idx += 1;
+            IsDone = 1;
         }
-        Side += 1;
-    }
-    If (Board[(SEE.TargetIdx + 0)] > 0)
-    {
-        Side = 2;
-    }
-    Else
-    {
-        Side = 1;
-    }
-    IsDone = (((Side == 1) And (List.Length(SEE.TmpList1) == 0)) Or ((Side == 2) And (List.Length(SEE.TmpList2) == 0)));
-    Repeat Until (IsDone == 1)
-    {
-        FoundIdx = 0;
-        SEE.Idx = 1;
-        Repeat Until ((FoundIdx > 0) Or (((Side == 1) And (SEE.Idx > List.Length(SEE.TmpList1))) Or ((Side == 2) And (SEE.Idx > List.Length(SEE.TmpList2)))))
+        Else
         {
-            If (Side == 1)
-            {
-                SEE.SourceIdx = SEE.TmpList1[(SEE.Idx + 0)];
-            }
-            Else
-            {
-                SEE.SourceIdx = SEE.TmpList2[(SEE.Idx + 0)];
-            }
-            Call SEE.IsCounterCaptureReachable(abs(Board[(SEE.SourceIdx + 0)]))(SEE.SourceIdx)(SEE.TargetIdx);
-            If (IsReachableRes == 1)
-            {
-                If (Side == 1)
-                {
-                    List.DeleteItem(SEE.TmpList1, SEE.Idx);
-                }
-                Else
-                {
-                    List.DeleteItem(SEE.TmpList2, SEE.Idx);
-                }
-                FoundIdx = SEE.SourceIdx;
-            }
-            Else
-            {
-                SEE.Idx += 1;
-            }
-        }
-        If (FoundIdx > 0)
-        {
-            SEE.Move = ((FoundIdx * 100) + SEE.TargetIdx);
+            Call SortMoveList((MaxSearchDepthStackFrames + ((MaxSearchDepthStackFrames % 2) - 1)));
+            SEE.SourceIdx = CalcMovesMoveList[1];
+            SEE.Move = ((SEE.SourceIdx * 100) + SEE.TargetIdx);
             Depth += 1;
             Call ClearMoveList(Depth);
             Call AddMoveToList(SEE.Move)(Depth);
@@ -9173,18 +9125,14 @@ Define SEE(string MoveDepth) (warp=true)
             }
             MoveCountQ += 1;
             NodeCountQ += 1;
-        }
-        Else
-        {
-            IsDone = 1;
-        }
-        If (Side == 1)
-        {
-            Side = 2;
-        }
-        Else
-        {
-            Side = 1;
+            If (Side == 1)
+            {
+                Side = 2;
+            }
+            Else
+            {
+                Side = 1;
+            }
         }
     }
     Repeat Until (Depth == MoveDepth)
