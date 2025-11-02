@@ -1307,7 +1307,7 @@ Define ApplyMove(num Depth) (warp=true)
             }
         }
     }
-    If ((floor((AppliedMove[Depth] / 100)) == 0) Or ((Not ((PromotionPieces[Depth] == 0))) Or (Not ((TargetPiecesIdx[Depth] == floor((AppliedMove[Depth] % 100)))))))
+    If ((floor((AppliedMove[Depth] / 100)) == 0) Or ((Not ((PromotionPieces[Depth] == 0))) Or ((Not ((TargetPieces[Depth] == 0))) And (Not ((TargetPiecesIdx[Depth] == floor((AppliedMove[Depth] % 100))))))))
     {
         Call NNUE_Public_OnMakeMoveStop(Depth)("")("")("");
     }
@@ -1727,7 +1727,7 @@ Define ClearTT (warp=true)
     }
     Else
     {
-        Call ClearTTImpl(1000000);
+        Call ClearTTImpl(500000);
     }
 }
 
@@ -3049,7 +3049,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 35);
+    List.Add(AWSize, 75);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -3061,7 +3061,7 @@ Define GetBestMoveMedDiff (warp=false)
     {
         If (IsScratch3 == 1)
         {
-            QuiescenceDepth = 6;
+            QuiescenceDepth = 8;
         }
         Else
         {
@@ -3070,7 +3070,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = AWSize[AWCount];
-        If ((1 == 1) And ((IdxDeepening > (7 - (4 * IsScratch3))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval))))
+        If ((1 == 1) And ((IdxDeepening > (7 - (3 * IsScratch3))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval))))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -7189,14 +7189,17 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
         }
     }
-    If (BoardEval[Depth] == "")
+    If (1 == 0)
     {
-        If (CheckedState[Depth] == 0)
+        If (BoardEval[Depth] == "")
         {
-            If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
+            If (CheckedState[Depth] == 0)
             {
-                Call Evaluate((Depth - 1))((1 == 1));
-                List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+                If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
+                {
+                    Call Evaluate((Depth - 1))((1 == 1));
+                    List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+                }
             }
         }
     }
@@ -7247,6 +7250,18 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         }
         If (PickMoveRes[Depth] == 1)
         {
+            If (BoardEval[Depth] == "")
+            {
+                If (CheckedState[Depth] == 0)
+                {
+                    Call GetCurrentMove(Depth);
+                    If (((Not (Quiescence)) And ((PickedMoveCount[Depth] > 0) And (Board[floor((CurrentMove % 100))] == 0))) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+                    {
+                        Call Evaluate((Depth - 1))((1 == 1));
+                        List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+                    }
+                }
+            }
             Call ApplyMoveLight(Depth);
             Call //("Show progress and collect statistics");
             If (ShowProgress And ((Depth == 1) Or (Horizon > (4 - (3 * IsScratch3)))))
@@ -8093,27 +8108,20 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
             {
                 If ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackMinorCountLocal) > 1)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 1)))
                 {
-                    Call Evaluate((Depth - 1))((1 == 1));
-                    List.ReplaceItem(BoardEval, Depth, EvaluationRes);
-                    If ((((Depth % 2) == 1) And (Not ((EvaluationRes < (Betas[Depth] + 100))))) Or (((Depth % 2) == 0) And (Not ((EvaluationRes > (Alphas[Depth] - 100))))))
+                    Reduction = (2 + floor((Horizon / 4)));
+                    If (Reduction > (Horizon - 2))
                     {
-                        If (Horizon > 5)
-                        {
-                            Reduction = 3;
-                        }
-                        Else
-                        {
-                            Reduction = 2;
-                        }
-                        If (Reduction > (Horizon - 2))
-                        {
-                            Reduction = (Horizon - 2);
-                        }
-                        If (Reduction < 0)
-                        {
-                            Reduction = 0;
-                        }
-                        If (Reduction > 1)
+                        Reduction = (Horizon - 2);
+                    }
+                    If (Reduction < 0)
+                    {
+                        Reduction = 0;
+                    }
+                    If (Reduction > 1)
+                    {
+                        Call Evaluate((Depth - 1))((1 == 1));
+                        List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+                        If ((((Depth % 2) == 1) And (Not ((EvaluationRes < (Betas[Depth] + 100))))) Or (((Depth % 2) == 0) And (Not ((EvaluationRes > (Alphas[Depth] - 100))))))
                         {
                             Call ClearMoveList((Depth + 0));
                             Call AddMoveToList(0)((Depth + 0));
@@ -8341,7 +8349,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
             {
                 If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And (TTProbeNode.HorizonRes == -1)))
                 {
-                    If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)]))))))
+                    If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
                     {
                         If ((TTProbeNode.EvalIsDynamicRes == 0) Or (TTProbeNode.AgeRes == TT.CurrentAge))
                         {
@@ -8414,7 +8422,7 @@ Define SEE(string MoveDepth) (warp=true)
                             If (IsReachableRes == 1)
                             {
                                 List.Add(CalcMovesMoveList, SEE.SourceIdx);
-                                List.Add(CalcMovesScoreList, abs(SEE.SourcePiece));
+                                List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
                             }
                         }
                     }
@@ -8428,7 +8436,14 @@ Define SEE(string MoveDepth) (warp=true)
         }
         Else
         {
-            Call SortMoveList((MaxSearchDepthStackFrames + ((MaxSearchDepthStackFrames % 2) - 1)));
+            If ((MaxSearchDepthStackFrames % 2) == 1)
+            {
+                Call SortMoveList(((MaxSearchDepthStackFrames + 1) - Side));
+            }
+            Else
+            {
+                Call SortMoveList((MaxSearchDepthStackFrames - Side));
+            }
             SEE.SourceIdx = CalcMovesMoveList[1];
             SEE.Move = ((SEE.SourceIdx * 100) + SEE.TargetIdx);
             Depth += 1;
