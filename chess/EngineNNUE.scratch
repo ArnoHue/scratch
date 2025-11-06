@@ -3050,7 +3050,7 @@ Define GetBestMoveMedDiff (warp=false)
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 30);
-    List.Add(AWSize, 80);
+    List.Add(AWSize, 40);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -3071,7 +3071,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = AWSize[AWCount];
-        If ((((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > (ThinkTimeLimit * 0.2)) And (((IdxDeepening > (7 - (3 * IsScratch3))) Or (1 == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval))))
+        If ((IdxDeepening > 1) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -3100,6 +3100,7 @@ Define GetBestMoveMedDiff (warp=false)
                         {
                             AWAlpha = (SearchEvalResults[1] - AWDelta);
                         }
+                        AWBeta = Operator.Round(((AWDelta + (3 * AWBeta)) / 4));
                     }
                     Else
                     {
@@ -3338,6 +3339,11 @@ Define GetMoveNotation(num Move) (warp=true)
 
 Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
 {
+    Call GetMoveScoreImpl(SourcePieceParam)(TargetPieceParam)(FromIdx)(ToIdx)(Move)(Depth)((1 == 0));
+}
+
+Define GetMoveScoreImpl(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth)(bool IsApplied) (warp=true)
+{
     MoveScoreRes = 0;
     Factor = (((Depth % 2) * 2) - 1);
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
@@ -3371,12 +3377,19 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
         Else
         {
-            Call ClearMoveList((Depth + 2));
-            Call AddMoveToList(Move)((Depth + 2));
-            List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-            Call ApplyMoveLight((Depth + 2));
-            Call SEE((Depth + 2));
-            Call RevertMoveLight((Depth + 2));
+            If IsApplied
+            {
+                Call SEE(Depth);
+            }
+            Else
+            {
+                Call ClearMoveList((Depth + 2));
+                Call AddMoveToList(Move)((Depth + 2));
+                List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                Call ApplyMoveLight((Depth + 2));
+                Call SEE((Depth + 2));
+                Call RevertMoveLight((Depth + 2));
+            }
             If (((SourcePieceParam > 0) And (Not ((SEE.Result < 0)))) Or ((SourcePieceParam < 0) And (Not ((SEE.Result > 0)))))
             {
                 MoveScoreRes = ((7000000 + MvvLvaScore) * Factor);
@@ -5325,36 +5338,6 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
-    If (1 == 0)
-    {
-        If (IsScratch3 == 1)
-        {
-            If ((Level > 4) And (CheckedState[Depth] == 0))
-            {
-                Count = 0;
-                Idx = (Depth - 1);
-                Repeat Until (Idx < 2)
-                {
-                    If ((CheckedState[Idx] == 1) And ((Quiescence[(Idx - 1)] == 1) And (TargetPieces[(Idx - 1)] == 0)))
-                    {
-                        Count += 1;
-                    }
-                    Idx += -2;
-                }
-                If (Count < 1)
-                {
-                    IsQuiescentCheckRes = 1;
-                }
-            }
-        }
-        Else
-        {
-            If (Quiescence[(Depth - 1)] == 0)
-            {
-                IsQuiescentCheckRes = 1;
-            }
-        }
-    }
 }
 
 Define IsWhiteKingCheckMate (warp=true)
@@ -7979,7 +7962,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
             Reduction = 0;
             If (PickedMoveCount[Depth] > 1)
             {
-                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
+                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 1.75)));
                 If (1 == 0)
                 {
                     Reduction = floor(((0.38 + ((TargetPieces[Depth] == 0) * 1.63)) + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / (2.32 + ((Not ((TargetPieces[Depth] == 0))) * 1.44)))));
@@ -7989,6 +7972,16 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     Reduction += -1;
                 }
                 If (1 == 1)
+                {
+                    SourceIdx = floor((AppliedMove[Depth] / 100));
+                    TargetIdx = floor((AppliedMove[Depth] % 100));
+                    Call GetMoveScoreImpl(Board[SourceIdx])(Board[TargetIdx])(SourceIdx)(TargetIdx)(AppliedMove[Depth])(Depth)((1 == 1));
+                    If (Not ((abs(MoveScoreRes) < 4000000)))
+                    {
+                        Reduction += -1;
+                    }
+                }
+                If (1 == 0)
                 {
                     If ((Depth > 2) And ((Not ((BoardEval[Depth] == ""))) And (Not ((BoardEval[(Depth - 2)] == "")))))
                     {
@@ -8036,7 +8029,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         Reduction += 1;
                     }
                 }
-                If (1 == 0)
+                If (1 == 1)
                 {
                     If (Reduction > 2)
                     {
