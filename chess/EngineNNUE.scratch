@@ -93,7 +93,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (08.11.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (10.11.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3050,7 +3050,6 @@ Define GetBestMoveMedDiff (warp=false)
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 25);
-    List.Add(AWSize, 40);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -3066,12 +3065,12 @@ Define GetBestMoveMedDiff (warp=false)
         }
         Else
         {
-            QuiescenceDepth = 10;
+            QuiescenceDepth = 8;
         }
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = AWSize[AWCount];
-        If (((IdxDeepening > 1) And (((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 1) And ((((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > 1) And (1 == 1))) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -5489,33 +5488,44 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
         Repeat ((NNUE_HiddenSize / 256))
         {
             NNUE_Offset = (NNUE_Chunk * 256);
-            NNUE.Idx1 = (((NNUE_Side * NNUE_HiddenSize) + NNUE_Offset) + 1);
-            NNUE.Idx2 = (((NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * SourcePiece) + FromSquare)) + 1)] * NNUE_HiddenSize) + NNUE_Offset) + 1);
-            NNUE.Idx3 = (((NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * SourcePiece) + ToSquare)) + 1)] * NNUE_HiddenSize) + NNUE_Offset) + 1);
+            NNUE.Idx1_Base = (((NNUE_Side * NNUE_HiddenSize) + NNUE_Offset) + 1);
+            NNUE_FeatureFrom = NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * SourcePiece) + FromSquare)) + 1)];
+            NNUE_FeatureTo = NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * SourcePiece) + ToSquare)) + 1)];
             If (TargetPiece == "")
+            {
+                NNUE_Feature_Cap = 0;
+            }
+            Else
+            {
+                NNUE_Feature_Cap = NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * TargetPiece) + ToSquare)) + 1)];
+            }
+            NNUE.Idx2 = (((NNUE_FeatureFrom * NNUE_HiddenSize) + NNUE_Offset) + 1);
+            NNUE.Idx3 = (((NNUE_FeatureTo * NNUE_HiddenSize) + NNUE_Offset) + 1);
+            If (NNUE_Feature_Cap == 0)
             {
                 NNUE.Idx4 = 0;
             }
             Else
             {
-                NNUE.Idx4 = (((NNUE_InputIdxMap[(((1000 * NNUE_Side) + ((64 * TargetPiece) + ToSquare)) + 1)] * NNUE_HiddenSize) + NNUE_Offset) + 1);
+                NNUE.Idx4 = (((NNUE_Feature_Cap * NNUE_HiddenSize) + NNUE_Offset) + 1);
             }
             If (Depth == 0)
             {
-                NNUE.TargetIdx = NNUE.Idx1;
+                NNUE.SourceIdx = NNUE.Idx1_Base;
+                NNUE.TargetIdx = NNUE.Idx1_Base;
             }
             Else
             {
-                NNUE.TargetIdx = (NNUE.Idx1 + ((NNUE_HiddenSize * 2) * Depth));
+                NNUE.TargetIdx = (NNUE.Idx1_Base + ((NNUE_HiddenSize * 2) * Depth));
                 If (NNUE_Accumulator_MetaState[Depth] == 1)
                 {
-                    NNUE.Idx1 = (NNUE.Idx1 + ((NNUE_HiddenSize * 2) * (Depth - 1)));
+                    NNUE.SourceIdx = (NNUE.Idx1_Base + ((NNUE_HiddenSize * 2) * (Depth - 1)));
                 }
                 Else
                 {
                     If (NNUE_Accumulator_MetaState[Depth] == 2)
                     {
-                        NNUE.Idx1 = (NNUE.Idx1 + ((NNUE_HiddenSize * 2) * Depth));
+                        NNUE.SourceIdx = (NNUE.Idx1_Base + ((NNUE_HiddenSize * 2) * Depth));
                     }
                     Else
                     {
@@ -5524,33 +5534,61 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
                     }
                 }
             }
-            If (NNUE.Idx2 > (768 * 256))
+            NNUE.ChunkSize = (768 * 256);
+            NNUE.Idx2_InW2 = 0;
+            If (NNUE.Idx2 > NNUE.ChunkSize)
+            {
+                NNUE.Idx2 += (0 - NNUE.ChunkSize);
+                NNUE.Idx2_InW2 = 1;
+            }
+            NNUE.Idx3_InW2 = 0;
+            If (NNUE.Idx3 > NNUE.ChunkSize)
+            {
+                NNUE.Idx3 += (0 - NNUE.ChunkSize);
+                NNUE.Idx3_InW2 = 1;
+            }
+            NNUE.Idx4_InW2 = 0;
+            If ((NNUE.Idx4 > 0) And (NNUE.Idx4 > NNUE.ChunkSize))
+            {
+                NNUE.Idx4 += (0 - NNUE.ChunkSize);
+                NNUE.Idx4_InW2 = 1;
+            }
+            NNUE.CapType = 0;
+            If (NNUE.Idx4 > 0)
+            {
+                If (NNUE.Idx4_InW2 == 1)
+                {
+                    NNUE.CapType = 2;
+                }
+                Else
+                {
+                    NNUE.CapType = 1;
+                }
+            }
+            If (NNUE.Idx2_InW2 == 1)
             {
                 Call //("Idx2 => W2");
-                NNUE.Idx2 += (0 - (768 * 256));
-                If (NNUE.Idx3 > (768 * 256))
+                If (NNUE.Idx3_InW2 == 1)
                 {
                     Call //("Idx3 => W2");
-                    NNUE.Idx3 += (0 - (768 * 256));
-                    If (NNUE.Idx4 == 0)
+                    If (NNUE.CapType == 0)
                     {
                         Idx = 0;
                         Repeat (256)
                         {
-                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - 0)));
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - 0)));
                             Idx += 1;
                         }
                     }
                     Else
                     {
-                        If (NNUE.Idx4 > (768 * 256))
+                        If (NNUE.CapType == 2)
                         {
                             Call //("Idx4 => W2");
-                            NNUE.Idx4 += (0 - (768 * 256));
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -5560,7 +5598,7 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -5569,25 +5607,24 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
                 Else
                 {
                     Call //("Idx3 => W1");
-                    If (NNUE.Idx4 == 0)
+                    If (NNUE.CapType == 0)
                     {
                         Idx = 0;
                         Repeat (256)
                         {
-                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - 0)));
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - 0)));
                             Idx += 1;
                         }
                     }
                     Else
                     {
-                        If (NNUE.Idx4 > (768 * 256))
+                        If (NNUE.CapType == 2)
                         {
                             Call //("Idx4 => W2");
-                            NNUE.Idx4 += (0 - (768 * 256));
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -5597,7 +5634,7 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -5607,29 +5644,27 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
             Else
             {
                 Call //("Idx2 => W1");
-                If (NNUE.Idx3 > (768 * 256))
+                If (NNUE.Idx3_InW2 == 1)
                 {
                     Call //("Idx3 => W2");
-                    NNUE.Idx3 += (0 - (768 * 256));
-                    If (NNUE.Idx4 == 0)
+                    If (NNUE.CapType == 0)
                     {
                         Idx = 0;
                         Repeat (256)
                         {
-                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - 0)));
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - 0)));
                             Idx += 1;
                         }
                     }
                     Else
                     {
-                        If (NNUE.Idx4 > (768 * 256))
+                        If (NNUE.CapType == 2)
                         {
                             Call //("Idx4 => W2");
-                            NNUE.Idx4 += (0 - (768 * 256));
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -5639,7 +5674,7 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_2[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -5648,25 +5683,24 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
                 Else
                 {
                     Call //("Idx3 => W1");
-                    If (NNUE.Idx4 == 0)
+                    If (NNUE.CapType == 0)
                     {
                         Idx = 0;
                         Repeat (256)
                         {
-                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - 0)));
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - 0)));
                             Idx += 1;
                         }
                     }
                     Else
                     {
-                        If (NNUE.Idx4 > (768 * 256))
+                        If (NNUE.CapType == 2)
                         {
                             Call //("Idx4 => W2");
-                            NNUE.Idx4 += (0 - (768 * 256));
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -5676,7 +5710,7 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
                             Idx = 0;
                             Repeat (256)
                             {
-                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.Idx1 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + (NNUE_InputWeights_1[(NNUE.Idx3 + Idx)] - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)])));
                                 Idx += 1;
                             }
                         }
@@ -7308,7 +7342,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 {
                     If (((Not (Quiescence)) And (Depth > 1)) And (CheckedState[Depth] == 1))
                     {
-                        If (1 == 1)
+                        If (1 == 0)
                         {
                             Call SEE(Depth);
                             If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
@@ -7891,7 +7925,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
                 }
             }
         }
-        If (1 == 0)
+        If (1 == 1)
         {
             If (IsFutile == 0)
             {
@@ -7904,7 +7938,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
                             Call SEE(Depth);
                             FP.SEE = SEE.Result;
                         }
-                        If ((((Depth % 2) == 1) And (FP.SEE < 0)) Or (((Depth % 2) == 0) And (FP.SEE > 0)))
+                        If ((((Depth % 2) == 1) And (FP.SEE < GoK_WhitePawn)) Or (((Depth % 2) == 0) And (FP.SEE > GoK_BlackPawn)))
                         {
                             IsFutile = 1;
                         }
@@ -7959,16 +7993,16 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     {
         CurrentValue = (BlackQueenCountLocal + BlackRookCountLocal);
         CurrentValue2 = (WhiteQueenCountLocal + WhiteRookCountLocal);
-        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
+        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And (((TargetPieces[Depth] == 0) Or (1 == 0)) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
         {
             Call //("LMR search");
             Reduction = 0;
             If (PickedMoveCount[Depth] > 1)
             {
-                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 1.75)));
+                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
                 If (1 == 0)
                 {
-                    Reduction = floor(((0.38 + ((TargetPieces[Depth] == 0) * 1.63)) + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / (2.32 + ((Not ((TargetPieces[Depth] == 0))) * 1.44)))));
+                    Reduction = floor(((0.25 + ((TargetPieces[Depth] == 0) * 1.15)) + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / (2.76 + ((Not ((TargetPieces[Depth] == 0))) * 0.6)))));
                 }
                 If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                 {
@@ -7984,7 +8018,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         Reduction += -1;
                     }
                 }
-                If (1 == 1)
+                If (1 == 0)
                 {
                     If ((Depth > 2) And ((Not ((BoardEval[Depth] == ""))) And (Not ((BoardEval[(Depth - 2)] == "")))))
                     {
@@ -8035,7 +8069,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         Reduction += -1;
                     }
                 }
-                If (1 == 1)
+                If (1 == 0)
                 {
                     If Cutnode
                     {
@@ -8044,19 +8078,9 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 }
                 If (1 == 1)
                 {
-                    If (Horizon > 5)
+                    If (Reduction > 2)
                     {
-                        If (Reduction > 3)
-                        {
-                            Reduction = 3;
-                        }
-                    }
-                    Else
-                    {
-                        If (Reduction > 2)
-                        {
-                            Reduction = 2;
-                        }
+                        Reduction = 2;
                     }
                 }
                 If (Reduction > (Horizon - 1))
