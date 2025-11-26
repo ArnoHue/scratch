@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (24.11.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (26.11.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1560,7 +1560,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 If (((Not (Quiescence)) And (Depth > 1)) And ((CheckedState[Depth] == 1) Or ((IsScratch3 == 1) And (PlyExtensionTagged[Depth] == 1))))
                 {
-                    If (1 == 1)
+                    If (1 == 0)
                     {
                         Call SEE(Depth);
                         If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
@@ -1569,7 +1569,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         }
                     }
                 }
-                If ((PlyExtension[Depth] == 0) And (1 == 0))
+                If ((PlyExtension[Depth] == 0) And (1 == 1))
                 {
                     Call //("Singular extensions, temporarily disabled");
                     If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 7))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludeMove == "")))
@@ -5695,10 +5695,9 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 20);
-    List.Add(AWSize, 30);
-    List.Add(AWSize, 45);
-    List.Add(AWSize, 70);
+    List.Add(AWSize, 25);
+    List.Add(AWSize, 35);
+    List.Add(AWSize, 50);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsMinMaxTimeout = 0;
     IsDeepeningDone = 0;
@@ -5717,7 +5716,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         AWCount = 1;
         AWDelta = AWSize[1];
-        If ((((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > 0.5) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If ((IdxDeepening > 7) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -8269,104 +8268,34 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     Call //("Phase 2: Search for MVV-LVA captures via attack tables (and from recently moved pieces when attack tables not up-to-date)");
     If (PickPhase[(Depth + 0)] == 2)
     {
-        If ((Depth < 4) Or ((CheckedState[(Depth + 0)] == 1) Or (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) < 5)))
+        If ((Quiescence Or (Depth < 4)) Or ((CheckedState[(Depth + 0)] == 1) Or (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) < 5)))
         {
             List.ReplaceItem(PickPhase, Depth, 6);
         }
         Else
         {
-            If (1 == 1)
+            Call GenerateMovesImplWrapper((Depth + 2))((1 == 0))((1 == 1));
+            If (GenerateMovesRequiresAttackRecalc == 0)
             {
-                Call //("Generate attack tables if not done before");
-                Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
-            }
-            Call //("Update current depth attack tables (esp. attacks of current turn) from previous depth if applicable");
-            List.DeleteAll(TmpList1);
-            List.DeleteAll(TmpList2);
-            List.DeleteAll(TmpList3);
-            List.DeleteAll(TmpList4);
-            FactorOuter = (((Depth % 2) * 2) - 1);
-            Call //("Fixup for outdated attack tables: Inspect applied moves, find attack sources not present in current attack table");
-            Idx = (Depth - 2);
-            Repeat Until ((Idx < 1) Or (BoardAttackedCalculated[(Idx + 1)] == 1))
-            {
-                SourceIdxOuter2 = floor((AppliedMove[(Idx + 0)] % 100));
-                If ((SourceIdxOuter2 > 0) And (SourceIdxOuter2 < 65))
+                Idx = 1;
+                Repeat (List.Length(CalcMovesMoveList))
                 {
-                    If ((Board[(SourceIdxOuter2 + 0)] * FactorOuter) > 0)
+                    If (Not ((abs(CalcMovesScoreList[Idx]) < 7000000)))
                     {
-                        If (Not (List.ContainsItem(TmpList3, SourceIdxOuter2)))
+                        Call GetNormalizedMove(CalcMovesMoveList[Idx]);
+                        If (Not (Operator.Contains(PickedMoves[(Depth + 0)], NormalizedMoveRes)))
                         {
-                            List.Add(TmpList3, SourceIdxOuter2);
-                            List.Add(TmpList4, ((PieceIdxLookup[abs(Board[SourceIdxOuter2])] * 10000) + (SourceIdxOuter2 * 100)));
+                            Call AddMoveToList(CalcMovesMoveList[Idx])(Depth);
                         }
                     }
+                    Idx += 1;
                 }
-                Idx += -2;
+                List.ReplaceItem(PickPhase, Depth, 3);
             }
-            Call //("Look for net positive attacks via attack tables");
-            TargetIdxOuter2 = 1;
-            Repeat (64)
+            Else
             {
-                If ((Board[(TargetIdxOuter2 + 0)] * FactorOuter) < 0)
-                {
-                    If (BoardAttackedByOpponentSnapshot[(((Depth - 2) * 100) + TargetIdxOuter2)] > 0)
-                    {
-                        SourceIdxOuter2 = BoardAttackedByOpponentPieceSnapshot[(((Depth - 2) * 100) + TargetIdxOuter2)];
-                        SourcePieceOuter2 = Board[(SourceIdxOuter2 + 0)];
-                        If ((SourcePieceOuter2 * FactorOuter) > 0)
-                        {
-                            IdxOuter2 = ((PieceIdxLookup[abs(SourcePieceOuter2)] * 10000) + ((SourceIdxOuter2 * 100) + TargetIdxOuter2));
-                            If ((((Depth % 2) == 1) And (MovePosLookupBlackLegal[(IdxOuter2 + 0)] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupWhiteLegal[(IdxOuter2 + 0)] == 1)))
-                            {
-                                Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(SourcePieceOuter2))(abs(Board[(TargetIdxOuter2 + 0)]))(floor((AppliedMove[(Depth - 1)] % 100)));
-                            }
-                        }
-                    }
-                    Call //("Look for net positive attacks created previous plies (and attack table not up to date) ");
-                    IdxOuter3 = 1;
-                    Repeat (List.Length(TmpList3))
-                    {
-                        IdxOuter2 = (TmpList4[(IdxOuter3 + 0)] + TargetIdxOuter2);
-                        If ((((Depth % 2) == 1) And (MovePosLookupBlackLegal[(IdxOuter2 + 0)] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupWhiteLegal[(IdxOuter2 + 0)] == 1)))
-                        {
-                            SourceIdxOuter2 = TmpList3[IdxOuter3];
-                            Call StagedMoveGenMVVLVA(Depth)(SourceIdxOuter2)(TargetIdxOuter2)(abs(Board[(SourceIdxOuter2 + 0)]))(abs(Board[(TargetIdxOuter2 + 0)]))(floor((AppliedMove[(Depth - 1)] % 100)));
-                        }
-                        IdxOuter3 += 1;
-                    }
-                }
-                TargetIdxOuter2 += 1;
+                List.ReplaceItem(PickPhase, Depth, 6);
             }
-            Call //("Sort found captures and prepare for move loop ");
-            If (List.Length(TmpList1) > 0)
-            {
-                If (List.Length(TmpList1) == 1)
-                {
-                    Call AddMoveToList(TmpList1[1])(Depth);
-                }
-                Else
-                {
-                    List.DeleteAll(CalcMovesMoveList);
-                    List.DeleteAll(CalcMovesScoreList);
-                    Idx = 1;
-                    Repeat (List.Length(TmpList1))
-                    {
-                        List.Add(CalcMovesMoveList, TmpList1[Idx]);
-                        List.Add(CalcMovesScoreList, TmpList2[Idx]);
-                        Idx += 1;
-                    }
-                    Call SortMoveList((Depth + 2));
-                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                    Repeat (MovesCount[(Depth + 2)])
-                    {
-                        Call GetCurrentMove((Depth + 2));
-                        Call AddMoveToList(CurrentMove)(Depth);
-                        List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
-                    }
-                }
-            }
-            List.ReplaceItem(PickPhase, Depth, 3);
         }
     }
     Call //("Phase 3: Return moves found in phase 2 on subsequent PickMove() invocations");
@@ -8546,7 +8475,7 @@ Define PrepareEvalPiecesData(string Depth) (warp=true)
     {
         IsEndgameLocal = 1;
     }
-    If ((IsScratch3 == 1) Or (((WhiteQueenCountLocal + BlackQueenCountLocal) + (WhiteMinorCountLocal + BlackMinorCountLocal)) < 3))
+    If ((IsScratch3 == 1) Or (((WhiteQueenCountLocal + BlackQueenCountLocal) + (WhiteMinorCountLocal + BlackMinorCountLocal)) < 5))
     {
         IsExtendedEvalLocal = 0;
     }
@@ -9330,62 +9259,6 @@ Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(str
     Call GetMoveScore(Board[(SourceIdx + 0)])(Board[(TargetIdx + 0)])(SourceIdx)(TargetIdx)(Move)(Depth);
     List.Add(TmpList1, Move);
     List.Add(TmpList2, MoveScoreRes);
-}
-
-Define StagedMoveGenMVVLVA(string Depth)(string SourceIdx)(string TargetIdx)(string SourcePieceAbs)(string TargetPieceAbs)(string PrevTargetIdx) (warp=true)
-{
-    CurrentMoveOuter = ((SourceIdx * 100) + TargetIdx);
-    If List.ContainsItem(TmpList1, CurrentMoveOuter)
-    {
-        Stop(this script);
-    }
-    Call GetNormalizedMove(Move);
-    If Operator.Contains(PickedMoves[(Depth + 0)], NormalizedMoveRes)
-    {
-        Stop(this script);
-    }
-    If (SourcePieceAbs == GoK_BlackPawn)
-    {
-        If (IdxToFile[(SourceIdx + 0)] == IdxToFile[(TargetIdx + 0)])
-        {
-            Stop(this script);
-        }
-        If ((TargetIdx > 56) Or (TargetIdx < 9))
-        {
-            Stop(this script);
-        }
-    }
-    If (SourcePieceAbs == GoK_BlackKing)
-    {
-        If (BoardAttackedCalculated[(Depth + 0)] == 0)
-        {
-            Stop(this script);
-        }
-        If (BoardAttackedByOpponentSnapshot[(((Depth - 1) * 100) + TargetIdx)] > 0)
-        {
-            Stop(this script);
-        }
-    }
-    If (SourcePieceAbs > GoK_BlackKnight)
-    {
-        Idx = ((SourceIdx * 100) + TargetIdx);
-        IdxInc = MovePathStepInc[(Idx + 0)];
-        SourceIdx = SourceIdx;
-        Repeat ((MovePathDelta[(Idx + 0)] - 1))
-        {
-            SourceIdx += IdxInc;
-            If (Not ((Board[(SourceIdx + 0)] == 0)))
-            {
-                Stop(this script);
-            }
-        }
-    }
-    Call GetMoveScore(Board[(SourceIdx + 0)])(Board[(TargetIdx + 0)])(SourceIdx)(TargetIdx)(CurrentMoveOuter)(Depth);
-    If (Not ((abs(MoveScoreRes) < 7000000)))
-    {
-        List.Add(TmpList1, CurrentMoveOuter);
-        List.Add(TmpList2, MoveScoreRes);
-    }
 }
 
 Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
