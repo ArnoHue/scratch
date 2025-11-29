@@ -1334,6 +1334,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     List.ReplaceItem(PickPhase, Depth, 1);
     List.ReplaceItem(PickMoveRes, Depth, 1);
     List.ReplaceItem(PickedMoveCount, Depth, 0);
+    List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
     Call //("Move generation and application loop, recursive search invocation");
     Repeat Until (PickMoveRes[Depth] == 0)
     {
@@ -1467,7 +1468,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             ScoreIsDynamic = 0;
             Call //("Futility pruning");
             IsFutile = 0;
-            If ((CheckedState[Depth] == 0) And ((PutsInCheck[Depth] == 0) And ((PromotionPieces[Depth] == 0) And (Not ((AppliedMove[Depth] == ExcludeMove))))))
+            If ((((Not (Quiescence)) And (Horizon < 4)) And ((Betas[Depth] - Alphas[Depth]) == 1)) And ((CheckedState[Depth] == 0) And (PromotionPieces[Depth] == 0)))
+            {
+                If (PickedMoveCountQuiet[Depth] > (4 + (Horizon * Horizon)))
+                {
+                    IsFutile = 1;
+                }
+            }
+            If (((IsFutile == 0) And (CheckedState[Depth] == 0)) And ((PutsInCheck[Depth] == 0) And ((PromotionPieces[Depth] == 0) And (Not ((AppliedMove[Depth] == ExcludeMove))))))
             {
                 FP.Eval = "";
                 FP.SEE = "";
@@ -1583,7 +1591,8 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             {
                 If (((Not (Quiescence)) And (Depth > 1)) And ((CheckedState[Depth] == 1) Or ((IsScratch3 == 1) And (PlyExtensionTagged[Depth] == 1))))
                 {
-                    If (1 == 0)
+                    Idx = List.IndexOf(PlyExtension, 1);
+                    If ((Idx == 0) Or (Idx > Depth))
                     {
                         Call SEE(Depth);
                         If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
@@ -3932,22 +3941,50 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                     }
                     Else
                     {
-                        Delta = 9;
-                        Delta2 = 9;
-                        If (Not ((PE.LeftOwnPawnRank == 0)))
+                        IsBackward = 0;
+                        If ((IsPawnShelter == 0) And (PE.OwnForwardRankNormalized < 5))
                         {
-                            Delta = (PE.NormalizedRank[PE.LeftOwnPawnRank] - PE.OwnForwardRankNormalized);
+                            If ((PE.LeftOwnPawnRank == 0) Or (PE.NormalizedRank[PE.LeftOwnPawnRank] > PE.OwnForwardRankNormalized))
+                            {
+                                If ((PE.RightOwnPawnRank == 0) Or (PE.NormalizedRank[PE.RightOwnPawnRank] > PE.OwnForwardRankNormalized))
+                                {
+                                    If (((PE.LeftOppPawnRank > 0) And (PE.NormalizedRank[PE.LeftOppPawnRank] == (PE.OwnForwardRankNormalized + 1))) Or ((PE.RightOppPawnRank > 0) And (PE.NormalizedRank[PE.RightOppPawnRank] == (PE.OwnForwardRankNormalized + 1))))
+                                    {
+                                        IsBackward = 1;
+                                    }
+                                }
+                            }
                         }
-                        If (Not ((PE.RightOwnPawnRank == 0)))
+                        If (IsBackward == 1)
                         {
-                            Delta2 = (PE.NormalizedRank[PE.RightOwnPawnRank] - PE.OwnForwardRankNormalized);
+                            If (Blocked == 1)
+                            {
+                                Call TaperedEval.Add((-10 * PE.Factor))((-5 * PE.Factor));
+                            }
+                            Else
+                            {
+                                Call TaperedEval.Add((-16 * PE.Factor))((-11 * PE.Factor));
+                            }
                         }
-                        Count1 = ((Delta == 0) + (Delta2 == 0));
-                        Count2 = ((Delta == -1) + (Delta2 == -1));
-                        If ((Count1 > 0) Or (Count2 > 0))
+                        Else
                         {
-                            CurrentValue = Operator.Round(((PawnConnectedBonus[PE.OwnForwardRankNormalized] * ((2 + ((Count1 > 0) * 1)) / (1 + Blocked))) + (Count2 * 8)));
-                            Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)));
+                            Delta = 9;
+                            Delta2 = 9;
+                            If (Not ((PE.LeftOwnPawnRank == 0)))
+                            {
+                                Delta = (PE.NormalizedRank[PE.LeftOwnPawnRank] - PE.OwnForwardRankNormalized);
+                            }
+                            If (Not ((PE.RightOwnPawnRank == 0)))
+                            {
+                                Delta2 = (PE.NormalizedRank[PE.RightOwnPawnRank] - PE.OwnForwardRankNormalized);
+                            }
+                            Count1 = ((Delta == 0) + (Delta2 == 0));
+                            Count2 = ((Delta == -1) + (Delta2 == -1));
+                            If ((Count1 > 0) Or (Count2 > 0))
+                            {
+                                CurrentValue = Operator.Round(((PawnConnectedBonus[PE.OwnForwardRankNormalized] * ((2 + ((Count1 > 0) * 1)) / (1 + Blocked))) + (Count2 * 8)));
+                                Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)));
+                            }
                         }
                     }
                 }
@@ -6721,6 +6758,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(PickPhase, all);
     List.DeleteItem(PickedMoves, all);
     List.DeleteItem(PickedMoveCount, all);
+    List.DeleteItem(PickedMoveCountQuiet, all);
     List.DeleteItem(BestMoves, all);
     List.DeleteItem(CheckedState, all);
     List.DeleteItem(CheckedStateAttackLines, all);
@@ -6771,6 +6809,7 @@ Define InitBoard (warp=true)
         List.Add(PickPhase, "");
         List.Add(PickedMoves, "");
         List.Add(PickedMoveCount, 0);
+        List.Add(PickedMoveCountQuiet, 0);
         List.Add(BestMoves, "");
         List.Add(CheckedState, "");
         List.Add(CheckedStateAttackLines, "");
@@ -8125,6 +8164,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.ReplaceItem(HashMove, Depth, "");
         List.ReplaceItem(PickedMoves, Depth, ":");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
+        List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
         List.ReplaceItem(MovesCount, Depth, 0);
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(MovesIdxBestMove, Depth, 0);
@@ -8213,6 +8253,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     Call GetNormalizedMove(AppliedMove[Depth]);
                     List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[(Depth + 0)], Operator.Join(NormalizedMoveRes, ":")));
                     List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
+                    If (TargetPieces[Depth] == 0)
+                    {
+                        List.ReplaceItem(PickedMoveCountQuiet, Depth, (PickedMoveCountQuiet[Depth] + 1));
+                    }
                     List.ReplaceItem(PickPhase, Depth, 2);
                     List.ReplaceItem(PickMoveRes, Depth, 1);
                     List.ReplaceItem(HashMove, Depth, AppliedMove[Depth]);
@@ -8270,6 +8314,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             Call GetNormalizedMove(AppliedMove[(Depth + 0)]);
             List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[(Depth + 0)], Operator.Join(NormalizedMoveRes, ":")));
             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[(Depth + 0)] + 1));
+            If (TargetPieces[Depth] == 0)
+            {
+                List.ReplaceItem(PickedMoveCountQuiet, Depth, (PickedMoveCountQuiet[Depth] + 1));
+            }
             List.ReplaceItem(PickMoveRes, Depth, 1);
             Stop(this script);
         }
@@ -8362,6 +8410,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             Call GetNormalizedMove(AppliedMove[(Depth + 0)]);
             List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[(Depth + 0)], Operator.Join(NormalizedMoveRes, ":")));
             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[(Depth + 0)] + 1));
+            If (TargetPieces[Depth] == 0)
+            {
+                List.ReplaceItem(PickedMoveCountQuiet, Depth, (PickedMoveCountQuiet[Depth] + 1));
+            }
             List.ReplaceItem(PickMoveRes, Depth, 1);
             Stop(this script);
         }
@@ -8408,6 +8460,10 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
             Call ApplyMove(Depth);
             List.ReplaceItem(PickMoveRes, Depth, 1);
             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[(Depth + 0)] + 1));
+            If (TargetPieces[Depth] == 0)
+            {
+                List.ReplaceItem(PickedMoveCountQuiet, Depth, (PickedMoveCountQuiet[Depth] + 1));
+            }
             Stop(this script);
         }
         List.ReplaceItem(PickPhase, Depth, "*");
