@@ -935,7 +935,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or Quiescence)
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                     {
@@ -1573,14 +1573,14 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     If (1 == 1)
                     {
+                        Call SEE(Depth);
+                        If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                        {
+                            List.ReplaceItem(PlyExtension, Depth, 1);
+                        }
                         Idx = List.IndexOf(PlyExtension, 1);
                         If ((Idx == 0) Or (Idx > Depth))
                         {
-                            Call SEE(Depth);
-                            If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
-                            {
-                                List.ReplaceItem(PlyExtension, Depth, 1);
-                            }
                         }
                     }
                 }
@@ -1671,9 +1671,9 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             }
                             If (1 == 1)
                             {
-                                If (Reduction > 3)
+                                If (Reduction > 2)
                                 {
-                                    Reduction = 3;
+                                    Reduction = 2;
                                 }
                             }
                             If (Reduction < 0)
@@ -2010,6 +2010,17 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If (((IsMinMaxTimeout == 0) And (Depth > 1)) And (ExcludeMove == ""))
     {
+        If (Not ((MinMaxResults[Depth] < BetasOld[Depth])))
+        {
+            List.ReplaceItem(MinMaxResults, Depth, BetasOld[Depth]);
+        }
+        Else
+        {
+            If (Not ((MinMaxResults[Depth] > AlphasOld[Depth])))
+            {
+                List.ReplaceItem(MinMaxResults, Depth, AlphasOld[Depth]);
+            }
+        }
         Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
         If Quiescence
         {
@@ -4556,49 +4567,34 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
         Idx = 1;
         Repeat (64)
         {
-            TargetPiece = Board[(Idx + 0)];
-            If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
+            If (Side == 1)
+            {
+                Attacked = BoardAttackedByWhite[(Idx + 0)];
+            }
+            Else
+            {
+                Attacked = BoardAttackedByBlack[(Idx + 0)];
+            }
+            If (Attacked > 0)
             {
                 If (Side == 1)
                 {
-                    Attacked = BoardAttackedByWhite[(Idx + 0)];
+                    AttackerPieceAbs = abs(Board[BoardAttackedByWhitePiece[(Idx + 0)]]);
                 }
                 Else
                 {
-                    Attacked = BoardAttackedByBlack[(Idx + 0)];
+                    AttackerPieceAbs = abs(Board[BoardAttackedByBlackPiece[(Idx + 0)]]);
                 }
-                If (Attacked > 0)
+                If ((AttackerPieceAbs > GoK_BlackPawn) And (Not ((AttackerPieceAbs == GoK_BlackKing))))
                 {
-                    Call GetAttackDefenseInfo(Idx);
-                    If ((AttackerPieceAbs > GoK_BlackPawn) And (Not ((AttackerPieceAbs == GoK_BlackKing))))
+                    CurrentMove = ((Idx * 100) + KingIdx);
+                    IdxSub = ((PieceIdxLookup[(AttackerPieceAbs + 0)] * 10000) + CurrentMove);
+                    If (((Side == 1) And (MovePosLookupWhiteLegal[(IdxSub + 0)] == 1)) Or ((Side == 2) And (MovePosLookupBlackLegal[(IdxSub + 0)] == 1)))
                     {
-                        If (Side == 1)
+                        TargetPiece = Board[(Idx + 0)];
+                        If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
                         {
-                            KingIdx = BlackKingIdx;
-                        }
-                        Else
-                        {
-                            KingIdx = WhiteKingIdx;
-                        }
-                        CurrentMove = ((Idx * 100) + KingIdx);
-                        IdxSub = ((PieceIdxLookup[(AttackerPieceAbs + 0)] * 10000) + CurrentMove);
-                        Found = 0;
-                        If (Side == 1)
-                        {
-                            If (MovePosLookupWhiteLegal[(IdxSub + 0)] == 1)
-                            {
-                                Found = 1;
-                            }
-                        }
-                        Else
-                        {
-                            If (MovePosLookupBlackLegal[(IdxSub + 0)] == 1)
-                            {
-                                Found = 1;
-                            }
-                        }
-                        If (Found == 1)
-                        {
+                            Found = 1;
                             If (Not ((AttackerPieceAbs == GoK_BlackKnight)))
                             {
                                 SourceIdx = Idx;
@@ -4614,6 +4610,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                             }
                             If (Found == 1)
                             {
+                                Call GetAttackDefenseInfo(Idx);
                                 IsWeak = (((Attacked > 0) And (Defended < 2)) And ((Defended == 0) Or ((abs(DefenderPiece) > GoK_BlackRook) And (AttackerPieceAbs < GoK_BlackQueen))));
                                 If ((Defended == 0) Or ((IsWeak == 1) And (Attacked > 1)))
                                 {
@@ -5764,9 +5761,8 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 25);
-    List.Add(AWSize, 35);
-    List.Add(AWSize, 50);
+    List.Add(AWSize, 40);
+    List.Add(AWSize, 65);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsMinMaxTimeout = 0;
     IsDeepeningDone = 0;
@@ -5785,7 +5781,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         AWCount = 1;
         AWDelta = AWSize[1];
-        If ((IdxDeepening > 1) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 4) And (1 == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
