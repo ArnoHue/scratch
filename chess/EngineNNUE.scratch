@@ -93,7 +93,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (06.12.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (07.12.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3042,6 +3042,7 @@ Define GetBestMoveMedDiff (warp=false)
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 25);
+    List.Add(AWSize, 50);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -3057,7 +3058,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         Else
         {
-            QuiescenceDepth = 10;
+            QuiescenceDepth = 8;
         }
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
@@ -3364,10 +3365,10 @@ Define GetMoveScoreImpl(string SourcePieceParam)(string TargetPieceParam)(string
             Stop(this script);
         }
     }
-    If (Variable.Length(Move) == 6)
+    If (Not ((Move == floor(Move))))
     {
         Call //("Promotions");
-        MoveScoreRes = ((7500010 - Operator.LetterOf(Move, 6)) * Factor);
+        MoveScoreRes = ((7500010 - ((Move * 10) % 10)) * Factor);
         Stop(this script);
     }
     If (Not ((TargetPieceParam == 0)))
@@ -6570,14 +6571,14 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         Call //("Create attack tables in case not found in TT");
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
         Call //("Invoke full move generator. When in check, only create evasions");
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence And (CheckedState[Depth] == 0)));
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or (CheckedState[Depth] == 1)));
         If (GenerateMovesRequiresAttackRecalc == 1)
         {
             Call //("Move generator will raise this error when creating king moves without having provided current attack tables (can only happen during quiescence search) => create them and invoke again");
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo(Depth);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence And (CheckedState[Depth] == 0)));
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or (CheckedState[Depth] == 1)));
         }
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
@@ -7163,13 +7164,22 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 0) Or (TTProbeNode.BestMoveRes == ""))
             {
-                List.ReplaceItem(AppliedMove, (Depth + 1), AppliedMove[(Depth - 1)]);
-                List.ReplaceItem(PutsInCheck, (Depth + 1), PutsInCheck[(Depth - 1)]);
+                Call ClearMoveList(Depth);
+                Call AddMoveToList(0)(Depth);
+                List.ReplaceItem(MovesIdx, Depth, 1);
+                Call ApplyMove(Depth);
+                Call ClearMoveList((Depth + 1));
+                Call AddMoveToList(0)((Depth + 1));
+                List.ReplaceItem(MovesIdx, Depth, 1);
+                Call ApplyMove((Depth + 1));
                 List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[(Depth - 1)]);
                 List.ReplaceItem(EnPassantTarget, (Depth + 2), EnPassantTarget[Depth]);
+                List.ReplaceItem(PutsInCheck, (Depth + 1), PutsInCheck[(Depth - 1)]);
                 List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
                 List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
                 Call SearchImpl((Depth + 2))(InitialDeepening)(QuiescenceDepth)(CurrentQuiescence)(ShowProgress)((Horizon - 3))(Cutnode)("");
+                Call RevertMove((Depth + 1));
+                Call RevertMove(Depth);
             }
         }
     }
@@ -7268,10 +7278,19 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
             Else
             {
-                If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 2))) And (CheckedState[Depth] == 1))
+                If (((Not (Quiescence)) And (Depth > 1)) And (CheckedState[Depth] == 1))
                 {
-                    Idx = List.IndexOf(SearchExtension, 1);
-                    If ((Idx == 0) Or (Idx > Depth))
+                    Count = 0;
+                    Idx = 1;
+                    Repeat ((Depth - 1))
+                    {
+                        If (SearchExtension[Idx] == 1)
+                        {
+                            Count = 1;
+                        }
+                        Idx = 1;
+                    }
+                    If (Count < 2)
                     {
                         Call SEE(Depth);
                         If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
@@ -7282,13 +7301,10 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 }
                 If (SearchExtension[Depth] == 0)
                 {
-                    If (1 == 1)
+                    Call Search_SingularExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
+                    If (SE.IsSingularExtension == 1)
                     {
-                        Call Search_SingularExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
-                        If (SE.IsSingularExtension == 1)
-                        {
-                            List.ReplaceItem(SearchExtension, Depth, 1);
-                        }
+                        List.ReplaceItem(SearchExtension, Depth, 1);
                     }
                 }
                 Eval = "";
@@ -7779,7 +7795,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
                 Idx += -2;
             }
         }
-        If (Search.Count > 1)
+        If (Search.Count > 2)
         {
             List.ReplaceItem(SearchEvalResults, (Depth + 0), DrawByRepetitionEval);
             List.ReplaceItem(SearchEvalResultsIsDynamic, (Depth + 0), 1);
@@ -7868,7 +7884,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon)(str
                 }
             }
         }
-        If (1 == 1)
+        If (1 == 0)
         {
             If (IsFutile == 0)
             {
@@ -8439,7 +8455,10 @@ Define SEE(string MoveDepth) (warp=true)
             Call ApplyMoveLight(Depth);
             If (abs(TargetPieces[(Depth + 0)]) == GoK_BlackKing)
             {
-                SEE.Result += TargetPieces[(Depth - 1)];
+                If (1 == 1)
+                {
+                    SEE.Result += TargetPieces[(Depth - 1)];
+                }
                 IsDone = 1;
             }
             Else
@@ -8914,11 +8933,11 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum) (warp=true)
         HashBucket += 1;
         Hash = TTBoardHash[(HashBucket + 0)];
     }
-    If ((Not ((Hash == NodeHash))) And (Not ((Hash == 0))))
+    If ((Not ((Hash == BoardHash))) And (Not ((Hash == 0))))
     {
         HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
         Idx = 1;
-        Repeat Until (TTNodeAge[(HashBucket + 0)] < (TT.CurrentAge - 1))
+        Repeat Until (TTBoardAge[(HashBucket + 0)] < (TT.CurrentAge - 1))
         {
             If (Idx > 4)
             {
