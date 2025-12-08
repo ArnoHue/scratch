@@ -93,7 +93,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (08.12.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (09.12.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3062,7 +3062,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = AWSize[AWCount];
-        If (((IdxDeepening > 7) And (1 == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 1) And (1 == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -5742,6 +5742,7 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate)(string Dept
                     Else
                     {
                         Call Log("Invalid NNUE bulk update state")("")("")("")("")("")("")("");
+                        Call ​​breakpoint​​;
                         Stop(this script);
                     }
                 }
@@ -5800,6 +5801,102 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate)(string Dept
 Define NNUE_Activate(string GoKIdx)(string GoKPiece)(string Depth) (warp=true)
 {
     Call NNUE_ActDeactImpl(NNUE_GoKIdxToSquare[VirtualBoard[GoKIdx]])((((6 * (GoKPiece > 0)) + PieceIdxLookup[abs(GoKPiece)]) - 1))((1 == 1))(Depth);
+}
+
+Define NNUE_ApplyPendingOnDemand(string Depth) (warp=true)
+{
+    If (Depth > 1)
+    {
+        If (NNUE_PendingDirty[(Depth - 1)] == 1)
+        {
+            Call NNUE_ApplyPendingOnDemand((Depth - 1));
+        }
+        Else
+        {
+            If (NNUE_Accumulator_MetaState[(Depth - 1)] == 0)
+            {
+                Call NNUE_ApplyPendingOnDemand((Depth - 1));
+            }
+        }
+    }
+    If (NNUE_PendingDirty[Depth] == 0)
+    {
+        If (NNUE_Accumulator_MetaState[Depth] == 0)
+        {
+            NNUE.Idx1 = ((NNUE_HiddenSize * 2) * (Depth - 1));
+            NNUE.TargetIdx = ((NNUE_HiddenSize * 2) * Depth);
+            NNUE_Idx = 1;
+            Repeat ((NNUE_HiddenSize * 2))
+            {
+                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + NNUE_Idx), NNUE_Accumulator[(NNUE.Idx1 + NNUE_Idx)]);
+                NNUE_Idx += 1;
+            }
+            List.ReplaceItem(NNUE_Accumulator_MetaState, Depth, 3);
+        }
+        Stop(this script);
+    }
+    Call NNUE_StartBulkActivation(Depth);
+    If (NNUE_PendingUnknown[Depth] == 1)
+    {
+        NNUE_Found = 0;
+        NNUE_Idx = 1;
+        Repeat (64)
+        {
+            NNUE_Piece = Board[(NNUE_Idx + 0)];
+            NNUE_PrevPiece = NNUE_PrevRefreshBoard[(NNUE_Idx + 0)];
+            If (Not ((NNUE_Piece == NNUE_PrevPiece)))
+            {
+                If (Not ((NNUE_PrevPiece == 0)))
+                {
+                    Call NNUE_Deactivate(NNUE_Idx)(NNUE_PrevPiece)(Depth);
+                    NNUE_Found = 1;
+                }
+                If (Not ((NNUE_Piece == 0)))
+                {
+                    Call NNUE_Activate(NNUE_Idx)(NNUE_Piece)(Depth);
+                    NNUE_Found = 1;
+                }
+                List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, NNUE_Piece);
+            }
+            NNUE_Idx += 1;
+        }
+        If (NNUE_Found == 0)
+        {
+            NNUE.Idx1 = ((NNUE_HiddenSize * 2) * (Depth - 1));
+            NNUE.TargetIdx = ((NNUE_HiddenSize * 2) * Depth);
+            NNUE_Idx = 1;
+            Repeat ((NNUE_HiddenSize * 2))
+            {
+                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + NNUE_Idx), NNUE_Accumulator[(NNUE.Idx1 + NNUE_Idx)]);
+                NNUE_Idx += 1;
+            }
+        }
+    }
+    Else
+    {
+        If (NNUE_PendingCapture[Depth] == 1)
+        {
+            Call NNUE_ActDeactBulkImpl(NNUE_PendingFrom[Depth])(NNUE_PendingTo[Depth])(NNUE_PendingSrcPiece[Depth])(NNUE_PendingTgtPiece[Depth])(Depth);
+        }
+        Else
+        {
+            Call NNUE_ActDeactBulkImpl(NNUE_PendingFrom[Depth])(NNUE_PendingTo[Depth])(NNUE_PendingSrcPiece[Depth])("")(Depth);
+        }
+        NNUE_Idx = 1;
+        Repeat (64)
+        {
+            List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, Board[NNUE_Idx]);
+            NNUE_Idx += 1;
+        }
+    }
+    Call NNUE_StopBulkActivation(Depth);
+    List.ReplaceItem(NNUE_PendingUnknown, Depth, 0);
+    List.ReplaceItem(NNUE_PendingDirty, Depth, 0);
+    List.ReplaceItem(NNUE_PendingFrom, Depth, 0);
+    List.ReplaceItem(NNUE_PendingTo, Depth, 0);
+    List.ReplaceItem(NNUE_PendingSrcPiece, Depth, 0);
+    List.ReplaceItem(NNUE_PendingCapture, Depth, 0);
+    List.ReplaceItem(NNUE_PendingTgtPiece, Depth, 0);
 }
 
 Define NNUE_Deactivate(string GoKIdx)(string GoKPiece)(string Depth) (warp=true)
@@ -6006,6 +6103,23 @@ Define NNUE_Init (warp=true)
     {
         List.Add(NNUE_Accumulator_MetaState, 0);
     }
+    List.DeleteAll(NNUE_PendingCapture);
+    List.DeleteAll(NNUE_PendingDirty);
+    List.DeleteAll(NNUE_PendingFrom);
+    List.DeleteAll(NNUE_PendingSrcPiece);
+    List.DeleteAll(NNUE_PendingTgtPiece);
+    List.DeleteAll(NNUE_PendingTo);
+    List.DeleteAll(NNUE_PendingUnknown);
+    Repeat (MaxSearchDepthStackFrames)
+    {
+        List.Add(NNUE_PendingCapture, 0);
+        List.Add(NNUE_PendingDirty, 0);
+        List.Add(NNUE_PendingFrom, 0);
+        List.Add(NNUE_PendingSrcPiece, 0);
+        List.Add(NNUE_PendingTgtPiece, 0);
+        List.Add(NNUE_PendingTo, 0);
+        List.Add(NNUE_PendingUnknown, 0);
+    }
     Idx = 1;
     Repeat (NNUE_HiddenSize)
     {
@@ -6100,6 +6214,7 @@ Define NNUE_LoadList(string Data) (warp=true)
 
 Define NNUE_Public_Evaluate(string Depth) (warp=true)
 {
+    Call NNUE_ApplyPendingOnDemand(Depth);
     Call NNUE_Evaluate((Depth % 2))((Depth - 1));
     If (NNUE_EvalRes > AbsMinCheckmateEval)
     {
@@ -6140,55 +6255,29 @@ Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)
     {
         Call ProfilerMethodEnter((((6 + Quiescence[Depth]) * MaxSearchDepthStackFrames) + Depth));
     }
-    Call NNUE_StartBulkActivation(Depth);
     If (Move == "")
     {
-        NNUE_Found = 0;
-        NNUE_Idx = 1;
-        Repeat (64)
-        {
-            NNUE_Piece = Board[(NNUE_Idx + 0)];
-            NNUE_PrevPiece = NNUE_PrevRefreshBoard[(NNUE_Idx + 0)];
-            If (Not ((NNUE_Piece == NNUE_PrevPiece)))
-            {
-                If (Not ((NNUE_PrevPiece == 0)))
-                {
-                    Call NNUE_Deactivate(NNUE_Idx)(NNUE_PrevPiece)(Depth);
-                    NNUE_Found = 1;
-                }
-                If (Not ((NNUE_Piece == 0)))
-                {
-                    Call NNUE_Activate(NNUE_Idx)(NNUE_Piece)(Depth);
-                    NNUE_Found = 1;
-                }
-                List.ReplaceItem(NNUE_PrevRefreshBoard, NNUE_Idx, NNUE_Piece);
-            }
-            NNUE_Idx += 1;
-        }
-        If (NNUE_Found == 0)
-        {
-            NNUE.Idx1 = ((NNUE_HiddenSize * 2) * (Depth - 1));
-            NNUE.TargetIdx = ((NNUE_HiddenSize * 2) * Depth);
-            NNUE_Idx = 1;
-            Repeat ((NNUE_HiddenSize * 2))
-            {
-                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + NNUE_Idx), NNUE_Accumulator[(NNUE.Idx1 + NNUE_Idx)]);
-                NNUE_Idx += 1;
-            }
-        }
+        List.ReplaceItem(NNUE_PendingUnknown, Depth, 1);
+        List.ReplaceItem(NNUE_PendingDirty, Depth, 1);
     }
     Else
     {
+        List.ReplaceItem(NNUE_PendingUnknown, Depth, 0);
+        List.ReplaceItem(NNUE_PendingDirty, Depth, 1);
+        List.ReplaceItem(NNUE_PendingFrom, Depth, NNUE_GoKIdxToSquare[VirtualBoard[floor((Move / 100))]]);
+        List.ReplaceItem(NNUE_PendingTo, Depth, NNUE_GoKIdxToSquare[VirtualBoard[floor((Move % 100))]]);
+        List.ReplaceItem(NNUE_PendingSrcPiece, Depth, (((6 * (SourcePiece > 0)) + PieceIdxLookup[abs(SourcePiece)]) - 1));
         If (TargetPiece == 0)
         {
-            Call NNUE_ActDeactBulkImpl(NNUE_GoKIdxToSquare[VirtualBoard[floor((Move / 100))]])(NNUE_GoKIdxToSquare[VirtualBoard[floor((Move % 100))]])((((6 * (SourcePiece > 0)) + PieceIdxLookup[abs(SourcePiece)]) - 1))("")(Depth);
+            List.ReplaceItem(NNUE_PendingCapture, Depth, 0);
+            List.ReplaceItem(NNUE_PendingTgtPiece, Depth, 0);
         }
         Else
         {
-            Call NNUE_ActDeactBulkImpl(NNUE_GoKIdxToSquare[VirtualBoard[floor((Move / 100))]])(NNUE_GoKIdxToSquare[VirtualBoard[floor((Move % 100))]])((((6 * (SourcePiece > 0)) + PieceIdxLookup[abs(SourcePiece)]) - 1))((((6 * (TargetPiece > 0)) + PieceIdxLookup[abs(TargetPiece)]) - 1))(Depth);
+            List.ReplaceItem(NNUE_PendingCapture, Depth, 1);
+            List.ReplaceItem(NNUE_PendingTgtPiece, Depth, (((6 * (TargetPiece > 0)) + PieceIdxLookup[abs(TargetPiece)]) - 1));
         }
     }
-    Call NNUE_StopBulkActivation(Depth);
     If (IsBlockProfilerEnabled == 1)
     {
         Call ProfilerMethodExit((((6 + Quiescence[Depth]) * MaxSearchDepthStackFrames) + Depth));
