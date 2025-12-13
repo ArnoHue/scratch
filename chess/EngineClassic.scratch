@@ -800,7 +800,14 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
     ProfBestMoveCountQ = 0;
     ProfBestMoveIdxSumQ = 0;
     MinMaxTimer = (Sensing.DaysSince2000() * 86400);
-    Call AlphaBetaMinMaxImpl(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
+    If ((IsEndgame == 1) And (QuiescenceDepth > 7))
+    {
+        Call AlphaBetaMinMaxImpl(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)((QuiescenceDepth - 2))((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
+    }
+    Else
+    {
+        Call AlphaBetaMinMaxImpl(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
+    }
     MinMaxTimer = ((Sensing.DaysSince2000() * 86400) - MinMaxTimer);
     Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
     Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
@@ -1616,7 +1623,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                         }
                         Idx += -2;
                     }
-                    If (Count1 < 1)
+                    If ((Count1 < 2) And (1 == 0))
                     {
                         Call SEE(Depth);
                         If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
@@ -1627,10 +1634,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 }
                 If (PlyExtension[Depth] == 0)
                 {
-                    Call IsPassedPawnDanger(SourcePieces[Depth])(AppliedMove[Depth]);
-                    If (IsPassedPawnDangerRes == 1)
+                    If (1 == 0)
                     {
-                        List.ReplaceItem(PlyExtension, Depth, 1);
+                        Call IsPassedPawnDanger(SourcePieces[Depth])(AppliedMove[Depth]);
+                        If (IsPassedPawnDangerRes == 1)
+                        {
+                            List.ReplaceItem(PlyExtension, Depth, 1);
+                        }
                     }
                 }
                 If (PlyExtension[Depth] == 0)
@@ -3386,6 +3396,10 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                         If (CurrentPieceAbs == GoK_BlackKnight)
                         {
                             Call TaperedEval.Add((34 * Factor))((11 * Factor));
+                            If (((File == 4) Or (File == 5)) And ((Rank == 4) Or (Rank == 5)))
+                            {
+                                Call TaperedEval.Add((10 * Factor))((5 * Factor));
+                            }
                         }
                         Else
                         {
@@ -3411,7 +3425,9 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                     {
                         If (((CurrentPiece > 0) And (Board[(IdxSub + 0)] > 0)) Or ((CurrentPiece < 0) And (Board[(IdxSub + 0)] < 0)))
                         {
-                            CurrentValue += (1 + ((IdxToFile[(IdxSub + 0)] == 4) Or (IdxToFile[(IdxSub + 0)] == 5)));
+                            File = IdxToFile[(IdxSub + 0)];
+                            Rank = IdxToRank[(IdxSub + 0)];
+                            CurrentValue += (1 + (2 * (((File == 4) Or (File == 5)) And ((Rank > 2) Or (Rank < 7)))));
                         }
                     }
                     EvalPieceIdx2 += 1;
@@ -3510,6 +3526,10 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                     }
                 }
             }
+        }
+        If (((SourcePieceOuter > 0) And (IdxToRank[(IdxOuter + 0)] == 7)) Or ((SourcePieceOuter < 0) And (IdxToRank[(IdxOuter + 0)] == 2)))
+        {
+            Call TaperedEval.Add((15 * Factor))((20 * Factor));
         }
         EvalPieceIdx += 1;
     }
@@ -3883,6 +3903,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                 }
                 PE.OwnForwardRankNormalized = PE.NormalizedRank[PE.OwnForwardRank];
                 Blocked = ((Not ((PE.OppBackwardRank == 0))) And (PE.NormalizedRank[PE.OppBackwardRank] > PE.OwnForwardRankNormalized));
+                Opposed = (Not ((PE.OppForwardRank == 0)));
                 If (PE.OwnPawnCount > 1)
                 {
                     Call TaperedEval.AddIdentical(((-18 * PE.Factor) * (PE.OwnPawnCount - 1)));
@@ -4035,6 +4056,20 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                         }
                         Else
                         {
+                            LeverCount = 0;
+                            If ((PE.LeftOppPawnRank > 0) And (PE.NormalizedRank[PE.LeftOppPawnRank] == PE.OwnForwardRankNormalized))
+                            {
+                                LeverCount += 1;
+                            }
+                            If ((PE.RightOppPawnRank > 0) And (PE.NormalizedRank[PE.RightOppPawnRank] == PE.OwnForwardRankNormalized))
+                            {
+                                LeverCount += 1;
+                            }
+                            If (LeverCount > 0)
+                            {
+                                CurrentValue = PawnLeverBonus[PE.OwnForwardRankNormalized];
+                                Call TaperedEval.Add((CurrentValue * PE.Factor))(((CurrentValue * PE.Factor) * 2));
+                            }
                             Delta = 9;
                             Delta2 = 9;
                             If (Not ((PE.LeftOwnPawnRank == 0)))
@@ -4047,9 +4082,21 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                             }
                             Count1 = ((Delta == 0) + (Delta2 == 0));
                             Count2 = ((Delta == -1) + (Delta2 == -1));
-                            If ((Count1 > 0) Or (Count2 > 0))
+                            If (Count1 > 0)
                             {
-                                CurrentValue = Operator.Round(((PawnConnectedBonus[PE.OwnForwardRankNormalized] * ((2 + ((Count1 > 0) * 1)) / (1 + Blocked))) + (Count2 * 8)));
+                                If (Opposed == 1)
+                                {
+                                    CurrentValue = PawnPhalanxBonusOpposed[PE.OwnForwardRankNormalized];
+                                }
+                                Else
+                                {
+                                    CurrentValue = PawnPhalanxBonus[PE.OwnForwardRankNormalized];
+                                }
+                                Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)));
+                            }
+                            If (Count2 > 0)
+                            {
+                                CurrentValue = Operator.Round((((PawnConnectedBonus[PE.OwnForwardRankNormalized] * 2) / (1 + Opposed)) + (Count2 * 8)));
                                 Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)));
                             }
                         }
@@ -4357,6 +4404,11 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                         Call //("Hanging pieces");
                         Call TaperedEval.Add((-32 * Factor))((-17 * Factor));
                     }
+                    If ((AttackerPieceAbs > GoK_BlackPawn) And (PieceMobility[Idx] < 3))
+                    {
+                        Call //("Mobility restriction");
+                        Call TaperedEval.Add((-7 * Factor))((-4 * Factor));
+                    }
                     If (AttackerPieceAbs == GoK_BlackRook)
                     {
                         Call //("Rook threats");
@@ -4374,6 +4426,11 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                     {
                         Call //("Safe pawn attack");
                         Call TaperedEval.Add((-85 * Factor))((-46 * Factor));
+                    }
+                    If ((AttackerPieceAbs == GoK_BlackQueen) And (IsWeakCurrentPiece == 1))
+                    {
+                        Call //("Safe pawn attack");
+                        Call TaperedEval.Add((-17 * Factor))((-12 * Factor));
                     }
                     If (CurrentPieceAbs == GoK_BlackQueen)
                     {
@@ -4799,9 +4856,12 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
         Call TaperedEval.Add((-4 * KingFlankAttacks))(0);
         Call TaperedEval.Add((-8 * KingPawnlessFlank))((-35 * KingPawnlessFlank));
         Call TaperedEval.Add(KingRingPawnProtection[(Side + 0)])(KingRingPawnProtection[(Side + 0)]);
-        If (TaperedEval.Mg > 80)
+        If (1 == 0)
         {
-            TaperedEval.Mg = 80;
+            If (TaperedEval.Mg > 80)
+            {
+                TaperedEval.Mg = 80;
+            }
         }
         Call TaperedEval.GetSumResult;
         EvalThreatsResult += (TaperedEval.SumResult * (((Side == 1) * 2) - 1));
@@ -5853,7 +5913,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         AWCount = 1;
         AWDelta = AWSize[1];
-        If (((IdxDeepening > 9) And (1 == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 4) And (1 == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = (BestMinMaxRes - AWDelta);
             AWBeta = (BestMinMaxRes + AWDelta);
@@ -6206,7 +6266,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             Stop(this script);
         }
     }
-    If (1 == 0)
+    If (1 == 1)
     {
         If (BoardAttackedCalculated[(Depth + 0)] == 1)
         {
@@ -7158,7 +7218,11 @@ Define InitKingSafety (warp=true)
     List.DeleteItem(PawnConnectedBonus, all);
     Call LoadList("0, 7, 8, 12, 29, 48, 86, 0")("PawnConnectedBonus");
     List.DeleteItem(PawnPhalanxBonus, all);
-    Call LoadList("0, 7, 8, 12, 29, 48, 86, 0")("PawnPhalanxBonus");
+    Call LoadList("0, 8, 9, 16, 37, 57, 105, 0")("PawnPhalanxBonus");
+    List.DeleteItem(PawnPhalanxBonusOpposed, all);
+    Call LoadList("0, 4, 4, 9, 18, 29, 52, 0")("PawnPhalanxOpposedBonus");
+    List.DeleteItem(PawnLeverBonus, all);
+    Call LoadList("0, 0, 0, 0, 7, 13, 0, 0")("PawnLeverBonus");
     List.DeleteItem(MinorAttackWeight, all);
     Call LoadList("0, 15, 19, 20, 28, 22, 34, 55, 30, 59, 0, 0")("MinorAttackWeight");
     List.DeleteItem(RookAttackWeight, all);
@@ -8035,15 +8099,18 @@ Define IsPassedPawnDanger(string Piece)(string Move) (warp=true)
         }
         Else
         {
-            If (Rank == StartRank)
+            If (1 == 1)
             {
-                If (Not ((Board[(TargetIdx + North)] == (GoK_WhitePawn * Factor))))
+                If (Rank == StartRank)
                 {
-                    If ((File == 1) Or (Not ((Board[(TargetIdx + NorthWest)] == (GoK_WhitePawn * Factor)))))
+                    If (Not ((Board[(TargetIdx + North)] == (GoK_WhitePawn * Factor))))
                     {
-                        If ((File == 8) Or (Not ((Board[(TargetIdx + NorthEast)] == (GoK_WhitePawn * Factor)))))
+                        If ((File == 1) Or (Not ((Board[(TargetIdx + NorthWest)] == (GoK_WhitePawn * Factor)))))
                         {
-                            IsPassedPawnDangerRes = 1;
+                            If ((File == 8) Or (Not ((Board[(TargetIdx + NorthEast)] == (GoK_WhitePawn * Factor)))))
+                            {
+                                IsPassedPawnDangerRes = 1;
+                            }
                         }
                     }
                 }
@@ -8226,7 +8293,7 @@ Define LoadList(string Data)(string ListName) (warp=true)
             }
             If (ListName == "PawnShelter")
             {
-                List.Add(PawnShelter, Operator.Round((CurrentValue * 1)));
+                List.Add(PawnShelter, Operator.Round((CurrentValue * 1.5)));
             }
             If (ListName == "ImbalanceSameSide")
             {
@@ -8255,6 +8322,14 @@ Define LoadList(string Data)(string ListName) (warp=true)
             If (ListName == "PawnPhalanxBonus")
             {
                 List.Add(PawnPhalanxBonus, Operator.Round((CurrentValue * 1)));
+            }
+            If (ListName == "PawnPhalanxOpposedBonus")
+            {
+                List.Add(PawnPhalanxBonusOpposed, Operator.Round((CurrentValue * 1)));
+            }
+            If (ListName == "PawnLeverBonus")
+            {
+                List.Add(PawnLeverBonus, Operator.Round((CurrentValue * 1)));
             }
             If (ListName == "MinorAttackWeight")
             {
@@ -8697,7 +8772,7 @@ Define PrepareEvalPiecesData(string Depth) (warp=true)
     {
         IsEndgameLocal = 1;
     }
-    If ((IsScratch3 == 1) Or (((WhiteQueenCountLocal + BlackQueenCountLocal) + (WhiteMinorCountLocal + BlackMinorCountLocal)) == 0))
+    If ((IsScratch3 == 1) Or (((2 * (WhiteQueenCountLocal + BlackQueenCountLocal)) + (WhiteMinorCountLocal + BlackMinorCountLocal)) < 7))
     {
         IsExtendedEvalLocal = 0;
     }
