@@ -831,6 +831,10 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
             List.Add(PVStablePrev, PVStable[Idx]);
             Idx += 1;
         }
+        If ((floor((MinMaxMoveRes / 100)) == 0) Or (Board[floor((MinMaxMoveRes % 100))] == 0))
+        {
+            Call StoreKillerMove(1)(MinMaxMoveRes)(MaxDepth);
+        }
     }
 }
 
@@ -1180,19 +1184,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     }
     If (((Not (Quiescence)) And (Depth > 1)) And ((ExcludeMove == "") And (CheckedState[Depth] == 0)))
     {
-        If (1 == 1)
-        {
-            If ((Horizon < 2) And (Not (((Betas[Depth] - Alphas[Depth]) == 1))))
-            {
-                Call //("Internal iterative reductions");
-                Call TTProbeNode(CurrentBoardHash)(Depth);
-                If (TTProbeRes == 0)
-                {
-                    Call AlphaBetaMinMaxImpl(Depth)(MinDepth)(MaxDepth)(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))((1 == 0))(ShowProgress)(1)((1 == 1))("");
-                    Stop(this script);
-                }
-            }
-        }
         If (IsInNullMove == 0)
         {
             Call //("Reverse futility pruning");
@@ -1358,6 +1349,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 If (((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > ThinkTimeLimitMinMax)
                 {
                     IsMinMaxTimeout = 1;
+                    PrevPly1Move = "";
                 }
             }
         }
@@ -1707,11 +1699,11 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                     Reduction += 1;
                                 }
                             }
-                            If (1 == 1)
+                            If (1 == 0)
                             {
-                                If (Reduction > 2)
+                                If (Reduction > (Horizon - 2))
                                 {
-                                    Reduction = 2;
+                                    Reduction = (Horizon - 2);
                                 }
                             }
                             If (Reduction < 0)
@@ -1872,6 +1864,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                         If (Score > (AbsMaxCheckmateEval - ((MaxDepth - 1) * 1000)))
                                         {
                                             IsMinMaxTimeout = 1;
+                                            PrevPly1Move = "";
                                         }
                                         If (Not ((Score < MinMaxBeta)))
                                         {
@@ -1882,12 +1875,12 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 }
                                 If (Not ((Score < Betas[Depth])))
                                 {
+                                    If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
+                                    {
+                                        Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
+                                    }
                                     If (Depth > 1)
                                     {
-                                        If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
-                                        {
-                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
-                                        }
                                         Call //("Cutoff");
                                         List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                         List.ReplaceItem(PickPhase, Depth, "*");
@@ -3485,7 +3478,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                     {
                         If ((KingFile > 4) == (File > KingFile))
                         {
-                            Call TaperedEval.Add((-22 * Factor))((-2 * Factor));
+                            Call TaperedEval.Add((-42 * Factor))((-12 * Factor));
                         }
                     }
                 }
@@ -5145,6 +5138,7 @@ Define ExecuteUserMoveImpl(string UserMoveParam) (warp=false)
         HasWhiteCastled = 1;
         HasWhiteKingMoved = 1;
     }
+    PrevPly1Move = UserMove;
     Call AddBoardToHistory(0);
     Call IsBlackKingCheckMate;
     If (IsBlackKingCheckMateRes == 1)
@@ -6286,6 +6280,29 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     }
     Call //("6: Quiets with high history score");
     MoveScoreRes = ((1000 + HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))]) * GMS.Factor);
+    Idx = -1;
+    If (Depth > 1)
+    {
+        Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(SourcePieceParam)] * 64) + ToIdx));
+    }
+    Else
+    {
+        If (Not ((PrevPly1Move == "")))
+        {
+            Idx = ((((PieceIdxLookup[abs(Board[floor((PrevPly1Move % 100))])] * 64) + floor((PrevPly1Move % 100))) * 384) + ((PieceIdxLookup[abs(SourcePieceParam)] * 64) + ToIdx));
+        }
+    }
+    If (Not ((Idx == -1)))
+    {
+        If ((Depth % 2) == 1)
+        {
+            MoveScoreRes += ((HistoryContinuationBlack[Idx] * 1) * GMS.Factor);
+        }
+        Else
+        {
+            MoveScoreRes += ((HistoryContinuationWhite[Idx] * 1) * GMS.Factor);
+        }
+    }
 }
 
 Define GetNormalizedMove(string Move) (warp=true)
@@ -6810,13 +6827,20 @@ Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
         IdxOuter = 1;
         Repeat (List.Length(HistoryMoveScores))
         {
-            List.ReplaceItem(HistoryMoveScores, (IdxOuter + 0), Operator.Round((HistoryMoveScores[(IdxOuter + 0)] * Factor)));
+            List.ReplaceItem(HistoryMoveScores, (IdxOuter + 0), 0);
             IdxOuter += 1;
         }
         IdxOuter = 1;
         Repeat (List.Length(MaxHistoryMoveScore))
         {
-            List.ReplaceItem(MaxHistoryMoveScore, (IdxOuter + 0), Operator.Round((MaxHistoryMoveScore[(IdxOuter + 0)] * Factor)));
+            List.ReplaceItem(MaxHistoryMoveScore, (IdxOuter + 0), 0);
+            IdxOuter += 1;
+        }
+        IdxOuter = 1;
+        Repeat (List.Length(HistoryContinuationBlack))
+        {
+            List.ReplaceItem(HistoryContinuationBlack, (IdxOuter + 0), 0);
+            List.ReplaceItem(HistoryContinuationWhite, (IdxOuter + 0), 0);
             IdxOuter += 1;
         }
     }
@@ -6925,6 +6949,13 @@ Define InitBoard (warp=true)
     Repeat (10000)
     {
         List.Add(HistoryCounterMoves, "");
+    }
+    List.DeleteItem(HistoryContinuationBlack, all);
+    List.DeleteItem(HistoryContinuationWhite, all);
+    Repeat (200000)
+    {
+        List.Add(HistoryContinuationBlack, 0);
+        List.Add(HistoryContinuationWhite, 0);
     }
     List.DeleteItem(BoardHistory, all);
     List.DeleteItem(BoardHistoryHash, all);
@@ -9661,6 +9692,29 @@ Define StoreKillerMove(string Depth)(string Move)(string MaxDepth) (warp=true)
     {
         List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
     }
+    Idx = -1;
+    If (Depth > 1)
+    {
+        Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+    }
+    Else
+    {
+        If (Not ((PrevPly1Move == "")))
+        {
+            Idx = ((((PieceIdxLookup[abs(Board[floor((PrevPly1Move % 100))])] * 64) + floor((PrevPly1Move % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+        }
+    }
+    If (Not ((Idx == -1)))
+    {
+        If ((Depth % 2) == 1)
+        {
+            List.ReplaceItem(HistoryContinuationBlack, Idx, (HistoryContinuationBlack[Idx] + ((MaxDepth - Depth) * (MaxDepth - Depth))));
+        }
+        Else
+        {
+            List.ReplaceItem(HistoryContinuationWhite, Idx, (HistoryContinuationWhite[Idx] + ((MaxDepth - Depth) * (MaxDepth - Depth))));
+        }
+    }
 }
 
 Define StoreMinMaxDrawResult(string BoardHash)(string Depth) (warp=true)
@@ -10315,4 +10369,6 @@ Define _ClearLists (warp=true)
     List.DeleteItem(BoardAttackedByOpponentPieceSnapshot, all);
     List.DeleteItem(Logfile, all);
     List.DeleteItem(PV, all);
+    List.DeleteItem(HistoryContinuationBlack, all);
+    List.DeleteItem(HistoryContinuationWhite, all);
 }
