@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (29.12.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248b (29.12.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -791,6 +791,7 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
     Call Evaluate(0)((1 == 0));
     List.ReplaceItem(Alphas, MinDepth, Alpha);
     List.ReplaceItem(Betas, MinDepth, Beta);
+    Eval.DebugLog = 0;
     MoveCount = 0;
     MoveCountQ = 0;
     NodeCount = 0;
@@ -834,6 +835,10 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
         If ((floor((MinMaxMoveRes / 100)) == 0) Or (Board[floor((MinMaxMoveRes % 100))] == 0))
         {
             Call StoreKillerMove(1)(MinMaxMoveRes)(MaxDepth);
+        }
+        If ((ProfilerMode % 10) > 0)
+        {
+            Call LogPVEval;
         }
     }
 }
@@ -937,20 +942,23 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If ((Depth > 1) And (ExcludeMove == ""))
     {
         Call //("Probe transposition table for cached node evaluations");
-        Call TTProbeNode(CurrentBoardHash)(Depth);
-        If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
         {
-            If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or Quiescence)
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
                 {
-                    If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                     {
-                        If (Not (((floor((TTCurrentAge / 100)) - floor((TTProbeNodeAgeRes / 100))) > 2)))
+                        If ((floor((TTCurrentAge / 100)) - floor((TTProbeNodeAgeRes / 100))) < 2)
                         {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-                            Stop(this script);
+                            If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                                Stop(this script);
+                            }
                         }
                     }
                 }
@@ -1283,9 +1291,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             Call AddMoveToList(0)((Depth + 0));
                             List.ReplaceItem(MovesIdx, (Depth + 0), 1);
                             Call ApplyMove((Depth + 0));
-                            List.ReplaceItem(PutsInCheck, (Depth + 0), "");
-                            List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
-                            List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
                             Call Evaluate((Depth + 0))((1 == 0));
                             If ((Depth % 2) == 1)
                             {
@@ -1348,9 +1353,6 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 Call AddMoveToList(0)((Depth + 1));
                 Call ApplyMove((Depth + 1));
                 Call Evaluate((Depth + 1))((1 == 0));
-                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[(Depth - 1)]);
-                List.ReplaceItem(EnPassantTarget, (Depth + 2), EnPassantTarget[Depth]);
-                List.ReplaceItem(PutsInCheck, (Depth + 1), PutsInCheck[(Depth - 1)]);
                 List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
                 List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
                 Call AlphaBetaMinMaxImpl((Depth + 2))(MinDepth)((MaxDepth - 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0))("");
@@ -2148,6 +2150,7 @@ Define ApplyMove(num Depth) (warp=true)
         List.ReplaceItem(CastlingState, (Depth + 0), CastlingState[(Depth - 1)]);
     }
     List.ReplaceItem(EnPassantTarget, (Depth + 0), "");
+    List.ReplaceItem(PutsInCheck, (Depth + 0), 0);
     List.ReplaceItem(PreviousBoardHash, (Depth + 0), CurrentBoardHash);
     List.ReplaceItem(PreviousBoardHash2, (Depth + 0), CurrentBoardHash2);
     Call GetCurrentMove(Depth);
@@ -3223,15 +3226,18 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
     }
     If FullEval
     {
-        Call TTProbeBoard(CurrentBoardHash)(Depth);
-        If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
+        If (Eval.DebugLog == 0)
         {
-            EvaluateRes = TTProbeBoardScoreSumRes;
-            If (IsBlockProfilerEnabled == 1)
+            Call TTProbeBoard(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
             {
-                Call Profile_MethodExit(Depth);
+                EvaluateRes = TTProbeBoardScoreSumRes;
+                If (IsBlockProfilerEnabled == 1)
+                {
+                    Call Profile_MethodExit(Depth);
+                }
+                Stop(this script);
             }
-            Stop(this script);
         }
         Call PrepareEvalPiecesData(Depth);
         Call EvaluatePawns(Depth);
@@ -3251,13 +3257,21 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             EvaluateRes += 11;
         }
         EvaluateResIsDynamic = 0;
-        If (IsExtendedEvalLocal == 1)
+        Call CalculateMaterialImbalance(1);
+        CountOuter1 = MaterialImbalanceRes;
+        Call CalculateMaterialImbalance(2);
+        CountOuter2 = MaterialImbalanceRes;
+        EvaluateRes += Operator.Round(((CountOuter1 - CountOuter2) / 1));
+        If (Eval.DebugLog == 1)
         {
-            Call CalculateMaterialImbalance(1);
-            CountOuter1 = MaterialImbalanceRes;
-            Call CalculateMaterialImbalance(2);
-            CountOuter2 = MaterialImbalanceRes;
-            EvaluateRes += Operator.Round(((CountOuter1 - CountOuter2) / 1));
+            Call Log("Eval.BaseEval = ")(EvalResultBase)("")("")("")("")("")("");
+            Call Log("Eval.PSTDelta = ")(PosScoreDeltaSum[Depth])("")("")("")("")("")("");
+            Call Log("Eval.MaterialDelta = ")(CapturesDeltaSum[Depth])("")("")("")("")("")("");
+            Call Log("Eval.Pawns = ")(EvalPawnsResult)("")("")("")("")("")("");
+            Call Log("Eval.MajorsMinors = ")(EvalMajorsMinorsResult)("")("")("")("")("")("");
+            Call Log("Eval.Threats = ")(EvalThreatsResult)("")("")("")("")("")("");
+            Call Log("Eval.Imbalance = ")(Operator.Round(((CountOuter1 - CountOuter2) / 1)))("")("")("")("")("")("");
+            Call Log("Eval.Result = ")(EvaluateRes)("")("")("")("")("")("");
         }
         Call TTStoreBoard(CurrentBoardHash)(Depth)("")("")("")(EvaluateRes);
     }
@@ -3299,7 +3313,7 @@ Define EvaluateMajorsMinors(string Depth) (warp=true)
     }
     Call //("Tapered evaluation, interpolating between midgame and game");
     Call EvaluateMajorsMinorsImpl(Depth);
-    If (1 > 0)
+    If (1 == 0)
     {
         Call TTStoreBoard(CurrentBoardHash)(Depth)("")(EvalMajorsMinorsResult)("")("");
     }
@@ -3458,6 +3472,10 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                         If ((Rank > 6) And (BoardAttackedByBlack[(Idx + 0)] == 0))
                         {
                             Call TaperedEval.AddIdentical(-280);
+                            If (Eval.DebugLog == 1)
+                            {
+                                Call Log("Eval.MajorsMinors.TrappedMinor.Side.1 = 1")("")("")("")("")("")("")("");
+                            }
                         }
                     }
                     Else
@@ -3465,6 +3483,10 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                         If ((Rank < 3) And (BoardAttackedByWhite[(Idx + 0)] == 0))
                         {
                             Call TaperedEval.AddIdentical(280);
+                            If (Eval.DebugLog == 1)
+                            {
+                                Call Log("Eval.MajorsMinors.TrappedMinor.Side.2 = 1")("")("")("")("")("")("")("");
+                            }
                         }
                     }
                 }
@@ -3708,6 +3730,10 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                     Weight += BlockedCount;
                 }
                 CurrentValue = floor((((SpaceBonus * (Weight * Weight)) / 32) * (((Count1 + Count2) - 42) / (62 - 42))));
+                If (Eval.DebugLog == 1)
+                {
+                    Call Log("Eval.MajorsMinors.Space.Side.")(Side)(" = ")(CurrentValue)("")("")("")("");
+                }
                 Call TaperedEval.Add((CurrentValue * Factor))(0);
                 Side += 1;
             }
@@ -3715,13 +3741,17 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
     }
     Call TaperedEval.GetSumResult;
     EvalMajorsMinorsResult = TaperedEval.SumResult;
+    If (Eval.DebugLog == 1)
+    {
+        Call Log("Eval.MajorsMinors.Result = ")(EvalMajorsMinorsResult)("")("")("")("")("")("");
+    }
 }
 
 Define EvaluatePawns(string Depth) (warp=true)
 {
     EvalPawnsResult = 0;
     Call //("Positional evaluation: king and pawn structure");
-    If (1 > 0)
+    If (1 == 0)
     {
         Call TTProbeBoard(CurrentBoardHash)(Depth);
         If ((TTProbeRes == 1) And (Not ((TTProbeBoardScore1Res == ""))))
@@ -3731,7 +3761,7 @@ Define EvaluatePawns(string Depth) (warp=true)
         }
     }
     Call EvaluatePawnsImpl(Depth);
-    If (1 > 0)
+    If (1 == 0)
     {
         Call TTStoreBoard(CurrentBoardHash)(Depth)(EvalPawnsResult)("")("")("");
     }
@@ -4077,62 +4107,62 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                             }
                         }
-                    }
-                    If (IsBackward == 1)
-                    {
-                        If (Opposed == 1)
+                        If (IsBackward == 1)
                         {
-                            Call TaperedEval.Add((-10 * PE.Factor))((-5 * PE.Factor));
-                        }
-                        Else
-                        {
-                            Call TaperedEval.Add((-16 * PE.Factor))((-11 * PE.Factor));
-                        }
-                    }
-                    Else
-                    {
-                        LeverCount = 0;
-                        If ((PE.LeftOppPawnRank > 0) And (PE.NormalizedRank[PE.LeftOppPawnRank] == PE.OwnForwardRankNormalized))
-                        {
-                            LeverCount += 1;
-                        }
-                        If ((PE.RightOppPawnRank > 0) And (PE.NormalizedRank[PE.RightOppPawnRank] == PE.OwnForwardRankNormalized))
-                        {
-                            LeverCount += 1;
-                        }
-                        If (LeverCount > 0)
-                        {
-                            IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
-                            Call TaperedEval.Add((PawnLeverBonus[IdxSub] * PE.Factor))((PawnLeverBonus[(IdxSub + 1)] * PE.Factor));
-                        }
-                        Delta = 9;
-                        Delta2 = 9;
-                        If (Not ((PE.LeftOwnPawnRank == 0)))
-                        {
-                            Delta = (PE.NormalizedRank[PE.LeftOwnPawnRank] - PE.OwnForwardRankNormalized);
-                        }
-                        If (Not ((PE.RightOwnPawnRank == 0)))
-                        {
-                            Delta2 = (PE.NormalizedRank[PE.RightOwnPawnRank] - PE.OwnForwardRankNormalized);
-                        }
-                        Count1 = ((Delta == 0) + (Delta2 == 0));
-                        Count2 = ((Delta == -1) + (Delta2 == -1));
-                        If (Count1 > 0)
-                        {
-                            IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
                             If (Opposed == 1)
                             {
-                                Call TaperedEval.Add((PawnPhalanxBonusOpposed[IdxSub] * PE.Factor))((PawnPhalanxBonusOpposed[(IdxSub + 1)] * PE.Factor));
+                                Call TaperedEval.Add((-10 * PE.Factor))((-5 * PE.Factor));
                             }
                             Else
                             {
-                                Call TaperedEval.Add((PawnPhalanxBonus[IdxSub] * PE.Factor))((PawnPhalanxBonus[(IdxSub + 1)] * PE.Factor));
+                                Call TaperedEval.Add((-16 * PE.Factor))((-11 * PE.Factor));
                             }
                         }
-                        If (Count2 > 0)
+                        Else
                         {
-                            CurrentValue = Operator.Round((((PawnConnectedBonus[PE.OwnForwardRankNormalized] * 2) / (1 + Opposed)) + (Count2 * 8)));
-                            Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)));
+                            LeverCount = 0;
+                            If ((PE.LeftOppPawnRank > 0) And (PE.NormalizedRank[PE.LeftOppPawnRank] == PE.OwnForwardRankNormalized))
+                            {
+                                LeverCount += 1;
+                            }
+                            If ((PE.RightOppPawnRank > 0) And (PE.NormalizedRank[PE.RightOppPawnRank] == PE.OwnForwardRankNormalized))
+                            {
+                                LeverCount += 1;
+                            }
+                            If (LeverCount > 0)
+                            {
+                                IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
+                                Call TaperedEval.Add((PawnLeverBonus[IdxSub] * PE.Factor))((PawnLeverBonus[(IdxSub + 1)] * PE.Factor));
+                            }
+                            Delta = 9;
+                            Delta2 = 9;
+                            If (Not ((PE.LeftOwnPawnRank == 0)))
+                            {
+                                Delta = (PE.NormalizedRank[PE.LeftOwnPawnRank] - PE.OwnForwardRankNormalized);
+                            }
+                            If (Not ((PE.RightOwnPawnRank == 0)))
+                            {
+                                Delta2 = (PE.NormalizedRank[PE.RightOwnPawnRank] - PE.OwnForwardRankNormalized);
+                            }
+                            Count1 = ((Delta == 0) + (Delta2 == 0));
+                            Count2 = ((Delta == -1) + (Delta2 == -1));
+                            If (Count1 > 0)
+                            {
+                                IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
+                                If (Opposed == 1)
+                                {
+                                    Call TaperedEval.Add((PawnPhalanxBonusOpposed[IdxSub] * PE.Factor))((PawnPhalanxBonusOpposed[(IdxSub + 1)] * PE.Factor));
+                                }
+                                Else
+                                {
+                                    Call TaperedEval.Add((PawnPhalanxBonus[IdxSub] * PE.Factor))((PawnPhalanxBonus[(IdxSub + 1)] * PE.Factor));
+                                }
+                            }
+                            If (Count2 > 0)
+                            {
+                                CurrentValue = Operator.Round((((PawnConnectedBonus[PE.OwnForwardRankNormalized] * 2) / (1 + Opposed)) + (Count2 * 8)));
+                                Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)));
+                            }
                         }
                     }
                 }
@@ -4143,6 +4173,10 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
     }
     Call TaperedEval.GetSumResult;
     EvalPawnsResult = TaperedEval.SumResult;
+    If (Eval.DebugLog == 1)
+    {
+        Call Log("Eval.Pawns.Core = ")(EvalPawnsResult)("")("")("")("")("")("");
+    }
     Call //("Early promotion detection via Rule-of-Squares / Chebyshev distance");
     If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
     {
@@ -4173,6 +4207,10 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 If ((ChebyshevDistance[((BlackKingIdx * 100) + TargetIdx)] - ((Depth + 1) % 2)) > Delta)
                                 {
                                     EvalPawnsResult += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
+                                    If (Eval.DebugLog == 1)
+                                    {
+                                        Call Log("Eval.Pawns.RuleOfSquare.Side2 = true")("")("")("")("")("")("")("");
+                                    }
                                 }
                             }
                         }
@@ -4201,6 +4239,10 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 If ((ChebyshevDistance[((WhiteKingIdx * 100) + TargetIdx)] - (Depth % 2)) > Delta)
                                 {
                                     EvalPawnsResult += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
+                                    If (Eval.DebugLog == 1)
+                                    {
+                                        Call Log("Eval.Pawns.RuleOfSquare.Side2 = true")("")("")("")("")("")("")("");
+                                    }
                                 }
                             }
                         }
@@ -4281,6 +4323,10 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
             EvalPawnsResult += (-20 * (Delta + Delta2));
         }
     }
+    If (Eval.DebugLog == 1)
+    {
+        Call Log("Eval.Pawns.Result = ")(EvalPawnsResult)("")("")("")("")("")("");
+    }
 }
 
 Define EvaluateThreats(string Depth) (warp=true)
@@ -4347,6 +4393,10 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             }
             EvalPieceIdx += 1;
         }
+    }
+    If (Eval.DebugLog == 1)
+    {
+        Call Log("Eval.Threats.Mobility.Result = ")(TE.MobilityEval)("")("")("")("")("")("");
     }
     If (IsExtendedEvalLocal == 1)
     {
@@ -4502,6 +4552,10 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
     }
     Call TaperedEval.GetSumResult;
     EvalThreatsResult += TaperedEval.SumResult;
+    If (Eval.DebugLog == 1)
+    {
+        Call Log("Eval.Threats.CoreThreats.Result = ")("")(TaperedEval.SumResult)("")("")("")("")("");
+    }
     List.DeleteAll(KingRingAttackersCount);
     List.DeleteAll(KingRingAttacksCount);
     List.DeleteAll(KingRingAttacksWeight);
@@ -4894,6 +4948,21 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             }
             KingDanger += TE.MobilityEval;
         }
+        If (Eval.DebugLog == 1)
+        {
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".PawnProtection = ")(KingRingPawnProtection[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".AttacksWeight = ")(KingRingAttacksWeight[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".AttackersCount = ")(KingRingAttackersCount[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".AttacksCount = ")(KingRingAttacksCount[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".AttacksOnWeakSquareCount = ")(KingRingAttacksOnWeakCount[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".KnightDefenders = ")(KingRingAttacksKnightDefenders[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".KnightDefenders = ")(KingRingAttacksKnightDefenders[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".BishopDefenders = ")(KingRingAttacksBishopDefenders[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".UnsafeChecks = ")(KingRingAttackUnsafeChecks[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".SliderBlockers = ")(KingRingSliderBlockers[(Side + 0)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".SafeChecks = ")(MoveToZeroPadStr[(KingRingAttackSafeChecks[(Side + 0)] + 1)])("")("")("")("");
+            Call Log("Eval.Threats.KingDanger.Side.")(Side)(".Result = ")(KingDanger)("")("")("")("");
+        }
         Call TaperedEval.Init;
         If (KingDanger > 0)
         {
@@ -4907,11 +4976,19 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             If (TaperedEval.Mg > 80)
             {
                 TaperedEval.Mg = 80;
+                If (Eval.DebugLog == 1)
+                {
+                    Call Log("Eval.Threats.KingDanger.Side.")(Side)(".Capped = 1")("")("")("")("")("");
+                }
             }
         }
         Call TaperedEval.GetSumResult;
         EvalThreatsResult += (TaperedEval.SumResult * (((Side == 1) * 2) - 1));
         Side += 1;
+    }
+    If (Eval.DebugLog == 1)
+    {
+        Call Log("Eval.Threats.Result = ")(EvalThreatsResult)("")("")("")("")("")("");
     }
 }
 
@@ -8458,6 +8535,34 @@ Define Log(string Txt1)(string Txt2)(string Txt3)(string Txt4)(string Txt5)(stri
         Tmp = Operator.Join(Tmp, .000);
     }
     List.Add(Logfile, Operator.Join(Operator.Join(Tmp, ": "), Operator.Join(Txt1, Operator.Join(Txt2, Operator.Join(Txt3, Operator.Join(Txt4, Operator.Join(Txt5, Operator.Join(Txt6, Operator.Join(Txt7, Txt8)))))))));
+}
+
+Define LogPVEval (warp=true)
+{
+    If (List.Length(PVStable) > 1)
+    {
+        Call Evaluate(0)((1 == 0));
+        List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+        LogPVEval.Idx = 1;
+        Repeat (List.Length(PVStable))
+        {
+            Call ClearMoveList(LogPVEval.Idx);
+            Call AddMoveToList(PVStable[LogPVEval.Idx])(LogPVEval.Idx);
+            List.ReplaceItem(MovesIdx, LogPVEval.Idx, 1);
+            Call ApplyMove(LogPVEval.Idx);
+            Call Evaluate(LogPVEval.Idx)((1 == 0));
+            LogPVEval.Idx += 1;
+        }
+        Eval.DebugLog = 1;
+        Call Evaluate(List.Length(PVStable))((1 == 1));
+        Eval.DebugLog = 0;
+        LogPVEval.Idx = List.Length(PVStable);
+        Repeat (List.Length(PVStable))
+        {
+            Call RevertMove(LogPVEval.Idx);
+            LogPVEval.Idx += -1;
+        }
+    }
 }
 
 Define OnEvaluationChanged(string Eval) (warp=false)
