@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (28.12.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248a (28.12.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -852,11 +852,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     If (Depth == 1)
     {
         List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+        Call SetInitialEnPassantTarget(1);
         List.ReplaceItem(CheckedState, 1, "");
     }
     Else
     {
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
+        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
     }
     If (Depth > 1)
@@ -940,18 +942,15 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or Quiescence)
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                     {
                         If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
                         {
-                            If (Not (((floor((TTCurrentAge / 100)) - floor((TTProbeNodeAgeRes / 100))) > 2)))
-                            {
-                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-                                Stop(this script);
-                            }
+                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                            Stop(this script);
                         }
                     }
                 }
@@ -2148,7 +2147,7 @@ Define ApplyMove(num Depth) (warp=true)
     {
         List.ReplaceItem(CastlingState, (Depth + 0), CastlingState[(Depth - 1)]);
     }
-    List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
+    List.ReplaceItem(EnPassantTarget, (Depth + 0), "");
     List.ReplaceItem(PreviousBoardHash, (Depth + 0), CurrentBoardHash);
     List.ReplaceItem(PreviousBoardHash2, (Depth + 0), CurrentBoardHash2);
     Call GetCurrentMove(Depth);
@@ -2289,7 +2288,7 @@ Define ApplyMove(num Depth) (warp=true)
                 }
                 If ((TargetIdx - SourceIdx) == -16)
                 {
-                    List.ReplaceItem(EnPassantTarget, (Depth + 1), TargetIdx);
+                    List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
                 }
                 If (TargetIdx < 9)
                 {
@@ -2771,6 +2770,8 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
         }
         Stop(this script);
     }
+    List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
+    List.ReplaceItem(EnPassantTarget, (Depth + 1), EnPassantTarget[Depth]);
     If ((Depth % 2) == 1)
     {
         IsWhiteChecked = 0;
@@ -2787,7 +2788,6 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
             }
             IdxOuter2 += 1;
         }
-        List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
         Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(IsWhiteChecked)("")("")("")("")("")("")("");
     }
     Else
@@ -2806,7 +2806,6 @@ Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
             }
             IdxOuter2 += 1;
         }
-        List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
         Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(IsBlackChecked)("")("")("")("")("")("")("");
     }
 }
@@ -9090,15 +9089,21 @@ Define QuickSortImpl(string Lo)(string Hi) (warp=true)
 
 Define RevertMove(num Depth) (warp=true)
 {
+    If (Depth == 1)
+    {
+        Call SetInitialEnPassantTarget(1);
+        List.ReplaceItem(CastlingState, (Depth + 0), Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+    }
+    Else
+    {
+        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
+        List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
+    }
     CurrentMove = AppliedMove[(Depth + 0)];
     SourceIdx = floor((CurrentMove / 100));
     If (SourceIdx > 0)
     {
         TargetIdx = floor((CurrentMove % 100));
-        If (abs(Board[(TargetIdx + 0)]) == GoK_BlackPawn)
-        {
-            List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
-        }
         List.ReplaceItem(Board, (SourceIdx + 0), Board[(TargetIdx + 0)]);
         List.ReplaceItem(Board, (TargetIdx + 0), 0);
         List.ReplaceItem(Board, TargetPiecesIdx[(Depth + 0)], TargetPieces[(Depth + 0)]);
@@ -9287,14 +9292,6 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(TargetPiecesIdx, (Depth + 0), "");
     List.ReplaceItem(TargetPieces, (Depth + 0), 0);
     List.ReplaceItem(PromotionPieces, (Depth + 0), 0);
-    If (Depth == 1)
-    {
-        List.ReplaceItem(CastlingState, (Depth + 0), Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
-    }
-    Else
-    {
-        List.ReplaceItem(CastlingState, (Depth + 0), CastlingState[(Depth - 1)]);
-    }
     List.DeleteItem(BoardHistoryFiftyMoves, List.Length(BoardHistoryFiftyMoves));
 }
 
