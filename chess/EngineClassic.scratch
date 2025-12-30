@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (31.12.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248b (31.12.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -126,6 +126,12 @@ WhenKeyPressed(t)
         TimeControl = 0;
         Variable.Hide(CustomThinkTime);
     }
+}
+
+WhenKeyPressed(e)
+{
+    Call LogEval;
+    List.Show(Logfile);
 }
 
 
@@ -1078,6 +1084,17 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
     List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
     List.ReplaceItem(BestMoves, (Depth + 0), "");
     List.ReplaceItem(PV, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
+    List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
+    List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
+    List.ReplaceItem(PutsInCheck, Depth, 0);
+    If Quiescence
+    {
+        List.ReplaceItem(Quiescence, (Depth + 0), 1);
+    }
+    Else
+    {
+        List.ReplaceItem(Quiescence, (Depth + 0), 0);
+    }
     Call //("Initialize local variables or forward state from previous ply");
     If (Depth == 1)
     {
@@ -1112,24 +1129,13 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
             }
         }
     }
-    List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
-    List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
-    List.ReplaceItem(PutsInCheck, Depth, 0);
-    If Quiescence
-    {
-        List.ReplaceItem(Quiescence, (Depth + 0), 1);
-    }
-    Else
-    {
-        List.ReplaceItem(Quiescence, (Depth + 0), 0);
-    }
+    Call //("Invoke board evaluation to calculate intermediate results if required");
+    Call Evaluate((Depth - 1))((1 == 0));
     Call TTProbeBoard(CurrentBoardHash)(Depth);
     If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
     {
         List.ReplaceItem(BoardEval, (Depth + 0), TTProbeBoardScoreSumRes);
     }
-    Call //("Invoke board evaluation to calculate intermediate results if required");
-    Call Evaluate((Depth - 1))((1 == 0));
     If Quiescence
     {
         If (CheckedState[Depth] == 1)
@@ -1410,7 +1416,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
         }
         If (1 == 0)
         {
-            If ((Depth == 1) And (PickedMoveCount[Depth] > 1))
+            If ((Depth == 1) And (PickedMoveCount[Depth] > 2))
             {
                 If (Not ((Alphas[Depth] > MinMaxAlpha)))
                 {
@@ -1598,25 +1604,23 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 {
                     If ((((Depth % 2) == 1) And (WhiteQueenCountLocal > 0)) Or (((Depth % 2) == 0) And (BlackQueenCountLocal > 0)))
                     {
-                        If (1 == 1)
+                        Count1 = 0;
+                        Idx = (Depth - 2);
+                        Repeat Until (Idx < 1)
                         {
-                            Count1 = 0;
-                            Idx = (Depth - 2);
-                            Repeat Until (Idx < 1)
+                            If (PlyExtension[Idx] == 1)
                             {
-                                If (PlyExtension[Idx] == 1)
-                                {
-                                    Count1 += 1;
-                                }
-                                Idx += -2;
+                                Count1 += 1;
                             }
-                            If (Count1 < 2)
+                            Idx += -2;
+                        }
+                        Call GetEndgameLocal;
+                        If (Count1 < (1 + IsEndgameLocal))
+                        {
+                            Call SEE(Depth);
+                            If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
                             {
-                                Call SEE(Depth);
-                                If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
-                                {
-                                    List.ReplaceItem(PlyExtension, Depth, 1);
-                                }
+                                List.ReplaceItem(PlyExtension, Depth, 1);
                             }
                         }
                     }
@@ -1688,7 +1692,7 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                 IsReductionAndDone = 0;
                 If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
                 {
-                    If (((Horizon > 2) And ((((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) Or (1 == 0)) And (((TargetPieces[Depth] == 0) Or (1 == 1)) And (PromotionPieces[Depth] == 0)))) And (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) > 0))
+                    If (((Horizon > 2) And ((((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) Or (1 == 0)) And (((TargetPieces[Depth] == 0) Or (1 == 0)) And (PromotionPieces[Depth] == 0)))) And (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) > 0))
                     {
                         Call IsPassedPawnDanger(SourcePieces[Depth])(AppliedMove[Depth]);
                         If (IsPassedPawnDangerRes == 0)
@@ -1696,10 +1700,10 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                             Reduction = 0;
                             If (PickedMoveCount[Depth] > 1)
                             {
-                                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
-                                If (1 == 1)
+                                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 1.75)));
+                                If (1 == 0)
                                 {
-                                    Reduction = floor(((0.38 + ((TargetPieces[Depth] == 0) * 1.63)) + ((ln((Horizon + PlyExtension[Depth])) * ln(PickedMoveCount[Depth])) / (2.32 + ((Not ((TargetPieces[Depth] == 0))) * 1.44)))));
+                                    Reduction = floor(((0.38 + ((TargetPieces[Depth] == 0) * 1.63)) + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / (2.32 + ((Not ((TargetPieces[Depth] == 0))) * 1.44)))));
                                 }
                                 If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                                 {
@@ -1714,7 +1718,8 @@ Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool 
                                 }
                                 If (1 == 0)
                                 {
-                                    If (((WhiteQueenCountLocal + WhiteMinorCountLocal) + (BlackQueenCountLocal + BlackMinorCountLocal)) < 3)
+                                    Call GetEndgameLocal;
+                                    If (IsEndgameLocal == 1)
                                     {
                                         Reduction += -1;
                                     }
@@ -3298,15 +3303,18 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
         EvaluateRes += Operator.Round(((CountOuter1 - CountOuter2) / 1));
         If (Eval.DebugLog == 1)
         {
-            Call Log("----------------------------------------")("")("")("")("")("")("")("");
             Call Log("Eval.BaseEval = ")(EvalResultBase)("")("")("")("")("")("");
             Call Log("Eval.PSTDelta = ")(PosScoreDeltaSum[Depth])("")("")("")("")("")("");
             Call Log("Eval.MaterialDelta = ")(CapturesDeltaSum[Depth])("")("")("")("")("")("");
+            Call Log("Eval.PSTDeltaList = ")(PosScoreDelta)("")("")("")("")("")("");
+            Call Log("Eval.MaterialCaptureList = ")(TargetPieces)("")("")("")("")("")("");
+            Call Log("Eval.MaterialPromotionList = ")(PromotionPieces)("")("")("")("")("")("");
             Call Log("Eval.Pawns = ")(EvalPawnsResult)("")("")("")("")("")("");
             Call Log("Eval.MajorsMinors = ")(EvalMajorsMinorsResult)("")("")("")("")("")("");
             Call Log("Eval.Threats = ")(EvalThreatsResult)("")("")("")("")("")("");
             Call Log("Eval.Imbalance = ")(Operator.Round(((CountOuter1 - CountOuter2) / 1)))("")("")("")("")("")("");
-            Call Log("Eval.Result = ")(EvaluateRes)("")("")("")("")("")("");
+            Call Log("Eval.Total= ")(EvaluateRes)("")("")("")("")("")("");
+            Call Log("----------------------------------------")("")("")("")("")("")("")("");
         }
         Call TTStoreBoard(CurrentBoardHash)(Depth)("")("")("")(EvaluateRes);
     }
@@ -3380,7 +3388,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
         {
             KingIdx = WhiteKingIdx;
         }
-        If ((IsExtendedEvalLocal == 1) And (Not ((CurrentPieceAbs == GoK_BlackKing))))
+        If (IsExtendedEvalLocal == 1)
         {
             IdxSub = ((PieceMobility[(Idx + 0)] * 2) + 1);
             If (CurrentPieceAbs == GoK_BlackRook)
@@ -3599,7 +3607,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
         Count1 += ((Board[VirtualBoard[2]] == GoK_BlackKnight) + (Board[VirtualBoard[3]] == GoK_BlackBishop));
         Count1 += ((Board[VirtualBoard[6]] == GoK_BlackBishop) + (Board[VirtualBoard[7]] == GoK_BlackKnight));
         Count1 += ((Board[VirtualBoard[12]] == GoK_BlackPawn) + (Board[VirtualBoard[13]] == GoK_BlackPawn));
-        Call TaperedEval.Add((-3 * Count1))(0)("Eval.MajorsMinors.QueenEarlyMove")(Idx)(1)("");
+        Call TaperedEval.Add((-3 * Count1))(0)("Eval.MajorsMinors.QueenEarlyMove")("")(1)("");
     }
     If (Not ((Board[VirtualBoard[60]] == GoK_WhiteQueen)))
     {
@@ -3607,7 +3615,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
         Count1 += ((Board[VirtualBoard[63]] == GoK_WhiteKnight) + (Board[VirtualBoard[62]] == GoK_WhiteBishop));
         Count1 += ((Board[VirtualBoard[59]] == GoK_WhiteBishop) + (Board[VirtualBoard[58]] == GoK_WhiteKnight));
         Count1 += ((Board[VirtualBoard[53]] == GoK_WhitePawn) + (Board[VirtualBoard[52]] == GoK_WhitePawn));
-        Call TaperedEval.Add((3 * Count1))(0)("Eval.MajorsMinors.QueenEarlyMove")(Idx)(2)("");
+        Call TaperedEval.Add((3 * Count1))(0)("Eval.MajorsMinors.QueenEarlyMove")("")(2)("");
     }
     If (1 == 1)
     {
@@ -3766,7 +3774,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
     EvalMajorsMinorsResult = TaperedEval.SumResult;
     If (Eval.DebugLog == 1)
     {
-        Call LogPVEvalLine("Eval.MajorsMinors.Result ")(EvalMajorsMinorsResult)("")("")("")("");
+        Call LogPVEvalLine("Eval.MajorsMinors.Total")(EvalMajorsMinorsResult)("")("")("")("");
     }
 }
 
@@ -3968,9 +3976,10 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                 }
                 PE.OwnForwardRankNormalized = PE.NormalizedRank[PE.OwnForwardRank];
                 Opposed = ((Not ((PE.OppBackwardRank == 0))) And (PE.NormalizedRank[PE.OppBackwardRank] > PE.OwnForwardRankNormalized));
-                If (PE.OwnPawnCount > 1)
+                PE.Passed = ((Opposed == 0) And (((PE.LeftOppPawnRank == 0) Or (Not ((PE.NormalizedRank[PE.LeftOppPawnRank] > PE.OwnForwardRankNormalized)))) And ((PE.RightOppPawnRank == 0) Or (Not ((PE.NormalizedRank[PE.RightOppPawnRank] > PE.OwnForwardRankNormalized))))));
+                If ((PE.OwnPawnCount > 1) And (PE.Passed == 0))
                 {
-                    Call TaperedEval.Add(((-16 * PE.Factor) * (PE.OwnPawnCount - 1)))(((-28 * PE.Factor) * (PE.OwnPawnCount - 1)))("Eval.Pawns.DoubledPawn")(PE.OwnForwardIdx)("")("");
+                    Call TaperedEval.Add(((-16 * PE.Factor) * (PE.OwnPawnCount - 1)))(((-28 * PE.Factor) * (PE.OwnPawnCount - 1)))("Eval.Pawns.DoubledPawn")(PE.OwnForwardIdx)(Side)("");
                 }
                 If (IsPawnShelter == 0)
                 {
@@ -3978,12 +3987,12 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                     If (PE.OwnForwardRankNormalized > 2)
                     {
                         Call TaperedEval.AddIdentical(((5 * PE.Factor) * (PE.OwnForwardRankNormalized - 2)))("Eval.Pawns.Advance")(PE.OwnForwardIdx)("")("");
-                        Call TaperedEval.AddIdentical(((-10 * PE.Factor) * (Board[(BlockerIdx + 0)] == (GoK_WhitePawn * PE.Factor))))("Eval.Pawns.AdvanceBlocked")(PE.OwnForwardIdx)("")("");
+                        Call TaperedEval.AddIdentical(((-10 * PE.Factor) * (Board[(BlockerIdx + 0)] == (GoK_WhitePawn * PE.Factor))))("Eval.Pawns.AdvanceBlocked")(PE.OwnForwardIdx)(Side)("");
                     }
                     If (Opposed == 0)
                     {
                         Call //("Unopposed pawn");
-                        If (((PE.LeftOppPawnRank == 0) Or (Not ((PE.NormalizedRank[PE.LeftOppPawnRank] > PE.OwnForwardRankNormalized)))) And ((PE.RightOppPawnRank == 0) Or (Not ((PE.NormalizedRank[PE.RightOppPawnRank] > PE.OwnForwardRankNormalized)))))
+                        If (PE.Passed == 1)
                         {
                             Call //("Passed pawn");
                             PassedFactor = floor((((PE.OwnForwardRankNormalized - 4) * (PE.OwnForwardRankNormalized - 3)) / 2));
@@ -3991,7 +4000,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                             {
                                 PassedFactor = 1;
                             }
-                            Call TaperedEval.Add(0)(((((-5 * PE.Factor) * ChebyshevDistance[((BlockerIdx * 100) + PE.OwnKingIdx)]) + ((5 * PE.Factor) * ChebyshevDistance[((BlockerIdx * 100) + PE.OppKingIdx)])) * PassedFactor))("Eval.Pawns.Passed.KingTropism")(PE.OwnForwardIdx)("")("");
+                            Call TaperedEval.Add(0)(((((-5 * PE.Factor) * ChebyshevDistance[((BlockerIdx * 100) + PE.OwnKingIdx)]) + ((5 * PE.Factor) * ChebyshevDistance[((BlockerIdx * 100) + PE.OppKingIdx)])) * PassedFactor))("Eval.Pawns.Passed.KingTropism")(PE.OwnForwardIdx)(Side)("");
                             IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
                             IdxSub2 = ((PE.File * 2) - 1);
                             CurrentValue = (PawnPassedRankBonus[(IdxSub + 0)] - PawnPassedFilePenalty[(IdxSub2 + 0)]);
@@ -4013,7 +4022,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                     }
                                 }
                             }
-                            Call TaperedEval.Add(Operator.Round((CurrentValue * PE.Factor)))(Operator.Round((CurrentValue2 * PE.Factor)))("Eval.Pawns.Passed.RankBonus")(PE.OwnForwardIdx)("")("");
+                            Call TaperedEval.Add(Operator.Round((CurrentValue * PE.Factor)))(Operator.Round((CurrentValue2 * PE.Factor)))("Eval.Pawns.Passed.RankBonus")(PE.OwnForwardIdx)(Side)("");
                             If (IsExtendedEvalLocal == 1)
                             {
                                 If ((PE.OwnForwardRankNormalized > 3) And (Board[(BlockerIdx + 0)] == 0))
@@ -4070,23 +4079,23 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                     }
                                     If ((((Side == 1) And (BoardAttackedByBlack[(BlockerIdx + 0)] > 0)) Or ((Side == 2) And (BoardAttackedByWhite[(BlockerIdx + 0)] > 0))) Or (OwnMajorsBehind == 1))
                                     {
-                                        Call TaperedEval.Add(((2 * PE.Factor) * PassedFactor))(((3 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.DefendedNext")(PE.OwnForwardIdx)("")("");
+                                        Call TaperedEval.Add(((2 * PE.Factor) * PassedFactor))(((3 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.DefendedNext")(PE.OwnForwardIdx)(Side)("");
                                     }
                                     If ((OppMajorsBehind == 0) And (FrontAreaAttacked == 0))
                                     {
-                                        Call TaperedEval.Add(((16 * PE.Factor) * PassedFactor))(((18 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NoOpponents")(PE.OwnForwardIdx)("")("");
+                                        Call TaperedEval.Add(((16 * PE.Factor) * PassedFactor))(((18 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NoOpponents")(PE.OwnForwardIdx)(Side)("");
                                     }
                                     Else
                                     {
                                         If (FrontFileAttacked == 0)
                                         {
-                                            Call TaperedEval.Add(((9 * PE.Factor) * PassedFactor))(((11 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.FreeFrontFile")(PE.OwnForwardIdx)("")("");
+                                            Call TaperedEval.Add(((9 * PE.Factor) * PassedFactor))(((11 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.FreeFrontFile")(PE.OwnForwardIdx)(Side)("");
                                         }
                                         Else
                                         {
                                             If (((Side == 1) And (BoardAttackedByWhite[(BlockerIdx + 0)] == 0)) Or ((Side == 2) And (BoardAttackedByBlack[(BlockerIdx + 0)] == 0)))
                                             {
-                                                Call TaperedEval.Add(((4 * PE.Factor) * PassedFactor))(((6 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NonAttackedNext")(PE.OwnForwardIdx)("")("");
+                                                Call TaperedEval.Add(((4 * PE.Factor) * PassedFactor))(((6 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NonAttackedNext")(PE.OwnForwardIdx)(Side)("");
                                             }
                                         }
                                     }
@@ -4104,23 +4113,26 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                                 If ((Board[(BlockerIdx + 0)] == 0) And (((Side == 1) And ((BoardAttackedByBlack[(BlockerIdx + 0)] > 0) And (BoardAttackedByWhite[(BlockerIdx + 0)] == 0))) Or ((Side == 2) And ((BoardAttackedByWhite[(BlockerIdx + 0)] > 0) And (BoardAttackedByBlack[(BlockerIdx + 0)] == 0)))))
                                 {
-                                    Call TaperedEval.Add(((6 * PE.Factor) * PassedFactor))(((10 * PE.Factor) * PassedFactor))("Eval.Pawns.NonPassed.Unopposed.Unblocked")(PE.OwnForwardIdx)("")("");
+                                    Call TaperedEval.Add(((6 * PE.Factor) * PassedFactor))(((10 * PE.Factor) * PassedFactor))("Eval.Pawns.NonPassed.Unopposed.Unblocked")(PE.OwnForwardIdx)(Side)("");
                                 }
                                 Else
                                 {
-                                    Call TaperedEval.Add(((4 * PE.Factor) * PassedFactor))(((7 * PE.Factor) * PassedFactor))("Eval.Pawns.NonPassed.Unopposed.Blocked")(PE.OwnForwardIdx)("")("");
+                                    Call TaperedEval.Add(((4 * PE.Factor) * PassedFactor))(((7 * PE.Factor) * PassedFactor))("Eval.Pawns.NonPassed.Unopposed.Blocked")(PE.OwnForwardIdx)(Side)("");
                                 }
                             }
                         }
                     }
                     If (((PE.File == 1) Or (((Side == 1) And (BlackPawnCount[(PE.File - 1)] == 0)) Or ((Side == 2) And (WhitePawnCount[(PE.File - 1)] == 0)))) And ((PE.File == 8) Or (((Side == 1) And (BlackPawnCount[(PE.File + 1)] == 0)) Or ((Side == 2) And (WhitePawnCount[(PE.File + 1)] == 0)))))
                     {
-                        Call TaperedEval.AddIdentical((-16 * PE.Factor))("Eval.Pawns.Isolated")(PE.OwnForwardIdx)("")("");
+                        If (PE.Passed == 0)
+                        {
+                            Call TaperedEval.AddIdentical((-16 * PE.Factor))("Eval.Pawns.Isolated")(PE.OwnForwardIdx)(Side)("");
+                        }
                     }
                     Else
                     {
                         IsBackward = 0;
-                        If ((IsPawnShelter == 0) And (PE.OwnForwardRankNormalized < 5))
+                        If ((IsPawnShelter == 0) And (PE.OwnForwardRankNormalized < 6))
                         {
                             If ((PE.LeftOwnPawnRank == 0) Or (PE.NormalizedRank[PE.LeftOwnPawnRank] > PE.OwnForwardRankNormalized))
                             {
@@ -4137,11 +4149,11 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                         {
                             If (Opposed == 1)
                             {
-                                Call TaperedEval.Add((-10 * PE.Factor))((-5 * PE.Factor))("Eval.Pawns.NonIsolated.Backward.Opposed")((((PE.OwnBackwardRank - 1) * 8) + PE.File))("")("");
+                                Call TaperedEval.Add((-10 * PE.Factor))((-5 * PE.Factor))("Eval.Pawns.NonIsolated.Backward.Opposed")((((PE.OwnBackwardRank - 1) * 8) + PE.File))(Side)("");
                             }
                             Else
                             {
-                                Call TaperedEval.Add((-16 * PE.Factor))((-11 * PE.Factor))("Eval.Pawns.NonIsolated.Backward.Unpposed")((((PE.OwnBackwardRank - 1) * 8) + PE.File))("")("");
+                                Call TaperedEval.Add((-16 * PE.Factor))((-11 * PE.Factor))("Eval.Pawns.NonIsolated.Backward.Unopposed")((((PE.OwnBackwardRank - 1) * 8) + PE.File))(Side)("");
                             }
                         }
                         Else
@@ -4158,7 +4170,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                             If (LeverCount > 0)
                             {
                                 IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
-                                Call TaperedEval.Add((PawnLeverBonus[IdxSub] * PE.Factor))((PawnLeverBonus[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Lever")(PE.OwnForwardIdx)("")("");
+                                Call TaperedEval.Add((PawnLeverBonus[IdxSub] * PE.Factor))((PawnLeverBonus[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Lever")(PE.OwnForwardIdx)(Side)("");
                             }
                             Delta = 9;
                             Delta2 = 9;
@@ -4177,17 +4189,17 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
                                 If (Opposed == 1)
                                 {
-                                    Call TaperedEval.Add((PawnPhalanxBonusOpposed[IdxSub] * PE.Factor))((PawnPhalanxBonusOpposed[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Phalanx.Opposed")(PE.OwnForwardIdx)("")("");
+                                    Call TaperedEval.Add((PawnPhalanxBonusOpposed[IdxSub] * PE.Factor))((PawnPhalanxBonusOpposed[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Phalanx.Opposed")(PE.OwnForwardIdx)(Side)("");
                                 }
                                 Else
                                 {
-                                    Call TaperedEval.Add((PawnPhalanxBonus[IdxSub] * PE.Factor))((PawnPhalanxBonus[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Phalanx.Unopposed")(PE.OwnForwardIdx)("")("");
+                                    Call TaperedEval.Add((PawnPhalanxBonus[IdxSub] * PE.Factor))((PawnPhalanxBonus[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Phalanx.Unopposed")(PE.OwnForwardIdx)(Side)("");
                                 }
                             }
                             If (Count2 > 0)
                             {
                                 CurrentValue = Operator.Round((((PawnConnectedBonus[PE.OwnForwardRankNormalized] * 2) / (1 + Opposed)) + (Count2 * 8)));
-                                Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)))("Eval.Pawns.Connected")(PE.OwnForwardIdx)("")("");
+                                Call TaperedEval.Add((CurrentValue * PE.Factor))(Operator.Round((((CurrentValue * PE.Factor) * (PE.OwnForwardRankNormalized - 2)) / 4)))("Eval.Pawns.Connected")(PE.OwnForwardIdx)(Side)("");
                             }
                         }
                     }
@@ -4201,7 +4213,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
     EvalPawnsResult = TaperedEval.SumResult;
     If (Eval.DebugLog == 1)
     {
-        Call LogPVEvalLine("Eval.Pawns.Core.Result")(EvalPawnsResult)("")("")("")("");
+        Call LogPVEvalLine("Eval.Pawns.Base.Total")(EvalPawnsResult)("")("")("")("");
     }
     Call //("Early promotion detection via Rule-of-Squares / Chebyshev distance");
     If (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) == 0))
@@ -4351,7 +4363,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
     }
     If (Eval.DebugLog == 1)
     {
-        Call LogPVEvalLine("Eval.Pawns.Result ")(EvalPawnsResult)("")("")("")("");
+        Call LogPVEvalLine("Eval.Pawns.Total ")(EvalPawnsResult)("")("")("")("");
     }
 }
 
@@ -4377,210 +4389,208 @@ Define EvaluateThreats(string Depth) (warp=true)
 Define EvaluateThreatsImpl(string Depth) (warp=true)
 {
     EvalThreatsResult = 0;
+    If (IsExtendedEvalLocal == 1)
+    {
+        Stop(this script);
+    }
     Call TaperedEval.Init;
     TE.MobilityEval = 0;
-    If (IsExtendedEvalLocal == 1)
+    EvalPieceIdx = 1;
+    Repeat (List.Length(EvalPiecesIdx_NonPawns))
     {
-        EvalPieceIdx = 1;
-        Repeat (List.Length(EvalPiecesIdx_NonPawns))
+        Idx = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
+        CurrentPiece = Board[(Idx + 0)];
+        CurrentPieceAbs = abs(CurrentPiece);
+        If (Not ((CurrentPieceAbs == GoK_BlackKing)))
         {
-            Idx = EvalPiecesIdx_NonPawns[(EvalPieceIdx + 0)];
-            CurrentPiece = Board[(Idx + 0)];
-            CurrentPieceAbs = abs(CurrentPiece);
-            If (Not ((CurrentPieceAbs == GoK_BlackKing)))
-            {
-                Factor = (((CurrentPiece > 0) * 2) - 1);
-                IdxSub = ((PieceMobility[(Idx + 0)] * 2) + 1);
-                If (CurrentPieceAbs == GoK_BlackRook)
-                {
-                    TE.MobilityEval += (RookMobilityBonus[(IdxSub + 0)] * Factor);
-                }
-                Else
-                {
-                    If (CurrentPieceAbs == GoK_BlackBishop)
-                    {
-                        TE.MobilityEval += (BishopMobilityBonus[(IdxSub + 0)] * Factor);
-                    }
-                    Else
-                    {
-                        If (CurrentPieceAbs == GoK_BlackKnight)
-                        {
-                            TE.MobilityEval += (KnightMobilityBonus[(IdxSub + 0)] * Factor);
-                        }
-                        Else
-                        {
-                            If (CurrentPieceAbs == GoK_BlackQueen)
-                            {
-                                TE.MobilityEval += (QueenMobilityBonus[(IdxSub + 0)] * Factor);
-                            }
-                        }
-                    }
-                }
-            }
-            EvalPieceIdx += 1;
-        }
-    }
-    If (Eval.DebugLog == 1)
-    {
-        Call Log("Eval.Threats.Mobility.Result ")(TE.MobilityEval)("")("")("")("")("")("");
-    }
-    If (IsExtendedEvalLocal == 1)
-    {
-        EvalPieceIdx = 1;
-        Repeat (List.Length(EvalPiecesIdx_All))
-        {
-            Idx = EvalPiecesIdx_All[(EvalPieceIdx + 0)];
-            CurrentPiece = Board[(Idx + 0)];
             Factor = (((CurrentPiece > 0) * 2) - 1);
-            CurrentPieceAbs = abs(CurrentPiece);
-            If (CurrentPieceAbs > GoK_BlackPawn)
+            IdxSub = ((PieceMobility[(Idx + 0)] * 2) + 1);
+            If (CurrentPieceAbs == GoK_BlackRook)
             {
-                File = IdxToFile[(Idx + 0)];
-                Rank = IdxToRank[(Idx + 0)];
-                If (File > 1)
-                {
-                    IdxSub = (Idx + (15 * Factor));
-                    If (((IdxSub > 8) And (IdxSub < 57)) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor)))
-                    {
-                        Call FindAndAddSafePawnPush(IdxSub)((Idx + (7 * Factor)))(CurrentPiece)(Factor);
-                    }
-                    If (((Rank == 4) And (CurrentPiece > 0)) Or ((Rank == 5) And (CurrentPiece < 0)))
-                    {
-                        StartRank = (2 + (5 * (CurrentPiece > 0)));
-                        IdxSub = (Idx + (23 * Factor));
-                        If (((IdxSub > 8) And (IdxSub < 57)) And ((IdxToRank[(IdxSub + 0)] == StartRank) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor))))
-                        {
-                            Call FindAndAddSafePawnPush(IdxSub)((Idx + (7 * Factor)))(CurrentPiece)(Factor);
-                        }
-                    }
-                }
-                If (File < 8)
-                {
-                    IdxSub = (Idx + (17 * Factor));
-                    If (((IdxSub > 8) And (IdxSub < 57)) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor)))
-                    {
-                        Call FindAndAddSafePawnPush(IdxSub)((Idx + (9 * Factor)))(CurrentPiece)(Factor);
-                    }
-                    If (((Rank == 4) And (CurrentPiece > 0)) Or ((Rank == 5) And (CurrentPiece < 0)))
-                    {
-                        StartRank = (2 + (5 * (CurrentPiece > 0)));
-                        IdxSub = (Idx + (25 * Factor));
-                        If (((IdxSub > 8) And (IdxSub < 57)) And ((IdxToRank[(IdxSub + 0)] == StartRank) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor))))
-                        {
-                            Call FindAndAddSafePawnPush(IdxSub)((Idx + (9 * Factor)))(CurrentPiece)(Factor);
-                        }
-                    }
-                }
-            }
-            If (CurrentPiece > 0)
-            {
-                Attacked = BoardAttackedByWhite[(Idx + 0)];
+                TE.MobilityEval += (RookMobilityBonus[(IdxSub + 0)] * Factor);
             }
             Else
             {
-                Attacked = BoardAttackedByBlack[(Idx + 0)];
-            }
-            If (Attacked > 0)
-            {
-                Call GetAttackDefenseInfo(Idx);
-                StronglyProtectedCurrentPiece = ((DefenderPieceAbs == GoK_BlackPawn) Or ((Defended > 1) And (Attacked < 2)));
-                StronglyProtectedCurrentPieceNonPawn = ((CurrentPieceAbs > GoK_BlackPawn) And (StronglyProtectedCurrentPiece == 1));
-                IsWeakCurrentPiece = ((Attacked > 0) And (StronglyProtectedCurrentPiece == 0));
-                If (CurrentPiece > 0)
+                If (CurrentPieceAbs == GoK_BlackBishop)
                 {
-                    SafeAttacker = ((BoardAttackedByBlack[(AttackerIdx + 0)] == 0) Or (BoardAttackedByWhite[(AttackerIdx + 0)] > 0));
+                    TE.MobilityEval += (BishopMobilityBonus[(IdxSub + 0)] * Factor);
                 }
                 Else
                 {
-                    SafeAttacker = ((BoardAttackedByWhite[(AttackerIdx + 0)] == 0) Or (BoardAttackedByBlack[(AttackerIdx + 0)] > 0));
-                }
-                IdxSub = ((PieceIdxLookup[(CurrentPieceAbs + 0)] * 2) - 1);
-                If ((IsWeakCurrentPiece == 1) Or (StronglyProtectedCurrentPieceNonPawn == 1))
-                {
-                    If ((AttackerPieceAbs == GoK_BlackKnight) Or (AttackerPieceAbs == GoK_BlackBishop))
+                    If (CurrentPieceAbs == GoK_BlackKnight)
                     {
-                        Call //("Minor threats");
-                        Call TaperedEval.Add(((0 - MinorAttackWeight[IdxSub]) * Factor))(((0 - MinorAttackWeight[(IdxSub + 1)]) * Factor))("Eval.Threats.MinorThreat")("")("")(((AttackerIdx * 100) + Idx));
-                        If (CurrentPieceAbs > GoK_BlackPawn)
+                        TE.MobilityEval += (KnightMobilityBonus[(IdxSub + 0)] * Factor);
+                    }
+                    Else
+                    {
+                        If (CurrentPieceAbs == GoK_BlackQueen)
                         {
-                            If (CurrentPiece > 0)
-                            {
-                                Call TaperedEval.Add(((-6 * (8 - IdxToRank[Idx])) * Factor))(0)("Eval.Threats.MinorThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
-                            }
-                            Else
-                            {
-                                Call TaperedEval.Add(((-6 * (IdxToRank[Idx] - 1)) * Factor))(0)("Eval.Threats.MinorThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
-                            }
-                        }
-                    }
-                }
-                If (IsWeakCurrentPiece == 1)
-                {
-                    If (CurrentPieceAbs == GoK_BlackQueen)
-                    {
-                        Call //("Unsafe queen");
-                        Call TaperedEval.Add((-23 * Factor))((-7 * Factor))("Eval.Threats.UnsafeQueen")(Idx)("")("");
-                    }
-                    If ((Defended == 0) Or ((CurrentPieceAbs > GoK_BlackPawn) And (Attacked > 1)))
-                    {
-                        Call //("Hanging pieces");
-                        Call TaperedEval.Add((-32 * Factor))((-17 * Factor))("Eval.Threats.HangingPiece")(Idx)("")("");
-                    }
-                    If (AttackerPieceAbs == GoK_BlackRook)
-                    {
-                        Call //("Rook threats");
-                        Call TaperedEval.Add(((0 - RookAttackWeight[IdxSub]) * Factor))(((0 - RookAttackWeight[(IdxSub + 1)]) * Factor))("Eval.Threats.RookThreat")("")("")(((AttackerIdx * 100) + Idx));
-                        If (CurrentPieceAbs > GoK_BlackPawn)
-                        {
-                            If (CurrentPiece > 0)
-                            {
-                                Call TaperedEval.Add(((-6 * (8 - IdxToRank[Idx])) * Factor))(0)("Eval.Threats.RookThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
-                            }
-                            Else
-                            {
-                                Call TaperedEval.Add(((-6 * (IdxToRank[Idx] - 1)) * Factor))(0)("Eval.Threats.RookThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
-                            }
-                        }
-                    }
-                    If (AttackerPieceAbs == GoK_BlackKing)
-                    {
-                        Call //("King threat");
-                        Call TaperedEval.Add((-11 * Factor))((-42 * Factor))("Eval.Threats.KingThreat")("")("")(((AttackerIdx * 100) + Idx));
-                    }
-                }
-                If (SafeAttacker == 1)
-                {
-                    If ((AttackerPieceAbs == GoK_BlackPawn) And (CurrentPieceAbs > GoK_BlackPawn))
-                    {
-                        Call //("Safe pawn attack");
-                        Call TaperedEval.Add((-85 * Factor))((-46 * Factor))("Eval.Threats.SafePawnAttack")("")("")(((AttackerIdx * 100) + Idx));
-                    }
-                    If (CurrentPieceAbs == GoK_BlackQueen)
-                    {
-                        If ((AttackerPieceAbs == GoK_BlackBishop) Or (AttackerPieceAbs == GoK_BlackRook))
-                        {
-                            If (Attacked > 1)
-                            {
-                                Call //("Sliders attack queen");
-                                Call TaperedEval.Add((-28 * Factor))((-8 * Factor))("Eval.Threats.SliderQueenAttack")("")("")(((AttackerIdx * 100) + Idx));
-                            }
-                        }
-                        If (AttackerPieceAbs == GoK_BlackKnight)
-                        {
-                            Call //("Knight attacks queen");
-                            Call TaperedEval.Add((-8 * Factor))((-6 * Factor))("Eval.Threats.KnightQueenAttack")("")("")(((AttackerIdx * 100) + Idx));
+                            TE.MobilityEval += (QueenMobilityBonus[(IdxSub + 0)] * Factor);
                         }
                     }
                 }
             }
-            EvalPieceIdx += 1;
         }
+        EvalPieceIdx += 1;
+    }
+    If (Eval.DebugLog == 1)
+    {
+        Call LogPVEvalLine("Eval.Threats.Mobility.Total")(TE.MobilityEval)("")("")("")("");
+    }
+    EvalPieceIdx = 1;
+    Repeat (List.Length(EvalPiecesIdx_All))
+    {
+        Idx = EvalPiecesIdx_All[(EvalPieceIdx + 0)];
+        CurrentPiece = Board[(Idx + 0)];
+        Factor = (((CurrentPiece > 0) * 2) - 1);
+        CurrentPieceAbs = abs(CurrentPiece);
+        If (CurrentPieceAbs > GoK_BlackPawn)
+        {
+            File = IdxToFile[(Idx + 0)];
+            Rank = IdxToRank[(Idx + 0)];
+            If (File > 1)
+            {
+                IdxSub = (Idx + (15 * Factor));
+                If (((IdxSub > 8) And (IdxSub < 57)) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor)))
+                {
+                    Call FindAndAddSafePawnPush(IdxSub)((Idx + (7 * Factor)))(CurrentPiece)(Factor);
+                }
+                If (((Rank == 4) And (CurrentPiece > 0)) Or ((Rank == 5) And (CurrentPiece < 0)))
+                {
+                    StartRank = (2 + (5 * (CurrentPiece > 0)));
+                    IdxSub = (Idx + (23 * Factor));
+                    If (((IdxSub > 8) And (IdxSub < 57)) And ((IdxToRank[(IdxSub + 0)] == StartRank) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor))))
+                    {
+                        Call FindAndAddSafePawnPush(IdxSub)((Idx + (7 * Factor)))(CurrentPiece)(Factor);
+                    }
+                }
+            }
+            If (File < 8)
+            {
+                IdxSub = (Idx + (17 * Factor));
+                If (((IdxSub > 8) And (IdxSub < 57)) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor)))
+                {
+                    Call FindAndAddSafePawnPush(IdxSub)((Idx + (9 * Factor)))(CurrentPiece)(Factor);
+                }
+                If (((Rank == 4) And (CurrentPiece > 0)) Or ((Rank == 5) And (CurrentPiece < 0)))
+                {
+                    StartRank = (2 + (5 * (CurrentPiece > 0)));
+                    IdxSub = (Idx + (25 * Factor));
+                    If (((IdxSub > 8) And (IdxSub < 57)) And ((IdxToRank[(IdxSub + 0)] == StartRank) And (Board[(IdxSub + 0)] == (GoK_WhitePawn * Factor))))
+                    {
+                        Call FindAndAddSafePawnPush(IdxSub)((Idx + (9 * Factor)))(CurrentPiece)(Factor);
+                    }
+                }
+            }
+        }
+        If (CurrentPiece > 0)
+        {
+            Attacked = BoardAttackedByWhite[(Idx + 0)];
+        }
+        Else
+        {
+            Attacked = BoardAttackedByBlack[(Idx + 0)];
+        }
+        If (Attacked > 0)
+        {
+            Call GetAttackDefenseInfo(Idx);
+            StronglyProtectedCurrentPiece = ((DefenderPieceAbs == GoK_BlackPawn) Or ((Defended > 1) And (Attacked < 2)));
+            StronglyProtectedCurrentPieceNonPawn = ((CurrentPieceAbs > GoK_BlackPawn) And (StronglyProtectedCurrentPiece == 1));
+            IsWeakCurrentPiece = ((Attacked > 0) And (StronglyProtectedCurrentPiece == 0));
+            If (CurrentPiece > 0)
+            {
+                SafeAttacker = ((BoardAttackedByBlack[(AttackerIdx + 0)] == 0) Or (BoardAttackedByWhite[(AttackerIdx + 0)] > 0));
+            }
+            Else
+            {
+                SafeAttacker = ((BoardAttackedByWhite[(AttackerIdx + 0)] == 0) Or (BoardAttackedByBlack[(AttackerIdx + 0)] > 0));
+            }
+            IdxSub = ((PieceIdxLookup[(CurrentPieceAbs + 0)] * 2) - 1);
+            If ((IsWeakCurrentPiece == 1) Or (StronglyProtectedCurrentPieceNonPawn == 1))
+            {
+                If ((AttackerPieceAbs == GoK_BlackKnight) Or (AttackerPieceAbs == GoK_BlackBishop))
+                {
+                    Call //("Minor threats");
+                    Call TaperedEval.Add(((0 - MinorAttackWeight[IdxSub]) * Factor))(((0 - MinorAttackWeight[(IdxSub + 1)]) * Factor))("Eval.Threats.MinorThreat")("")("")(((AttackerIdx * 100) + Idx));
+                    If (CurrentPieceAbs > GoK_BlackPawn)
+                    {
+                        If (CurrentPiece > 0)
+                        {
+                            Call TaperedEval.Add(((-6 * (8 - IdxToRank[Idx])) * Factor))(0)("Eval.Threats.MinorThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
+                        }
+                        Else
+                        {
+                            Call TaperedEval.Add(((-6 * (IdxToRank[Idx] - 1)) * Factor))(0)("Eval.Threats.MinorThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
+                        }
+                    }
+                }
+            }
+            If (IsWeakCurrentPiece == 1)
+            {
+                If (CurrentPieceAbs == GoK_BlackQueen)
+                {
+                    Call //("Unsafe queen");
+                    Call TaperedEval.Add((-23 * Factor))((-7 * Factor))("Eval.Threats.UnsafeQueen")(Idx)("")("");
+                }
+                If ((Defended == 0) Or ((CurrentPieceAbs > GoK_BlackPawn) And (Attacked > 1)))
+                {
+                    Call //("Hanging pieces");
+                    Call TaperedEval.Add((-32 * Factor))((-17 * Factor))("Eval.Threats.HangingPiece")(Idx)("")("");
+                }
+                If (AttackerPieceAbs == GoK_BlackRook)
+                {
+                    Call //("Rook threats");
+                    Call TaperedEval.Add(((0 - RookAttackWeight[IdxSub]) * Factor))(((0 - RookAttackWeight[(IdxSub + 1)]) * Factor))("Eval.Threats.RookThreat")("")("")(((AttackerIdx * 100) + Idx));
+                    If (CurrentPieceAbs > GoK_BlackPawn)
+                    {
+                        If (CurrentPiece > 0)
+                        {
+                            Call TaperedEval.Add(((-6 * (8 - IdxToRank[Idx])) * Factor))(0)("Eval.Threats.RookThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
+                        }
+                        Else
+                        {
+                            Call TaperedEval.Add(((-6 * (IdxToRank[Idx] - 1)) * Factor))(0)("Eval.Threats.RookThreat.NonPawnTarget")("")("")(((AttackerIdx * 100) + Idx));
+                        }
+                    }
+                }
+                If (AttackerPieceAbs == GoK_BlackKing)
+                {
+                    Call //("King threat");
+                    Call TaperedEval.Add((-11 * Factor))((-42 * Factor))("Eval.Threats.KingThreat")("")("")(((AttackerIdx * 100) + Idx));
+                }
+            }
+            If (SafeAttacker == 1)
+            {
+                If ((AttackerPieceAbs == GoK_BlackPawn) And (CurrentPieceAbs > GoK_BlackPawn))
+                {
+                    Call //("Safe pawn attack");
+                    Call TaperedEval.Add((-85 * Factor))((-46 * Factor))("Eval.Threats.SafePawnAttack")("")("")(((AttackerIdx * 100) + Idx));
+                }
+                If (CurrentPieceAbs == GoK_BlackQueen)
+                {
+                    If ((AttackerPieceAbs == GoK_BlackBishop) Or (AttackerPieceAbs == GoK_BlackRook))
+                    {
+                        If (Attacked > 1)
+                        {
+                            Call //("Sliders attack queen");
+                            Call TaperedEval.Add((-28 * Factor))((-8 * Factor))("Eval.Threats.SliderQueenAttack")("")("")(((AttackerIdx * 100) + Idx));
+                        }
+                    }
+                    If (AttackerPieceAbs == GoK_BlackKnight)
+                    {
+                        Call //("Knight attacks queen");
+                        Call TaperedEval.Add((-8 * Factor))((-6 * Factor))("Eval.Threats.KnightQueenAttack")("")("")(((AttackerIdx * 100) + Idx));
+                    }
+                }
+            }
+        }
+        EvalPieceIdx += 1;
     }
     Call TaperedEval.GetSumResult;
     EvalThreatsResult += TaperedEval.SumResult;
     If (Eval.DebugLog == 1)
     {
-        Call Log("Eval.Threats.CoreThreats.Result = ")("")(TaperedEval.SumResult)("")("")("")("")("");
+        Call LogPVEvalLine("Eval.Threats.Base.Total")("")(TaperedEval.SumResult)("")("")("");
     }
     List.DeleteAll(KingRingAttackersCount);
     List.DeleteAll(KingRingAttacksCount);
@@ -4665,7 +4675,8 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                     }
                 }
             }
-            List.ReplaceItem(KingRingPawnProtection, (Side + 0), (CurrentValue2 * (((WhiteQueenCountLocal > 0) * 0.8) + ((WhiteRookCountLocal > 0) * 0.2))));
+            Call LogPVEvalLine("Eval.Threats.ShelterStorm")(CurrentValue2)("")("")(Side)("");
+            List.ReplaceItem(KingRingPawnProtection, (Side + 0), Operator.Round((CurrentValue2 * (((WhiteQueenCountLocal > 0) * 0.8) + ((WhiteRookCountLocal > 0) * 0.2)))));
         }
         Else
         {
@@ -4708,7 +4719,8 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                     }
                 }
             }
-            List.ReplaceItem(KingRingPawnProtection, (Side + 0), (CurrentValue2 * (((BlackQueenCountLocal > 0) * 0.8) + ((BlackRookCountLocal > 0) * 0.2))));
+            Call LogPVEvalLine("Eval.Threats.ShelterStorm")(CurrentValue2)("")("")(Side)("");
+            List.ReplaceItem(KingRingPawnProtection, (Side + 0), Operator.Round((CurrentValue2 * (((BlackQueenCountLocal > 0) * 0.8) + ((BlackRookCountLocal > 0) * 0.2)))));
         }
         If (Side == 1)
         {
@@ -4752,150 +4764,154 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             }
             EvalPieceIdx += 1;
         }
-        If (IsExtendedEvalLocal == 1)
+        IdxOuter = (((KingIdx - 1) * 10) + 1);
+        Repeat (9)
         {
-            IdxOuter = (((KingIdx - 1) * 10) + 1);
-            Repeat (9)
+            Idx = KingRings[(IdxOuter + 0)];
+            If (Not ((Idx == -1)))
             {
-                Idx = KingRings[(IdxOuter + 0)];
-                If (Not ((Idx == -1)))
-                {
-                    IsWeakCurrentPiece = 0;
-                    If (Side == 1)
-                    {
-                        Count1 = BoardAttackedByWhite[(Idx + 0)];
-                    }
-                    Else
-                    {
-                        Count1 = BoardAttackedByBlack[(Idx + 0)];
-                    }
-                    If (Count1 > 0)
-                    {
-                        If (Side == 1)
-                        {
-                            IdxSub = BoardAttackedByWhitePiece[(Idx + 0)];
-                            DefenderPiece = Board[BoardAttackedByBlackPiece[(Idx + 0)]];
-                            If ((BoardAttackedByBlack[(Idx + 0)] == 0) Or ((DefenderPiece == GoK_BlackQueen) Or (DefenderPiece == GoK_BlackKing)))
-                            {
-                                IsWeakCurrentPiece = 1;
-                            }
-                        }
-                        Else
-                        {
-                            IdxSub = BoardAttackedByBlackPiece[(Idx + 0)];
-                            DefenderPiece = Board[BoardAttackedByWhitePiece[(Idx + 0)]];
-                            If ((BoardAttackedByWhite[(Idx + 0)] == 0) Or ((DefenderPiece == GoK_WhiteQueen) Or (DefenderPiece == GoK_WhiteKing)))
-                            {
-                                IsWeakCurrentPiece = 1;
-                            }
-                        }
-                        List.ReplaceItem(KingRingAttacksCount, (Side + 0), (KingRingAttacksCount[(Side + 0)] + Count1));
-                        If (IsWeakCurrentPiece == 1)
-                        {
-                            List.ReplaceItem(KingRingAttacksOnWeakCount, (Side + 0), (KingRingAttacksOnWeakCount[(Side + 0)] + 1));
-                        }
-                        If (Not (List.ContainsItem(TmpList1, IdxSub)))
-                        {
-                            List.ReplaceItem(KingRingAttackersCount, (Side + 0), (KingRingAttackersCount[(Side + 0)] + 1));
-                            List.ReplaceItem(KingRingAttacksWeight, (Side + 0), (KingRingAttacksWeight[(Side + 0)] + AttacksWeight[PieceIdxLookup[abs(Board[(IdxSub + 0)])]]));
-                            List.Add(TmpList1, IdxSub);
-                        }
-                        If (abs(DefenderPiece) == GoK_BlackBishop)
-                        {
-                            List.ReplaceItem(KingRingAttacksBishopDefenders, (Side + 0), (KingRingAttacksBishopDefenders[(Side + 0)] + 1));
-                        }
-                        Else
-                        {
-                            If (abs(DefenderPiece) == GoK_BlackKnight)
-                            {
-                                List.ReplaceItem(KingRingAttacksKnightDefenders, (Side + 0), (KingRingAttacksKnightDefenders[(Side + 0)] + 1));
-                            }
-                        }
-                    }
-                }
-                IdxOuter += 1;
-            }
-            Idx = 1;
-            Repeat (64)
-            {
-                Factor = (((Side == 1) * 2) - 1);
-                AttackerPieceAbs = 0;
-                DefenderPiece = 0;
+                IsWeakCurrentPiece = 0;
                 If (Side == 1)
                 {
-                    Attacked = BoardAttackedByWhite[(Idx + 0)];
-                    If (Attacked > 0)
-                    {
-                        AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
-                        AttackerPieceAbs = abs(Board[AttackerIdx]);
-                    }
-                    Defended = BoardAttackedByBlack[(Idx + 0)];
-                    If (Defended > 0)
-                    {
-                        DefenderPiece = Board[BoardAttackedByBlackPiece[(Idx + 0)]];
-                    }
+                    Count1 = BoardAttackedByWhite[(Idx + 0)];
                 }
                 Else
                 {
-                    Attacked = BoardAttackedByBlack[(Idx + 0)];
-                    If (Attacked > 0)
-                    {
-                        AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
-                        AttackerPieceAbs = abs(Board[AttackerIdx]);
-                    }
-                    Defended = BoardAttackedByWhite[(Idx + 0)];
-                    If (Defended > 0)
-                    {
-                        DefenderPiece = Board[BoardAttackedByWhitePiece[(Idx + 0)]];
-                    }
+                    Count1 = BoardAttackedByBlack[(Idx + 0)];
                 }
-                If (Attacked > 0)
+                If (Count1 > 0)
                 {
-                    If ((AttackerPieceAbs == GoK_BlackPawn) Or ((Attacked > 1) And (Defended < 2)))
+                    If (Side == 1)
                     {
-                        If (Defended > 0)
+                        IdxSub = BoardAttackedByWhitePiece[(Idx + 0)];
+                        DefenderPiece = Board[BoardAttackedByBlackPiece[(Idx + 0)]];
+                        If ((BoardAttackedByBlack[(Idx + 0)] == 0) Or ((DefenderPiece == GoK_BlackQueen) Or (DefenderPiece == GoK_BlackKing)))
                         {
-                            Call //("Mobility restriction");
-                            Call TaperedEval.Add((-3 * Factor))((-3 * Factor));
+                            IsWeakCurrentPiece = 1;
                         }
                     }
-                    If ((AttackerPieceAbs > GoK_BlackPawn) And (Not ((AttackerPieceAbs == GoK_BlackKing))))
+                    Else
                     {
-                        CurrentMove = ((Idx * 100) + KingIdx);
-                        IdxSub = ((PieceIdxLookup[(AttackerPieceAbs + 0)] * 10000) + CurrentMove);
-                        If (((Side == 1) And (MovePosLookupWhiteLegal[(IdxSub + 0)] == 1)) Or ((Side == 2) And (MovePosLookupBlackLegal[(IdxSub + 0)] == 1)))
+                        IdxSub = BoardAttackedByBlackPiece[(Idx + 0)];
+                        DefenderPiece = Board[BoardAttackedByWhitePiece[(Idx + 0)]];
+                        If ((BoardAttackedByWhite[(Idx + 0)] == 0) Or ((DefenderPiece == GoK_WhiteQueen) Or (DefenderPiece == GoK_WhiteKing)))
                         {
-                            TargetPiece = Board[(Idx + 0)];
-                            If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
+                            IsWeakCurrentPiece = 1;
+                        }
+                    }
+                    List.ReplaceItem(KingRingAttacksCount, (Side + 0), (KingRingAttacksCount[(Side + 0)] + Count1));
+                    If (IsWeakCurrentPiece == 1)
+                    {
+                        List.ReplaceItem(KingRingAttacksOnWeakCount, (Side + 0), (KingRingAttacksOnWeakCount[(Side + 0)] + 1));
+                    }
+                    If (Not (List.ContainsItem(TmpList1, IdxSub)))
+                    {
+                        List.ReplaceItem(KingRingAttackersCount, (Side + 0), (KingRingAttackersCount[(Side + 0)] + 1));
+                        List.ReplaceItem(KingRingAttacksWeight, (Side + 0), (KingRingAttacksWeight[(Side + 0)] + AttacksWeight[PieceIdxLookup[abs(Board[(IdxSub + 0)])]]));
+                        List.Add(TmpList1, IdxSub);
+                    }
+                    If (abs(DefenderPiece) == GoK_BlackBishop)
+                    {
+                        List.ReplaceItem(KingRingAttacksBishopDefenders, (Side + 0), (KingRingAttacksBishopDefenders[(Side + 0)] + 1));
+                    }
+                    Else
+                    {
+                        If (abs(DefenderPiece) == GoK_BlackKnight)
+                        {
+                            List.ReplaceItem(KingRingAttacksKnightDefenders, (Side + 0), (KingRingAttacksKnightDefenders[(Side + 0)] + 1));
+                        }
+                    }
+                }
+            }
+            IdxOuter += 1;
+        }
+        Idx = 1;
+        Repeat (64)
+        {
+            Factor = (((Side == 1) * 2) - 1);
+            AttackerPieceAbs = 0;
+            DefenderPiece = 0;
+            If (Side == 1)
+            {
+                Attacked = BoardAttackedByWhite[(Idx + 0)];
+                If (Attacked > 0)
+                {
+                    AttackerIdx = BoardAttackedByWhitePiece[(Idx + 0)];
+                    AttackerPieceAbs = abs(Board[AttackerIdx]);
+                }
+                Defended = BoardAttackedByBlack[(Idx + 0)];
+                If (Defended > 0)
+                {
+                    DefenderPiece = Board[BoardAttackedByBlackPiece[(Idx + 0)]];
+                }
+            }
+            Else
+            {
+                Attacked = BoardAttackedByBlack[(Idx + 0)];
+                If (Attacked > 0)
+                {
+                    AttackerIdx = BoardAttackedByBlackPiece[(Idx + 0)];
+                    AttackerPieceAbs = abs(Board[AttackerIdx]);
+                }
+                Defended = BoardAttackedByWhite[(Idx + 0)];
+                If (Defended > 0)
+                {
+                    DefenderPiece = Board[BoardAttackedByWhitePiece[(Idx + 0)]];
+                }
+            }
+            If (Attacked > 0)
+            {
+                If ((AttackerPieceAbs == GoK_BlackPawn) Or ((Attacked > 1) And (Defended < 2)))
+                {
+                    If (Defended > 0)
+                    {
+                        Call TaperedEval.AddIdentical((-3 * Factor))("Eval.Threats.MobilityRestrictions")(Idx)(Side)("");
+                    }
+                }
+                If ((AttackerPieceAbs > GoK_BlackPawn) And (Not ((AttackerPieceAbs == GoK_BlackKing))))
+                {
+                    CurrentMove = ((Idx * 100) + KingIdx);
+                    IdxSub = ((PieceIdxLookup[(AttackerPieceAbs + 0)] * 10000) + CurrentMove);
+                    If (((Side == 1) And (MovePosLookupWhiteLegal[(IdxSub + 0)] == 1)) Or ((Side == 2) And (MovePosLookupBlackLegal[(IdxSub + 0)] == 1)))
+                    {
+                        TargetPiece = Board[(Idx + 0)];
+                        If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
+                        {
+                            Found = 1;
+                            If (Not ((AttackerPieceAbs == GoK_BlackKnight)))
                             {
-                                Found = 1;
-                                If (Not ((AttackerPieceAbs == GoK_BlackKnight)))
+                                SourceIdx = Idx;
+                                IdxInc = (MovePathStepInc[(CurrentMove + 0)] + 0);
+                                Repeat Until ((Found == 0) Or ((SourceIdx + IdxInc) == KingIdx))
                                 {
-                                    SourceIdx = Idx;
-                                    IdxInc = (MovePathStepInc[(CurrentMove + 0)] + 0);
-                                    Repeat Until ((Found == 0) Or ((SourceIdx + IdxInc) == KingIdx))
+                                    SourceIdx += IdxInc;
+                                    If (Not ((Board[(SourceIdx + 0)] == 0)))
                                     {
-                                        SourceIdx += IdxInc;
-                                        If (Not ((Board[(SourceIdx + 0)] == 0)))
-                                        {
-                                            Found = 0;
-                                        }
+                                        Found = 0;
                                     }
                                 }
-                                If (Found == 1)
+                            }
+                            If (Found == 1)
+                            {
+                                IsWeak = ((Defended == 0) Or ((Defended < 2) And (abs(DefenderPiece) > GoK_BlackRook)));
+                                If ((Defended == 0) Or ((IsWeak == 1) And (Attacked > 1)))
                                 {
-                                    IsWeak = ((Defended == 0) Or ((Defended < 2) And (abs(DefenderPiece) > GoK_BlackRook)));
-                                    If ((Defended == 0) Or ((IsWeak == 1) And (Attacked > 1)))
+                                    List.ReplaceItem(KingRingAttackSafeChecks, (Side + 0), (KingRingAttackSafeChecks[(Side + 0)] + TmpList2[(PieceIdxLookup[(AttackerPieceAbs + 0)] - 1)]));
+                                    If (Eval.DebugLog == 1)
                                     {
-                                        List.ReplaceItem(KingRingAttackSafeChecks, (Side + 0), (KingRingAttackSafeChecks[(Side + 0)] + TmpList2[(PieceIdxLookup[(AttackerPieceAbs + 0)] - 1)]));
+                                        Call LogPVEvalLine("Eval.Threats.SafeCheck")("")("")("")(Side)(CurrentMove);
                                     }
-                                    Else
+                                }
+                                Else
+                                {
+                                    If (Not ((AttackerPieceAbs == GoK_BlackQueen)))
                                     {
-                                        If (Not ((AttackerPieceAbs == GoK_BlackQueen)))
+                                        If ((Defended == 0) Or (abs(DefenderPiece) > GoK_BlackPawn))
                                         {
-                                            If ((Defended == 0) Or (abs(DefenderPiece) > GoK_BlackPawn))
+                                            List.ReplaceItem(KingRingAttackUnsafeChecks, (Side + 0), (KingRingAttackUnsafeChecks[(Side + 0)] + 1));
+                                            If (Eval.DebugLog == 1)
                                             {
-                                                List.ReplaceItem(KingRingAttackUnsafeChecks, (Side + 0), (KingRingAttackUnsafeChecks[(Side + 0)] + 1));
+                                                Call LogPVEvalLine("Eval.Threats.UnsafeCheck")("")("")("")(Side)(CurrentMove);
                                             }
                                         }
                                     }
@@ -4904,8 +4920,8 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                         }
                     }
                 }
-                Idx += 1;
             }
+            Idx += 1;
         }
         KingFlankAttacks = 0;
         If (Side == 1)
@@ -4937,29 +4953,26 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
         {
             KingPawnlessFlank = ((WhitePawnCount[(KingFile - 1)] == 0) And ((WhitePawnCount[(KingFile + 0)] == 0) And (WhitePawnCount[(KingFile + 1)] == 0)));
         }
-        If (IsExtendedEvalLocal == 1)
+        File = (KingFile - 1);
+        Idx = (((Rank - 1) * 8) + File);
+        Repeat (5)
         {
-            File = (KingFile - 1);
-            Idx = (((Rank - 1) * 8) + File);
-            Repeat (5)
+            Repeat (3)
             {
-                Repeat (3)
+                If ((Idx > 0) And (Idx < 65))
                 {
-                    If ((Idx > 0) And (Idx < 65))
+                    If (Side == 1)
                     {
-                        If (Side == 1)
-                        {
-                            KingFlankAttacks += BoardAttackedByWhite[(Idx + 0)];
-                        }
-                        Else
-                        {
-                            KingFlankAttacks += BoardAttackedByBlack[(Idx + 0)];
-                        }
+                        KingFlankAttacks += BoardAttackedByWhite[(Idx + 0)];
                     }
-                    Idx += 1;
+                    Else
+                    {
+                        KingFlankAttacks += BoardAttackedByBlack[(Idx + 0)];
+                    }
                 }
-                Idx += 5;
+                Idx += 1;
             }
+            Idx += 5;
         }
         KingDanger = 0;
         KingDanger += Operator.Round((0.25 * KingFlankAttacks));
@@ -5000,8 +5013,8 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
         }
         If (Eval.DebugLog == 1)
         {
-            Call LogPVEvalLine("Eval.Threats.KingDanger.FlankAttacks1")(Operator.Round((0.25 * KingFlankAttacks)))("")("")(Side)("");
-            Call LogPVEvalLine("Eval.Threats.KingDanger.PawnProtection1")(Operator.Round((-0.66 * KingRingPawnProtection[(Side + 0)])))("")("")(Side)("");
+            Call LogPVEvalLine("Eval.Threats.KingDanger.FlankAttacks")(Operator.Round((0.25 * KingFlankAttacks)))("")("")(Side)("");
+            Call LogPVEvalLine("Eval.Threats.KingDanger.PawnProtection")(Operator.Round((-0.66 * KingRingPawnProtection[(Side + 0)])))("")("")(Side)("");
             Call LogPVEvalLine("Eval.Threats.KingDanger.AttacksWeightTimesAttackerCount")((KingRingAttacksWeight[(Side + 0)] * KingRingAttackersCount[(Side + 0)]))("")("")(Side)("");
             Call LogPVEvalLine("Eval.Threats.KingDanger.AttackCount")((32 * KingRingAttacksCount[(Side + 0)]))("")("")(Side)("");
             Call LogPVEvalLine("Eval.Threats.KingDanger.AttacksOnWeakSquareCount ")((86 * KingRingAttacksOnWeakCount[(Side + 0)]))("")("")(Side)("");
@@ -5009,7 +5022,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             Call LogPVEvalLine("Eval.Threats.KingDanger.BishopDefenders")((-18 * KingRingAttacksBishopDefenders[(Side + 0)]))("")("")(Side)("");
             Call LogPVEvalLine("Eval.Threats.KingDanger.UnsafeChecks ")((65 * KingRingAttackUnsafeChecks[(Side + 0)]))("")("")(Side)("");
             Call LogPVEvalLine("Eval.Threats.KingDanger.SliderBlockers ")((65 * KingRingSliderBlockers[(Side + 0)]))("")("")(Side)("");
-            Call LogPVEvalLine("Eval.Threats.KingDanger.SafeChecks ")(MoveToZeroPadStr[(KingRingAttackSafeChecks[(Side + 0)] + 1)])("")("")(Side)("queens/rooks/bishops/knights");
+            Call LogPVEvalLine("Eval.Threats.KingDanger.SafeChecks.QRBK")(MoveToZeroPadStr[(KingRingAttackSafeChecks[(Side + 0)] + 1)])("")("")(Side)("");
         }
         Call TaperedEval.Init;
         If (KingDanger > 0)
@@ -5036,7 +5049,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
     }
     If (Eval.DebugLog == 1)
     {
-        Call LogPVEvalLine("Eval.Threats.Result")(EvalThreatsResult)("")("")(Side)("");
+        Call LogPVEvalLine("Eval.Threats.Total")(EvalThreatsResult)("")("")(Side)("");
     }
 }
 
@@ -5549,7 +5562,7 @@ Define FindAndAddSafePawnPush(string SourceIdx)(string TargetIdx)(string Attacke
                 {
                     If (((AttackedPiece < 0) And ((BoardAttackedByWhite[(TargetIdx + 0)] == 0) Or (BoardAttackedByBlack[(TargetIdx + 0)] > 0))) Or ((AttackedPiece > 0) And ((BoardAttackedByBlack[(TargetIdx + 0)] == 0) Or (BoardAttackedByWhite[(TargetIdx + 0)] > 0))))
                     {
-                        Call TaperedEval.Add((-20 * Factor))((-12 * Factor))("Eval.Threats.SafePawnPush")(((SourceIdx * 100) + TargetIdx))("")("");
+                        Call TaperedEval.Add((-20 * Factor))((-12 * Factor))("Eval.Threats.SafePawnPush")("")("")(((SourceIdx * 100) + TargetIdx));
                     }
                 }
             }
@@ -6070,8 +6083,8 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 30);
-    List.Add(AWSize, 45);
+    List.Add(AWSize, 25);
+    List.Add(AWSize, 50);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsMinMaxTimeout = 0;
     IsDeepeningDone = 0;
@@ -6093,9 +6106,9 @@ Define GetBestMoveMedDiff (warp=false)
         If (Not ((BestMinMaxRes == "")))
         {
             CurrentValue = Operator.Round(abs((BestMinMaxRes / 4)));
-            If (CurrentValue > 80)
+            If (CurrentValue > 0)
             {
-                CurrentValue = 80;
+                CurrentValue = 0;
             }
             AWDelta = (AWDelta + CurrentValue);
         }
@@ -6133,9 +6146,9 @@ Define GetBestMoveMedDiff (warp=false)
                 {
                     AWDelta = Operator.Round((AWDelta + AWSize[AWCount]));
                     CurrentValue = Operator.Round(abs((MinMaxResults[1] / 4)));
-                    If (CurrentValue > 80)
+                    If (CurrentValue > 0)
                     {
-                        CurrentValue = 80;
+                        CurrentValue = 0;
                     }
                     AWDelta = (AWDelta + CurrentValue);
                     If (Not ((MinMaxResults[1] > AWAlpha)))
@@ -6196,6 +6209,21 @@ Define GetBoardString (warp=true)
 Define GetCurrentMove(num Depth) (warp=true)
 {
     CurrentMove = Moves[(((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[(Depth + 0)])];
+}
+
+Define GetEndgameLocal (warp=true)
+{
+    IsEndgameLocal = 0;
+    Call GetAttackForce((1 == 0));
+    If (AttackForce < 13)
+    {
+        IsEndgameLocal = 1;
+    }
+    Call GetAttackForce((1 == 1));
+    If (AttackForce < 13)
+    {
+        IsEndgameLocal = 1;
+    }
 }
 
 Define GetKingShelterStorm(string KingIdx)(bool IsBlack)(string ShelterFactor) (warp=true)
@@ -8370,17 +8398,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     IsQuiescentCheckRes = 0;
     If (Level > 4)
     {
-        IsEndgameLocal = 0;
-        Call GetAttackForce((1 == 0));
-        If (AttackForce < 13)
-        {
-            IsEndgameLocal = 1;
-        }
-        Call GetAttackForce((1 == 1));
-        If (AttackForce < 13)
-        {
-            IsEndgameLocal = 1;
-        }
+        Call GetEndgameLocal;
         If ((1 == 0) And ((IsScratch3 == 1) Or (IsEndgameLocal == 1)))
         {
             If (Quiescence[(Depth - 1)] == 0)
@@ -8580,6 +8598,36 @@ Define Log(string Txt1)(string Txt2)(string Txt3)(string Txt4)(string Txt5)(stri
     List.Add(Logfile, Operator.Join(Operator.Join(Tmp, ": "), Operator.Join(Txt1, Operator.Join(Txt2, Operator.Join(Txt3, Operator.Join(Txt4, Operator.Join(Txt5, Operator.Join(Txt6, Operator.Join(Txt7, Txt8)))))))));
 }
 
+Define LogEval (warp=true)
+{
+    Call Evaluate(0)((1 == 0));
+    Call ClearMoveList(1);
+    Call AddMoveToList(0)(1);
+    List.ReplaceItem(MovesIdx, 1, 1);
+    Call ApplyMove(1);
+    Call Log("========================================")("")("")("")("")("")("")("");
+    List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+    Call LogEvalImpl(1);
+    Call Log("========================================")("")("")("")("")("")("")("");
+    Call RevertMove(1);
+}
+
+Define LogEvalImpl(string Depth) (warp=true)
+{
+    Call Log("Evaluation Analysis")("")("")("")("")("")("")("");
+    Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
+    Call Log(ExportDataFEN)("")("")("")("")("")("")("");
+    Call Log(ExportDataFENLichess)("")("")("")("")("")("")("");
+    Call Log("----------------------------------------")("")("")("")("")("")("")("");
+    Call TaperedEval.Init;
+    Call Log("Eval.TaperedEval.ScaleFacor")(" = ")(TaperedEval.ScaleFactor)("")("")("")("")("");
+    Call Log("Eval.TaperedEval.Phase")(" = ")(TaperedEval.Phase)("")("")("")("")("");
+    Call Log("----------------------------------------")("")("")("")("")("")("")("");
+    Eval.DebugLog = 1;
+    Call Evaluate(Depth)((1 == 1));
+    Eval.DebugLog = 0;
+}
+
 Define LogPVEval (warp=true)
 {
     If (List.Length(PVStable) > 1)
@@ -8589,8 +8637,8 @@ Define LogPVEval (warp=true)
         Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
         Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
         Call Log("----------------------------------------")("")("")("")("")("")("")("");
-        Call Evaluate(0)((1 == 0));
         List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+        Call Evaluate(0)((1 == 0));
         LogPVEval.Idx = 1;
         Repeat (List.Length(PVStable))
         {
@@ -8601,13 +8649,7 @@ Define LogPVEval (warp=true)
             Call Evaluate(LogPVEval.Idx)((1 == 0));
             LogPVEval.Idx += 1;
         }
-        Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
-        Call Log(ExportDataFEN)("")("")("")("")("")("")("");
-        Call Log(ExportDataFENLichess)("")("")("")()("")("")("");
-        Call Log("----------------------------------------")("")("")("")("")("")("")("");
-        Eval.DebugLog = 1;
-        Call Evaluate(List.Length(PVStable))((1 == 1));
-        Eval.DebugLog = 0;
+        Call LogEvalImpl(List.Length(PVStable));
         Call Log("========================================")("")("")("")("")("")("")("");
         LogPVEval.Idx = List.Length(PVStable);
         Repeat (List.Length(PVStable))
@@ -8650,9 +8692,9 @@ Define LogPVEvalLine(string Key)(string Val1)(string Val2)(string SquareIdx)(str
             Log.Tmp4 = "[ ]";
             If (Variable.Length(Move) > 0)
             {
-                Log.Tmp4 = Operator.Join(Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((Move / 100))]), (9 - IdxToRank[floor((Move / 100))])), Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((Move % 100))]), (9 - IdxToRank[floor((Move % 100))])));
+                Log.Tmp4 = Operator.Join(Operator.Join(" [", Operator.Join(Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((Move / 100))]), (9 - IdxToRank[floor((Move / 100))])), Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((Move % 100))]), (9 - IdxToRank[floor((Move % 100))])))), "]");
             }
-            Call Log(Operator.Join(Key, " = "))(Log.Tmp1)(" ")(Log.Tmp2)(" ")(Log.Tmp3)("")(Log.Tmp4);
+            Call Log(Operator.Join(Key, " = "))(Log.Tmp1)(" ")(Log.Tmp2)(" ")(Log.Tmp4)(" ")(Log.Tmp3);
         }
     }
 }
@@ -9050,18 +9092,8 @@ Define PrepareCurrentKillerMoves(string Depth) (warp=true)
 
 Define PrepareEvalPiecesData(string Depth) (warp=true)
 {
-    IsEndgameLocal = 0;
-    Call GetAttackForce((1 == 0));
-    If (AttackForce < 13)
-    {
-        IsEndgameLocal = 1;
-    }
-    Call GetAttackForce((1 == 1));
-    If (AttackForce < 13)
-    {
-        IsEndgameLocal = 1;
-    }
-    If ((IsScratch3 == 1) Or ((((WhiteQueenCountLocal + BlackQueenCountLocal) + (WhiteRookCountLocal + BlackRookCountLocal)) == 0) Or (((WhiteQueenCountLocal + BlackQueenCountLocal) == 0) And (((WhiteRookCountLocal < 2) And (BlackRookCountLocal < 2)) And ((WhiteMinorCountLocal < 3) And (BlackMinorCountLocal < 3))))))
+    Call GetEndgameLocal;
+    If ((IsScratch3 == 1) Or (((WhiteQueenCountLocal + BlackQueenCountLocal) == 0) And (((WhiteRookCountLocal + BlackRookCountLocal) == 0) Or ((WhiteMinorCountLocal + BlackMinorCountLocal) < 5))))
     {
         IsExtendedEvalLocal = 0;
     }
@@ -9538,6 +9570,12 @@ Define RevertMoveLight(string Depth) (warp=true)
         }
     }
     CurrentBoardHash = PreviousBoardHash[Depth];
+    List.ReplaceItem(AppliedMove, (Depth + 0), "");
+    List.ReplaceItem(PosScoreDelta, (Depth + 0), 0);
+    List.ReplaceItem(SourcePieces, (Depth + 0), 0);
+    List.ReplaceItem(TargetPiecesIdx, (Depth + 0), "");
+    List.ReplaceItem(TargetPieces, (Depth + 0), 0);
+    List.ReplaceItem(PromotionPieces, (Depth + 0), 0);
 }
 
 Define SayAsync(string Text)(num Duration) (warp=false)
