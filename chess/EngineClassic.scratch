@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (09.01.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (10.01.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -379,6 +379,1449 @@ WhenBroadcastReceived(undo)
 
 Define //(string Comment) (warp=true)
 {
+}
+
+Define ABSearch_DetectExtension(string Depth)(string Horizon) (warp=true)
+{
+    If (Not (Quiescence))
+    {
+        If (PlyExtension[Depth] == 0)
+        {
+            Call IsPassedPawnDanger(SourcePieces[Depth])(AppliedMove[Depth]);
+            If (IsPassedPawnDangerRes == 1)
+            {
+                List.ReplaceItem(PlyExtension, Depth, 1);
+            }
+        }
+        If (PlyExtension[Depth] == 0)
+        {
+            If ((Depth > 1) And (CheckedState[Depth] == 1))
+            {
+                Call SEE(Depth);
+                If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                {
+                    List.ReplaceItem(PlyExtension, Depth, 1);
+                }
+            }
+        }
+        If (PlyExtension[Depth] == 0)
+        {
+            If (1 == 1)
+            {
+                If (Horizon > 0)
+                {
+                    SourceIdxOuter2 = floor((AppliedMove[Depth] % 100));
+                    SourcePieceOuter2 = Board[SourceIdxOuter2];
+                    If (abs(SourcePieceOuter2) < GoK_OwnRook)
+                    {
+                        Call //("Fork detection, will trigger search extension or prevent reduction");
+                        Factor = (((Depth % 2) * 2) - 1);
+                        IdxOuter2 = ((PieceIdxLookup[abs(SourcePieceOuter2)] * 10000) + (SourceIdxOuter2 * 100));
+                        CountOuter1 = 0;
+                        TargetIdxOuter2 = 1;
+                        Repeat (64)
+                        {
+                            If ((Board[TargetIdxOuter2] * Factor) < 0)
+                            {
+                                If (abs(SourcePieceOuter2) < abs(Board[TargetIdxOuter2]))
+                                {
+                                    If ((((Depth % 2) == 1) And (MovePosLookupOwnLegal[(IdxOuter2 + TargetIdxOuter2)] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupOppLegal[(IdxOuter2 + TargetIdxOuter2)] == 1)))
+                                    {
+                                        CountOuter1 += 1;
+                                    }
+                                }
+                            }
+                            TargetIdxOuter2 += 1;
+                        }
+                        If (CountOuter1 > 1)
+                        {
+                            CountOuter2 = 0;
+                            Call ClearMoveList((Depth + 2));
+                            Call GenerateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
+                            List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                            Repeat Until ((MovesIdx[(Depth + 2)] > MovesCount[(Depth + 2)]) Or (CountOuter2 > 1))
+                            {
+                                Call GetCurrentMove((Depth + 2));
+                                SourceIdxOuter2 = floor((CurrentMove / 100));
+                                TargetIdxOuter2 = floor((CurrentMove % 100));
+                                If (abs(Board[SourceIdxOuter2]) < abs(Board[TargetIdxOuter2]))
+                                {
+                                    CountOuter2 += 1;
+                                }
+                                List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
+                            }
+                            If (CountOuter2 > 0)
+                            {
+                                List.ReplaceItem(PlyExtension, Depth, 1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        If (PlyExtension[Depth] == 0)
+        {
+            Call //("Singular extensions");
+            If (1 == 0)
+            {
+                If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 4))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludeMove == "")))
+                {
+                    Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
+                    If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+                    {
+                        If (Not ((TTProbeHorizonRes < (Horizon - 3))))
+                        {
+                            If ((((Depth % 2) == 1) And (TTProbeNodeTypeRes == "A")) Or (((Depth % 2) == 0) And (TTProbeNodeTypeRes == "B")))
+                            {
+                                SE.BoundEval = TTProbeNodeScoreRes;
+                                Call RevertMove(Depth);
+                                List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
+                                Call ApplyMove(Depth);
+                                Call Evaluate(Depth)((1 == 0));
+                                List.ReplaceItem(MovesIdx, (Depth + 1), 1);
+                                Call ClearMoveList((Depth + 1));
+                                Call AddMoveToList(0)((Depth + 1));
+                                Call ApplyMove((Depth + 1));
+                                Call Evaluate((Depth + 1))((1 == 0));
+                                If ((Depth % 2) == 1)
+                                {
+                                    SE.BoundEval += (0 - (Horizon * 2));
+                                    List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
+                                    List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
+                                }
+                                Else
+                                {
+                                    SE.BoundEval += (Horizon * 2);
+                                    List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
+                                    List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
+                                }
+                                Reduction = floor((Horizon / 2));
+                                Call ABSearch_NextPly((Depth + 2))(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
+                                Score = MinMaxResults[(Depth + 2)];
+                                Call RevertMove((Depth + 1));
+                                Call RevertMove(Depth);
+                                List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
+                                Call ApplyMove(Depth);
+                                If ((((Depth % 2) == 1) And (Score < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (Score > Alphas[(Depth + 2)])))
+                                {
+                                    List.ReplaceItem(PlyExtension, Depth, 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        If (PlyExtension[Depth] == 1)
+        {
+            Count1 = 0;
+            Idx = (Depth - 2);
+            Repeat Until (Idx < 1)
+            {
+                If (PlyExtension[Idx] == 1)
+                {
+                    Count1 += 1;
+                }
+                Idx += -2;
+            }
+            If (Count1 > 1)
+            {
+                List.ReplaceItem(PlyExtension, Depth, 0);
+            }
+        }
+    }
+}
+
+Define ABSearch_FutilityPruning(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescence)(string Horizon)(string ExcludeMove) (warp=true)
+{
+    Score = "";
+    ScoreIsDynamic = 0;
+    IsFutile = 0;
+    If (1 == 0)
+    {
+        Call //("LMP");
+        If ((((Not (Quiescence)) And (Horizon < 4)) And ((Betas[Depth] - Alphas[Depth]) == 1)) And (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And (PromotionPieces[Depth] == 0)))
+        {
+            If (PickedMoveCountQuiet[Depth] > (4 + (Horizon * Horizon)))
+            {
+                IsFutile = 1;
+            }
+        }
+    }
+    If (((IsFutile == 0) And (CheckedState[Depth] == 0)) And ((PutsInCheck[Depth] == 0) And (PromotionPieces[Depth] == 0)))
+    {
+        FP.Eval = "";
+        FP.SEE = "";
+        If (Not ((BoardEval[Depth] == "")))
+        {
+            FutilityMargin = "";
+            If Quiescence
+            {
+                If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) > 0)) Or (((Depth % 2) == 0) And ((QueenCountOppLocal + RookMinorCountLocalOpp) > 0))))
+                {
+                    FutilityMargin = 400;
+                }
+            }
+            Else
+            {
+                If ((Depth > 1) And (Horizon < 6))
+                {
+                    If (((TargetPieces[Depth] == 0) And (PickedMoveCount[Depth] > 1)) And ((Betas[Depth] - Alphas[Depth]) == 1))
+                    {
+                        Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
+                        If (((Not ((SourcePieces[Depth] == GoK_OwnPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_OppPawn))) Or (Rank > 3)))
+                        {
+                            FutilityMargin = (Horizon * 125);
+                        }
+                    }
+                }
+            }
+            EvaluateRes = BoardEval[Depth];
+            If ((Not ((FutilityMargin == ""))) And (Not ((EvaluateRes == ""))))
+            {
+                If ((Depth % 2) == 1)
+                {
+                    FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) + FutilityMargin);
+                }
+                Else
+                {
+                    FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) - FutilityMargin);
+                }
+                If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
+                {
+                    IsFutile = 1;
+                    If Quiescence
+                    {
+                        If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
+                        {
+                            Score = FP.Eval;
+                            List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
+                        }
+                    }
+                }
+                Else
+                {
+                    If Quiescence
+                    {
+                        If ((Depth % 2) == 1)
+                        {
+                            FP.Eval = (EvaluateRes + FutilityMargin);
+                        }
+                        Else
+                        {
+                            FP.Eval = (EvaluateRes - FutilityMargin);
+                        }
+                        If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
+                        {
+                            Call SEE(Depth);
+                            FP.SEE = SEE.Result;
+                            If ((((Depth % 2) == 1) And (Not ((FP.SEE > 0)))) Or (((Depth % 2) == 0) And (Not ((FP.SEE < 0)))))
+                            {
+                                IsFutile = 1;
+                                If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
+                                {
+                                    Score = FP.Eval;
+                                    List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        If (1 == 0)
+        {
+            If (IsFutile == 0)
+            {
+                If Quiescence
+                {
+                    If ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0))
+                    {
+                        If (FP.SEE == "")
+                        {
+                            Call SEE(Depth);
+                            FP.SEE = SEE.Result;
+                        }
+                        If ((((Depth % 2) == 1) And (FP.SEE < 0)) Or (((Depth % 2) == 0) And (FP.SEE > 0)))
+                        {
+                            IsFutile = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+Define ABSearch_Init(string MaxDepth)(bool InitialDeepening) (warp=true)
+{
+    IsInNullMove = 0;
+    IsMinMaxTimeout = 0;
+    If InitialDeepening
+    {
+        PV = "";
+        List.DeleteAll(PVStable);
+        List.DeleteAll(PVStablePrev);
+        Call Profile_Reset;
+        PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
+        TTCurrentAge = ((floor((TTCurrentAge / 100)) + 1) * 100);
+        If ((IsScratch3 == 0) And (Level > 3))
+        {
+            IdxOuter = 1;
+            Repeat (List.Length(TTNodeHash))
+            {
+                If (Not ((TTNodeHash[(IdxOuter + 0)] == 0)))
+                {
+                    If (((floor((TTNodeAge[(IdxOuter + 0)] / 100)) * 2) + TTNodeDepth[(IdxOuter + 0)]) < ((floor((TTCurrentAge / 100)) * 2) + 1))
+                    {
+                        List.ReplaceItem(TTNodeHash, (IdxOuter + 0), 0);
+                    }
+                }
+                IdxOuter += 1;
+            }
+            If (1 == 0)
+            {
+                IdxOuter = 1;
+                Repeat (List.Length(TTNodeHash))
+                {
+                    List.ReplaceItem(TTNodeHash, IdxOuter, 0);
+                    List.ReplaceItem(TTNodeAge, IdxOuter, 0);
+                    IdxOuter += 1;
+                }
+            }
+        }
+        IdxOuter = 1;
+        Repeat (List.Length(HistoryCounterMoves))
+        {
+            List.ReplaceItem(HistoryCounterMoves, (IdxOuter + 0), 0);
+            IdxOuter += 1;
+        }
+        IdxOuter = 1;
+        Repeat (List.Length(HistoryMoveScores))
+        {
+            List.ReplaceItem(HistoryMoveScores, (IdxOuter + 0), 0);
+            IdxOuter += 1;
+        }
+        IdxOuter = 1;
+        Repeat (List.Length(MaxHistoryMoveScore))
+        {
+            List.ReplaceItem(MaxHistoryMoveScore, (IdxOuter + 0), 0);
+            IdxOuter += 1;
+        }
+        If (IsScratch3 == 0)
+        {
+            IdxOuter = 1;
+            Repeat (List.Length(HistoryContinuationOwn))
+            {
+                List.ReplaceItem(HistoryContinuationOwn, (IdxOuter + 0), 0);
+                List.ReplaceItem(HistoryContinuationOpp, (IdxOuter + 0), 0);
+                List.ReplaceItem(HistoryContinuation2Own, (IdxOuter + 0), 0);
+                List.ReplaceItem(HistoryContinuation2Opp, (IdxOuter + 0), 0);
+                IdxOuter += 1;
+            }
+        }
+    }
+    Call SetInitialEnPassantTarget(1);
+    List.DeleteItem(MinMaxPly1EvalMoves, all);
+    TTCurrentAge += 1;
+    Call CalcBoardStats;
+    CalcAttackStateWithMobility = 0;
+    Call CreateCurrentBoardHash;
+    Call Log(MaxDepth)(" : ")("Search start, depth = ")(MaxDepth)("")("")("")("");
+}
+
+Define ABSearch_Main(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludeMove) (warp=true)
+{
+    List.ReplaceItem(MinMaxResults, Depth, "");
+    List.ReplaceItem(ScoreTypes, Depth, "");
+    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, "");
+    List.ReplaceItem(BestMoves, Depth, "");
+    If (IsMinMaxTimeout == 1)
+    {
+        Stop(this script);
+    }
+    List.ReplaceItem(BoardEval, Depth, "");
+    Call //("Required for early TT access and draw detection");
+    If (Depth == 1)
+    {
+        List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasOwnCastled, HasOwnKingMoved), Operator.Join(HasOwnRookKSMoved, HasOwnRookQSMoved)), Operator.Join(Operator.Join(HasOppCastled, HasOppKingMoved), Operator.Join(HasOppRookKSMoved, HasOppRookQSMoved))));
+        Call SetInitialEnPassantTarget(1);
+        List.ReplaceItem(CheckedState, 1, "");
+    }
+    Else
+    {
+        List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
+        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
+        List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
+    }
+    Call ABSearch_PreProcess_(Depth)(MinDepth)(MaxDepth)(Quiescence)(Horizon)(ExcludeMove);
+    If (Not ((MinMaxResults[Depth] == "")))
+    {
+        Stop(this script);
+    }
+    Call //("Search function (minimax / alpha-beta pruning)");
+    List.ReplaceItem(PV, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
+    List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
+    List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
+    List.ReplaceItem(PutsInCheck, Depth, 0);
+    If Quiescence
+    {
+        List.ReplaceItem(Quiescence, (Depth + 0), 1);
+    }
+    Else
+    {
+        List.ReplaceItem(Quiescence, (Depth + 0), 0);
+    }
+    Call //("Initialize local variables or forward state from previous ply");
+    If (Depth == 1)
+    {
+        Call CalcBoardAttackedByMove(2);
+        Call StoreAttackInfo(2)(1);
+        List.ReplaceItem(BoardAttackedCalculated, 1, 1);
+    }
+    Else
+    {
+        List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
+        If (Depth == 2)
+        {
+            Call CalcBoardAttackedByMove(3);
+            Call StoreAttackInfo(3)(2);
+            List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
+        }
+    }
+    Call //("Invoke board evaluation to calculate incremental results");
+    Call Evaluate((Depth - 1))((1 == 0));
+    Call //("Re-use static eval from TT");
+    Call TTProbeBoard(CurrentBoardHash)(Depth);
+    If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
+    {
+        List.ReplaceItem(BoardEval, (Depth + 0), TTProbeBoardScoreSumRes);
+    }
+    If Quiescence
+    {
+        If (CheckedState[Depth] == 1)
+        {
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
+            }
+            Else
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
+            }
+        }
+        Else
+        {
+            Call //("Standing pat");
+            If (BoardEval[Depth] == "")
+            {
+                Call Evaluate((Depth - 1))((1 == 1));
+                List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+            }
+            Else
+            {
+                EvaluateRes = BoardEval[Depth];
+                EvaluateResIsDynamic = 0;
+            }
+            List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
+            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
+            If ((Depth % 2) == 1)
+            {
+                If (Not ((EvaluateRes < Betas[Depth])))
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
+                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
+                    If (1 == 0)
+                    {
+                        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("B")("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
+                    }
+                    Stop(this script);
+                }
+                If (EvaluateRes > Alphas[Depth])
+                {
+                    List.ReplaceItem(Alphas, Depth, EvaluateRes);
+                }
+            }
+            Else
+            {
+                If (Not ((EvaluateRes > Alphas[Depth])))
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
+                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
+                    If (1 == 0)
+                    {
+                        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("A")("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
+                    }
+                    Stop(this script);
+                }
+                If (EvaluateRes < Betas[Depth])
+                {
+                    List.ReplaceItem(Betas, Depth, EvaluateRes);
+                }
+            }
+        }
+    }
+    If (Not (Quiescence))
+    {
+        Call ABSearch_Pruning(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(PrevQuiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludeMove);
+        If (Not ((MinMaxResults[Depth] == "")))
+        {
+            Stop(this script);
+        }
+    }
+    List.ReplaceItem(PickPhase, Depth, 1);
+    List.ReplaceItem(PickMoveRes, Depth, 1);
+    List.ReplaceItem(PickedMoveCount, Depth, 0);
+    List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
+    Call //("Move generation and application loop, recursive search invocation");
+    Repeat Until (PickMoveRes[Depth] == 0)
+    {
+        If ((Not (Quiescence)) And ((Depth == 1) Or (Horizon > 2)))
+        {
+            If ((IsMinMaxTimeout == 0) And ((Not (InitialDeepening)) Or (Not ((MinMaxMoveRes == "")))))
+            {
+                If (((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > ThinkTimeLimitMinMax)
+                {
+                    IsMinMaxTimeout = 1;
+                    PrevPly1Move = "";
+                }
+            }
+        }
+        If (IsMinMaxTimeout == 1)
+        {
+            If (Quiescence[Depth] == 0)
+            {
+                MoveCount += MovesCount[Depth];
+            }
+            Else
+            {
+                MoveCountQ += MovesCount[Depth];
+            }
+            Stop(this script);
+        }
+        If (IsBlockProfilerEnabled == 1)
+        {
+            Call Profile_MethodEnter(((5 * MaxSearchDepthStackFrames) + Depth));
+        }
+        If (BoardEval[Depth] == "")
+        {
+            If (CheckedState[Depth] == 0)
+            {
+                If (Quiescence Or ((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And (((Betas[Depth] - Alphas[Depth]) == 1) And (PickedMoveCount[Depth] > 0)))))
+                {
+                    Call Evaluate((Depth - 1))((1 == 1));
+                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+                }
+            }
+        }
+        If (1 == 1)
+        {
+            If ((Depth == 1) And (PickedMoveCount[Depth] > 0))
+            {
+                If (Not ((Alphas[Depth] > MinMaxAlpha)))
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, MinMaxAlpha);
+                    Stop(this script);
+                }
+            }
+        }
+        Call //("Invoke move generator and apply next move from list");
+        Call PickMove(Depth)(Quiescence);
+        If (PickMoveRes[Depth] == 1)
+        {
+            If (AppliedMove[Depth] == ExcludeMove)
+            {
+                Call RevertMove(Depth);
+                Call PickMove(Depth)(Quiescence);
+            }
+        }
+        If (IsBlockProfilerEnabled == 1)
+        {
+            Call Profile_MethodExit(((5 * MaxSearchDepthStackFrames) + Depth));
+        }
+        If (PickMoveRes[Depth] == 1)
+        {
+            Call //("Show progress and collect statistics");
+            If (ShowProgress And ((Not (Quiescence)) And ((Depth == 1) Or (Horizon > 2))))
+            {
+                CurrentValue = (Sensing.DaysSince2000() * 86400);
+                If (CurrentValue > (PrevProgressUpdate + 1))
+                {
+                    Call OnProgressChanged((((CurrentValue - ThinkTimeStart) / ThinkTimeLimitMinMax) * 100));
+                    PrevProgressUpdate = CurrentValue;
+                }
+            }
+            List.ReplaceItem(PutsInCheck, Depth, 0);
+            List.ReplaceItem(PlyExtensionTagged, Depth, 0);
+            List.ReplaceItem(PlyExtension, Depth, 0);
+            SourceIdxOuter2 = floor((AppliedMove[Depth] / 100));
+            TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
+            Call //("Fast check detection for current move");
+            Call IsCheckingPiece(TargetIdxOuter2);
+            If (IsCheckingPieceRes == 1)
+            {
+                List.ReplaceItem(PutsInCheck, Depth, 1);
+                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
+                Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("");
+            }
+            Call //("Fast discovered check detection for current move");
+            Call IsCheckingPieceDiscovery(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
+            If (IsCheckingPieceRes == 1)
+            {
+                List.ReplaceItem(PutsInCheck, Depth, 1);
+                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
+                Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("");
+            }
+            Call ABSearch_FutilityPruning(Depth)(MinDepth)(MaxDepth)(Quiescence)(Horizon)(ExcludeMove);
+            If (IsFutile == 1)
+            {
+                If (IsMinMaxTimeout == 0)
+                {
+                    If (Depth == 1)
+                    {
+                        List.Add(MinMaxPly1EvalMoves, AppliedMove[Depth]);
+                    }
+                }
+                Call RevertMove(Depth);
+            }
+            Else
+            {
+                If (Not (Quiescence))
+                {
+                    Call ABSearch_DetectExtension(Depth)(Horizon);
+                }
+                Call ABSearch_SearchCore(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(PrevQuiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludeMove);
+                If (IsMinMaxTimeout == 0)
+                {
+                    If (Depth == 1)
+                    {
+                        List.Add(MinMaxPly1EvalMoves, AppliedMove[Depth]);
+                    }
+                }
+                Call //("Revert applied move, restore board to previous state");
+                Call RevertMove(Depth);
+                If (IsMinMaxTimeout == 1)
+                {
+                    If (Quiescence[Depth] == 0)
+                    {
+                        MoveCount += MovesCount[Depth];
+                    }
+                    Else
+                    {
+                        MoveCountQ += MovesCount[Depth];
+                    }
+                    Stop(this script);
+                }
+                If (Not ((Score == "")))
+                {
+                    Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
+                    If ((Depth % 2) == 1)
+                    {
+                        If ((Score > MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
+                        {
+                            List.ReplaceItem(MinMaxResults, Depth, Score);
+                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreIsDynamic);
+                            If (Score > Alphas[Depth])
+                            {
+                                Call GetCurrentMove(Depth);
+                                List.ReplaceItem(BestMoves, Depth, CurrentMove);
+                                List.ReplaceItem(MovesIdxBestMove, Depth, MovesIdx[Depth]);
+                                Call UpdatePV(Depth)(CurrentMove);
+                                If Quiescence
+                                {
+                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score < Betas[Depth]))
+                                    {
+                                        List.ReplaceItem(Alphas, Depth, Score);
+                                    }
+                                    Else
+                                    {
+                                        Call //("Cutoff");
+                                        List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
+                                        List.ReplaceItem(PickPhase, Depth, "*");
+                                    }
+                                }
+                                Else
+                                {
+                                    List.ReplaceItem(Alphas, Depth, Score);
+                                    If ((Depth == 1) And (IsMinMaxTimeout == 0))
+                                    {
+                                        If (Not ((Score < (0 - AbsMaxCheckmateEval))))
+                                        {
+                                            Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
+                                            If (Score > MinMaxAlpha)
+                                            {
+                                                MinMaxMoveRes = BestMoves[Depth];
+                                                MinMaxEvalRes = Score;
+                                                If (1 == 1)
+                                                {
+                                                    Call Log((MaxDepth - 1))(" : ")(MinMaxMoveRes)(" : ")(MinMaxEvalRes)("")("")("");
+                                                }
+                                                Call OnEvaluationChanged(Score);
+                                            }
+                                            If (MinMaxMoveRes == GoK_OwnKingsideCastling)
+                                            {
+                                                Stg_BestMoveFromIdx = VirtualBoard[5];
+                                                Stg_BestMoveToIdx = VirtualBoard[7];
+                                            }
+                                            Else
+                                            {
+                                                If (MinMaxMoveRes == GoK_OwnQueensideCastling)
+                                                {
+                                                    Stg_BestMoveFromIdx = VirtualBoard[5];
+                                                    Stg_BestMoveToIdx = VirtualBoard[3];
+                                                }
+                                                Else
+                                                {
+                                                    Stg_BestMoveFromIdx = floor((MinMaxMoveRes / 100));
+                                                    Stg_BestMoveToIdx = floor((MinMaxMoveRes % 100));
+                                                }
+                                            }
+                                            Event.Broadcast("showbestmove");
+                                            If (Score > (AbsMaxCheckmateEval - ((MaxDepth - 1) * 1000)))
+                                            {
+                                                IsMinMaxTimeout = 1;
+                                                PrevPly1Move = "";
+                                            }
+                                            If (Not ((Score < MinMaxBeta)))
+                                            {
+                                                List.ReplaceItem(MinMaxResults, Depth, Score);
+                                                Stop(this script);
+                                            }
+                                        }
+                                    }
+                                    If (Not ((Score < Betas[Depth])))
+                                    {
+                                        If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
+                                        {
+                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
+                                        }
+                                        If (Depth > 1)
+                                        {
+                                            Call //("Cutoff");
+                                            List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
+                                            List.ReplaceItem(PickPhase, Depth, "*");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If ((Score < MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
+                        {
+                            List.ReplaceItem(MinMaxResults, Depth, Score);
+                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreIsDynamic);
+                            If (Score < Betas[Depth])
+                            {
+                                Call GetCurrentMove(Depth);
+                                List.ReplaceItem(BestMoves, Depth, CurrentMove);
+                                List.ReplaceItem(MovesIdxBestMove, Depth, MovesIdx[Depth]);
+                                Call UpdatePV(Depth)(CurrentMove);
+                                If Quiescence
+                                {
+                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score > Alphas[Depth]))
+                                    {
+                                        List.ReplaceItem(Betas, Depth, Score);
+                                    }
+                                    Else
+                                    {
+                                        List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
+                                        List.ReplaceItem(PickPhase, Depth, "*");
+                                        Call //("Cutoff");
+                                    }
+                                }
+                                Else
+                                {
+                                    List.ReplaceItem(Betas, Depth, Score);
+                                    If (Not ((Score > Alphas[Depth])))
+                                    {
+                                        If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
+                                        {
+                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
+                                        }
+                                        List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
+                                        List.ReplaceItem(PickPhase, Depth, "*");
+                                        Call //("Cutoff");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    If (Quiescence[Depth] == 0)
+    {
+        MoveCount += MovesCount[Depth];
+    }
+    Else
+    {
+        MoveCountQ += MovesCount[Depth];
+    }
+    Call //("Evaluation alpha-bound, beta-bound or exact?");
+    If ((Depth % 2) == 1)
+    {
+        If (Not ((MinMaxResults[Depth] < Betas[Depth])))
+        {
+            List.ReplaceItem(ScoreTypes, Depth, "B");
+        }
+        Else
+        {
+            If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] > AlphasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
+            {
+                List.ReplaceItem(ScoreTypes, Depth, "E");
+            }
+            Else
+            {
+                List.ReplaceItem(ScoreTypes, Depth, "A");
+            }
+        }
+    }
+    Else
+    {
+        If (Not ((MinMaxResults[Depth] > Alphas[Depth])))
+        {
+            List.ReplaceItem(ScoreTypes, Depth, "A");
+        }
+        Else
+        {
+            If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] < BetasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
+            {
+                List.ReplaceItem(ScoreTypes, Depth, "E");
+            }
+            Else
+            {
+                List.ReplaceItem(ScoreTypes, Depth, "B");
+            }
+        }
+    }
+    Call //("Fast quiescence search checkmate detection (no check evasion found)");
+    If (Quiescence And ((MovesCount[Depth] == 0) And (CheckedState[Depth] == 1)))
+    {
+        List.ReplaceItem(ScoreTypes, Depth, "E");
+        If ((Depth % 2) == 1)
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
+        }
+        Else
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
+        }
+        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+    }
+    Call //("Fast full search checkmate and stalemate detection");
+    If ((Not (Quiescence)) And ((MovesCount[Depth] == 0) And (ExcludeMove == "")))
+    {
+        List.ReplaceItem(ScoreTypes, Depth, "E");
+        If ((Depth % 2) == 1)
+        {
+            If (CheckedState[Depth] == 1)
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
+            }
+            Else
+            {
+                Call CalcBoardAttackedByMoveChecked((Depth + 1));
+                If (IsOwnSideChecked == 1)
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
+                }
+                Else
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, 0);
+                }
+            }
+        }
+        Else
+        {
+            If (CheckedState[Depth] == 1)
+            {
+                List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
+            }
+            Else
+            {
+                Call CalcBoardAttackedByMoveChecked((Depth + 1));
+                If (IsOppSideChecked == 1)
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
+                }
+                Else
+                {
+                    List.ReplaceItem(MinMaxResults, Depth, 0);
+                }
+            }
+        }
+        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")(ScoreTypes[Depth])("")(99)("")("")("")("")("")(0);
+    }
+    If (BestMoves[Depth] == "")
+    {
+        If (MovesCount[Depth] > 0)
+        {
+            List.ReplaceItem(MovesIdx, Depth, 1);
+            Call GetCurrentMove(Depth);
+            List.ReplaceItem(BestMoves, Depth, CurrentMove);
+        }
+    }
+    If (((IsMinMaxTimeout == 0) And (Depth > 1)) And (ExcludeMove == ""))
+    {
+        Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
+        If Quiescence
+        {
+            Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
+        }
+        Else
+        {
+            Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(Horizon)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
+        }
+    }
+    Call //("Collect statistics");
+    If (MovesIdxBestMove[Depth] > 0)
+    {
+        If Quiescence
+        {
+            ProfBestMoveCountQ += 1;
+            ProfBestMoveIdxSumQ += MovesIdxBestMove[Depth];
+        }
+        Else
+        {
+            ProfBestMoveCount += 1;
+            ProfBestMoveIdxSum += MovesIdxBestMove[Depth];
+        }
+        If (1 == 0)
+        {
+            If (IsBlockProfilerEnabled == 1)
+            {
+                If (MovesIdxBestMove[Depth] > (3 - (Quiescence[Depth] * 2)))
+                {
+                    Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
+                    Call Log("Move ordering indication")(Operator.Join(Operator.Join(":", Depth), Operator.Join(":", MovesIdxBestMove[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] / 100))]), Operator.Join(":", BestMoves[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] % 100))]), Operator.Join(":", Quiescence[Depth])))(":")(ExportDataFEN)("")("");
+                }
+            }
+        }
+    }
+}
+
+Define ABSearch_NextPly(string CurrentDepth)(string MinDepth)(string MaxDepth)(bool CurrentInitialDeepening)(string QuiescenceDepth)(bool CurrentQuiescence)(bool ShowProgress)(string CurrentHorizon)(string Reduction)(bool CurrentCutnode)(string ExcludeNode) (warp=true)
+{
+    If (CurrentQuiescence Or ((Not (CurrentQuiescence)) And (((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) < 2)))
+    {
+        Call //("If on full search and max depth reached, extend or switch to quiescence. If on quiescence search, continue");
+        If (QuiescenceDepth > 0)
+        {
+            Call ABSearch_Main((CurrentDepth + 1))(MinDepth)((MaxDepth + 1))(CurrentInitialDeepening)((QuiescenceDepth - 1))((1 == 1))(CurrentQuiescence)(ShowProgress)(1)((1 == 1))(ExcludeNode);
+        }
+        Else
+        {
+            Call ABSearch_Main((CurrentDepth + 1))(MinDepth)((CurrentDepth + 1))(CurrentInitialDeepening)((QuiescenceDepth - 1))((1 == 1))(CurrentQuiescence)(ShowProgress)(0)((1 == 1))(ExcludeNode);
+        }
+    }
+    Else
+    {
+        Call ABSearch_Main((CurrentDepth + 1))(MinDepth)(((MaxDepth + PlyExtension[CurrentDepth]) - Reduction))(CurrentInitialDeepening)(QuiescenceDepth)(CurrentQuiescence)(CurrentQuiescence)(ShowProgress)((((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) - 1))(CurrentCutnode)(ExcludeNode);
+    }
+}
+
+Define ABSearch_PreProcess_(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescence)(string Horizon)(string ExcludeMove) (warp=true)
+{
+    If (Depth > 1)
+    {
+        Call //("Virtual king captures on previous ply => depth-corrected checkmate evaluation");
+        If (TargetPieces[(Depth - 1)] == GoK_OppKing)
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth - 1) * 1000)));
+            List.ReplaceItem(ScoreTypes, Depth, "E");
+            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+            Stop(this script);
+        }
+        If (TargetPieces[(Depth - 1)] == GoK_OwnKing)
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth - 1) * 1000)));
+            List.ReplaceItem(ScoreTypes, Depth, "E");
+            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+            Stop(this script);
+        }
+    }
+    If ((Depth > 1) And (IsInNullMove == 0))
+    {
+        Call //("Rule of 50 moves");
+        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > (99 - 0))
+        {
+            List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
+            List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
+            List.ReplaceItem(MinMaxResultsIsDynamic, (Depth + 0), 1);
+            Stop(this script);
+        }
+        Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
+        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 5)
+        {
+            Count1 = 1;
+            If List.ContainsItem(PreviousBoardHash, CurrentBoardHash)
+            {
+                Idx = (Depth - 2);
+                Repeat Until ((Idx < 2) Or (Count1 > 2))
+                {
+                    If (CurrentBoardHash == PreviousBoardHash[Idx])
+                    {
+                        Count1 += 1;
+                    }
+                    Idx += -2;
+                }
+            }
+            If List.ContainsItem(BoardHistoryHash, CurrentBoardHash)
+            {
+                Idx = ((List.Length(BoardHistoryHash) - 1) + (Depth % 2));
+                Repeat Until ((Idx < 1) Or (Count1 > 2))
+                {
+                    If (CurrentBoardHash == BoardHistoryHash[Idx])
+                    {
+                        Count1 += 1;
+                    }
+                    Idx += -2;
+                }
+            }
+            If (Count1 > 1)
+            {
+                List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
+                List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
+                List.ReplaceItem(MinMaxResultsIsDynamic, (Depth + 0), 1);
+                Stop(this script);
+            }
+        }
+    }
+    Call //("Search tree leaf reached");
+    If (Depth == MaxDepth)
+    {
+        Call Evaluate((Depth - 1))((1 == 1));
+        List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
+        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
+        Stop(this script);
+    }
+    If ((Depth > 1) And (ExcludeMove == ""))
+    {
+        Call //("Probe transposition table for cached node evaluations");
+        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
+        {
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+            {
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
+                {
+                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
+                    {
+                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                        {
+                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                            Stop(this script);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    If ((Depth > 1) And (IsInNullMove == 0))
+    {
+        Call //("Draw-by-stalemate detection. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
+        If (Not (Quiescence))
+        {
+            If (Not ((CheckedState[(Depth + 0)] == 1)))
+            {
+                If ((((Depth % 2) == 1) And ((QueenCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2))) Or (((Depth % 2) == 0) And ((QueenCountOppLocal == 0) And (RookMinorCountLocalOpp < 2))))
+                {
+                    If ((Depth < 4) Or (Horizon > 2))
+                    {
+                        Call IsDrawByStalemate((Depth + 2));
+                        If (IsDrawRes == 1)
+                        {
+                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                            Stop(this script);
+                        }
+                    }
+                }
+            }
+        }
+        Call //("Fast draw-by-material verification");
+        If (((QueenCounttOwnLocal == 0) And (QueenCountOppLocal == 0)) And ((PawnCounttOwnLocal == 0) And (PawnCountOppLocal == 0)))
+        {
+            If (((RookCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2)) And ((RookCountOppLocal == 0) And (RookMinorCountLocalOpp < 2)))
+            {
+                Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                Stop(this script);
+            }
+        }
+        Call //("Special K-KP endgame draw detection, according to pawn and king position. Finds draws otherwise not visible within search horizon");
+        If ((Depth > 1) And (Not (PrevQuiescence)))
+        {
+            If (((QueenCountOppLocal + RookMinorCountLocalOpp) == 0) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) == 0))
+            {
+                If ((PawnCounttOwnLocal + PawnCountOppLocal) == 1)
+                {
+                    Idx = 1;
+                    Repeat (64)
+                    {
+                        CurrentPiece = Board[(Idx + 0)];
+                        If ((CurrentPiece == GoK_OppPawn) And ((Depth % 2) == 0))
+                        {
+                            If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
+                            {
+                                If ((IdxToFile[Idx] == IdxToFile[KingIdxtOwn]) And (IdxToRank[KingIdxtOwn] < IdxToRank[Idx]))
+                                {
+                                    Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                    Stop(this script);
+                                }
+                            }
+                            Else
+                            {
+                                If (((Idx - 8) == KingIdxtOwn) Or ((Idx - 16) == KingIdxtOwn))
+                                {
+                                    If (Not ((((Idx - 1) == KingIdxOpp) Or ((Idx + 1) == KingIdxOpp))))
+                                    {
+                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                        Stop(this script);
+                                    }
+                                }
+                                If ((Idx - 24) == KingIdxtOwn)
+                                {
+                                    If ((IdxToRank[Idx] > 4) And ((Idx - 8) == KingIdxOpp))
+                                    {
+                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                        Stop(this script);
+                                    }
+                                }
+                            }
+                        }
+                        Else
+                        {
+                            If ((CurrentPiece == GoK_OwnPawn) And ((Depth % 2) == 1))
+                            {
+                                If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
+                                {
+                                    If ((IdxToFile[Idx] == IdxToFile[KingIdxOpp]) And (IdxToRank[KingIdxOpp] > IdxToRank[Idx]))
+                                    {
+                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                        Stop(this script);
+                                    }
+                                }
+                                Else
+                                {
+                                    If (((Idx + 8) == KingIdxOpp) Or ((Idx + 16) == KingIdxOpp))
+                                    {
+                                        If (Not ((((Idx - 1) == KingIdxtOwn) Or ((Idx + 1) == KingIdxtOwn))))
+                                        {
+                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                            Stop(this script);
+                                        }
+                                    }
+                                    If ((Idx + 24) == KingIdxOpp)
+                                    {
+                                        If ((IdxToRank[Idx] < 5) And ((Idx + 8) == KingIdxtOwn))
+                                        {
+                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                            Stop(this script);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Idx += 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+Define ABSearch_Pruning(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludeMove) (warp=true)
+{
+    If (((Not (Quiescence)) And (Depth > 1)) And ((ExcludeMove == "") And (CheckedState[Depth] == 0)))
+    {
+        If ((IsInNullMove == 0) And (1 == 0))
+        {
+            Call //("Reverse futility pruning");
+            If ((((Depth > 1) And (Horizon < 3)) And ((IsEndgame == 0) And ((PawnCounttOwnLocal + PawnCountOppLocal) > 0))) And (((Betas[Depth] - Alphas[Depth]) == 1) And (CheckedState[Depth] == 0)))
+            {
+                If ((((Depth % 2) == 1) And (abs(Betas[Depth]) < AbsMinCheckmateEval)) Or (((Depth % 2) == 0) And (abs(Alphas[Depth]) < AbsMinCheckmateEval)))
+                {
+                    Call TTProbeNode(CurrentBoardHash)(Depth);
+                    If (((TTProbeRes == 0) Or (TTProbeBestMoveRes == "")) Or (Not ((Board[floor((TTProbeBestMoveRes % 100))] == 0))))
+                    {
+                        If (BoardEval[Depth] == "")
+                        {
+                            Call Evaluate((Depth - 1))((1 == 1));
+                            List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+                        }
+                        Margin = (80 + (80 * Horizon));
+                        If (Depth > 2)
+                        {
+                            If (Not ((BoardEval[(Depth - 2)] == "")))
+                            {
+                                If ((((Depth % 2) == 1) And (BoardEval[Depth] < BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] > BoardEval[(Depth - 2)])))
+                                {
+                                    Margin += -40;
+                                }
+                            }
+                        }
+                        If ((Depth % 2) == 1)
+                        {
+                            If (Not (((BoardEval[Depth] - Margin) < Betas[Depth])))
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, BoardEval[Depth]);
+                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                                Stop(this script);
+                            }
+                        }
+                        Else
+                        {
+                            If (Not (((BoardEval[Depth] + Margin) > Alphas[Depth])))
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, BoardEval[Depth]);
+                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
+                                Stop(this script);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Call //("Razoring");
+        If (1 == 0)
+        {
+            If (((Horizon + PlyExtension[Depth]) == 1) And ((Betas[Depth] - Alphas[Depth]) == 1))
+            {
+                If (BoardEval[Depth] == "")
+                {
+                    Call Evaluate((Depth - 1))((1 == 1));
+                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+                }
+                If ((((Depth % 2) == 1) And ((BoardEval[Depth] + 300) < Alphas[Depth])) Or (((Depth % 2) == 0) And ((BoardEval[Depth] - 300) > Betas[Depth])))
+                {
+                    If (QuiescenceDepth > 0)
+                    {
+                        Call ABSearch_Main((Depth + 1))(MinDepth)((MaxDepth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(Quiescence)(ShowProgress)(1)((1 == 1))(ExcludeNode);
+                        List.ReplaceItem(MinMaxResults, Depth, MinMaxResults[(Depth + 1)]);
+                        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, MinMaxResultsIsDynamic[(Depth + 1)]);
+                        Stop(this script);
+                    }
+                }
+            }
+        }
+        Call //("Null move pruning");
+        If (IsInNullMove == 0)
+        {
+            If ((Horizon > 2) And (((Betas[Depth] - Alphas[Depth]) == 1) And (CheckedState[Depth] == 0)))
+            {
+                If (((PawnCounttOwnLocal + PawnCountOppLocal) > 0) And ((((Depth % 2) == 1) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) > 1)) Or (((Depth % 2) == 0) And ((QueenCountOppLocal + RookMinorCountLocalOpp) > 1))))
+                {
+                    IsInNullMove += 1;
+                    If (BoardEval[Depth] == "")
+                    {
+                        Call Evaluate((Depth - 1))((1 == 1));
+                        List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+                    }
+                    If ((Depth % 2) == 1)
+                    {
+                        CurrentValue = (BoardEval[Depth] - Betas[Depth]);
+                    }
+                    Else
+                    {
+                        CurrentValue = (Alphas[Depth] - BoardEval[Depth]);
+                    }
+                    If (CurrentValue > 512)
+                    {
+                        CurrentValue = 512;
+                    }
+                    Reduction = (2 + floor((((32 * Horizon) + CurrentValue) / 128)));
+                    If (Reduction < 0)
+                    {
+                        Reduction = 0;
+                    }
+                    If (Reduction > 0)
+                    {
+                        If ((((Depth % 2) == 1) And (Not ((BoardEval[Depth] < (Betas[Depth] + 0))))) Or (((Depth % 2) == 0) And (Not ((BoardEval[Depth] > (Alphas[Depth] - 0))))))
+                        {
+                            Call ClearMoveList((Depth + 0));
+                            Call AddMoveToList(0)((Depth + 0));
+                            List.ReplaceItem(MovesIdx, (Depth + 0), 1);
+                            Call ApplyMove((Depth + 0));
+                            Call Evaluate((Depth + 0))((1 == 0));
+                            If ((Depth % 2) == 1)
+                            {
+                                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+                            }
+                            Else
+                            {
+                                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+                            }
+                            Call ABSearch_NextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)))("");
+                            Score = MinMaxResults[(Depth + 1)];
+                            ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
+                            Call RevertMove((Depth + 0));
+                            If (Not ((abs(Score) > AbsMinCheckmateEval)))
+                            {
+                                If (((((Depth % 2) == 1) And (Not ((Score < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Score > Alphas[Depth]))))) And (Not ((abs(Score) > AbsMinCheckmateEval))))
+                                {
+                                    List.ReplaceItem(MinMaxResults, Depth, Score);
+                                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreIsDynamic);
+                                    IsInNullMove += -1;
+                                    Stop(this script);
+                                }
+                            }
+                        }
+                    }
+                    IsInNullMove += -1;
+                }
+            }
+        }
+    }
+    If (1 == 0)
+    {
+        If (BoardEval[Depth] == "")
+        {
+            If (CheckedState[Depth] == 0)
+            {
+                If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
+                {
+                    Call Evaluate((Depth - 1))((1 == 1));
+                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+                }
+            }
+        }
+    }
+    If ((((Not (Quiescence)) And (Horizon > 5)) And (CheckedState[Depth] == 0)) And (Not (((Betas[Depth] - Alphas[Depth]) == 1))))
+    {
+        If (1 == 1)
+        {
+            Call //("Internal iterative deepening");
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 0) Or (TTProbeBestMoveRes == ""))
+            {
+                Call ClearMoveList(Depth);
+                Call AddMoveToList(0)(Depth);
+                Call ApplyMove(Depth);
+                Call Evaluate(Depth)((1 == 0));
+                Call ClearMoveList((Depth + 1));
+                Call AddMoveToList(0)((Depth + 1));
+                Call ApplyMove((Depth + 1));
+                Call Evaluate((Depth + 1))((1 == 0));
+                List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
+                List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
+                Call ABSearch_Main((Depth + 2))(MinDepth)((MaxDepth - 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0))("");
+                Call RevertMove((Depth + 1));
+                Call RevertMove(Depth);
+            }
+        }
+    }
+}
+
+Define ABSearch_SearchCore(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludeMove) (warp=true)
+{
+    Score = "";
+    ScoreIsDynamic = 0;
+    Call //("Late move reduction preparation");
+    IsReductionAndDone = 0;
+    If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
+    {
+        If (((Horizon > 1) And ((CheckedState[Depth] == 0) And (((TargetPieces[Depth] == 0) Or (1 == 0)) And (PromotionPieces[Depth] == 0)))) And (((QueenCountOppLocal + RookMinorCountLocalOpp) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) > 0))
+        {
+            Call IsPassedPawnDanger(SourcePieces[Depth])(AppliedMove[Depth]);
+            If (IsPassedPawnDangerRes == 0)
+            {
+                Reduction = 0;
+                If (PickedMoveCount[Depth] > (1 + (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
+                {
+                    Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
+                    If (1 == 1)
+                    {
+                        If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
+                        {
+                            Reduction += -1;
+                        }
+                    }
+                    If (1 == 1)
+                    {
+                        If (PutsInCheck[Depth] == 1)
+                        {
+                            Reduction += -1;
+                        }
+                    }
+                    If (Reduction < 0)
+                    {
+                        Reduction = 0;
+                    }
+                    Call //("Late move reduction");
+                    If (Reduction > 0)
+                    {
+                        If ((Depth % 2) == 1)
+                        {
+                            List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                            List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+                        }
+                        Else
+                        {
+                            List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                            List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+                        }
+                        If (PlyExtension[Depth] == 1)
+                        {
+                            List.ReplaceItem(PlyExtension, (Depth + 0), 0);
+                            Call ABSearch_NextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
+                            List.ReplaceItem(PlyExtension, (Depth + 0), 1);
+                        }
+                        Else
+                        {
+                            Call ABSearch_NextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
+                        }
+                        Score = MinMaxResults[(Depth + 1)];
+                        ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
+                        IsReductionAndDone = 1;
+                    }
+                    If (1 == 0)
+                    {
+                        Reduction = floor(((0.38 + ((TargetPieces[Depth] == 0) * 1.63)) + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / (2.32 + ((Not ((TargetPieces[Depth] == 0))) * 1.44)))));
+                    }
+                }
+            }
+        }
+        Call //("Non-PV search");
+        If ((((IsReductionAndDone == 1) And ((((Depth % 2) == 1) And (Score > Alphas[Depth])) Or (((Depth % 2) == 0) And (Score < Betas[Depth])))) Or ((IsReductionAndDone == 0) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsMinMaxTimeout == 0))
+        {
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+            }
+            Else
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+            }
+            Call ABSearch_NextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)))("");
+            Score = MinMaxResults[(Depth + 1)];
+            ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
+            If ((Score > Alphas[Depth]) And ((Depth == 1) Or (Score < Betas[Depth])))
+            {
+                IsReductionAndDone = 0;
+            }
+            Else
+            {
+                IsReductionAndDone = 1;
+            }
+        }
+    }
+    Call //("Move was not pruned upfront, enter standard search");
+    If ((IsReductionAndDone == 0) And (IsMinMaxTimeout == 0))
+    {
+        List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+        List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+        Call ABSearch_NextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
+        Score = MinMaxResults[(Depth + 1)];
+        ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
+    }
 }
 
 Define AddBoardToHistory(string WasEngineMove) (warp=true)
@@ -797,7 +2240,7 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
     MinMaxBeta = Beta;
     MinMaxEvalRes = "";
     MinMaxMoveRes = "";
-    Call InitAlphaBeta((MaxDepth - 1))(InitialDeepening);
+    Call ABSearch_Init((MaxDepth - 1))(InitialDeepening);
     Call Evaluate(0)((1 == 0));
     List.ReplaceItem(Alphas, MinDepth, Alpha);
     List.ReplaceItem(Betas, MinDepth, Beta);
@@ -811,7 +2254,7 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
     ProfBestMoveCountQ = 0;
     ProfBestMoveIdxSumQ = 0;
     MinMaxTimer = (Sensing.DaysSince2000() * 86400);
-    Call AlphaBetaMinMaxImpl(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
+    Call ABSearch_Main(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
     MinMaxTimer = ((Sensing.DaysSince2000() * 86400) - MinMaxTimer);
     Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
     Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
@@ -850,1408 +2293,6 @@ Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDep
         {
             Call LogPVEval;
         }
-    }
-}
-
-Define AlphaBetaMinMaxImpl(string Depth)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool PrevQuiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludeMove) (warp=true)
-{
-    List.ReplaceItem(MinMaxResults, Depth, "");
-    List.ReplaceItem(ScoreTypes, Depth, "");
-    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, "");
-    List.ReplaceItem(BoardEval, Depth, "");
-    If (IsMinMaxTimeout == 1)
-    {
-        Stop(this script);
-    }
-    Call //("Required for early TT access and draw detection");
-    If (Depth == 1)
-    {
-        List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasOwnCastled, HasOwnKingMoved), Operator.Join(HasOwnRookKSMoved, HasOwnRookQSMoved)), Operator.Join(Operator.Join(HasOppCastled, HasOppKingMoved), Operator.Join(HasOppRookKSMoved, HasOppRookQSMoved))));
-        Call SetInitialEnPassantTarget(1);
-        List.ReplaceItem(CheckedState, 1, "");
-    }
-    Else
-    {
-        List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
-        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
-        List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
-    }
-    If (Depth > 1)
-    {
-        Call //("Virtual king captures on previous ply => depth-corrected checkmate evaluation");
-        If (TargetPieces[(Depth - 1)] == GoK_OppKing)
-        {
-            List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth - 1) * 1000)));
-            List.ReplaceItem(ScoreTypes, Depth, "E");
-            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-            Stop(this script);
-        }
-        If (TargetPieces[(Depth - 1)] == GoK_OwnKing)
-        {
-            List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth - 1) * 1000)));
-            List.ReplaceItem(ScoreTypes, Depth, "E");
-            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-            Stop(this script);
-        }
-    }
-    If ((Depth > 1) And (IsInNullMove == 0))
-    {
-        Call //("Rule of 50 moves");
-        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > (99 - 0))
-        {
-            List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
-            List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
-            List.ReplaceItem(MinMaxResultsIsDynamic, (Depth + 0), 1);
-            Stop(this script);
-        }
-        Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
-        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 5)
-        {
-            Count1 = 1;
-            If List.ContainsItem(PreviousBoardHash, CurrentBoardHash)
-            {
-                Idx = (Depth - 2);
-                Repeat Until ((Idx < 2) Or (Count1 > 2))
-                {
-                    If (CurrentBoardHash == PreviousBoardHash[Idx])
-                    {
-                        Count1 += 1;
-                    }
-                    Idx += -2;
-                }
-            }
-            If List.ContainsItem(BoardHistoryHash, CurrentBoardHash)
-            {
-                Idx = ((List.Length(BoardHistoryHash) - 1) + (Depth % 2));
-                Repeat Until ((Idx < 1) Or (Count1 > 2))
-                {
-                    If (CurrentBoardHash == BoardHistoryHash[Idx])
-                    {
-                        Count1 += 1;
-                    }
-                    Idx += -2;
-                }
-            }
-            If (Count1 > 1)
-            {
-                List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
-                List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
-                List.ReplaceItem(MinMaxResultsIsDynamic, (Depth + 0), 1);
-                Stop(this script);
-            }
-        }
-    }
-    Call //("Search tree leaf reached");
-    If (Depth == MaxDepth)
-    {
-        Call Evaluate((Depth - 1))((1 == 1));
-        List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
-        Stop(this script);
-    }
-    If ((Depth > 1) And (ExcludeMove == ""))
-    {
-        Call //("Probe transposition table for cached node evaluations");
-        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
-        {
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
-            {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or (Quiescence And (TTProbeHorizonRes == -1)))
-                {
-                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
-                    {
-                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
-                        {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-                            Stop(this script);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    If ((Depth > 1) And (IsInNullMove == 0))
-    {
-        Call //("Draw-by-stalemate detection. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
-        If (Not (Quiescence))
-        {
-            If (Not ((CheckedState[(Depth + 0)] == 1)))
-            {
-                If ((((Depth % 2) == 1) And ((QueenCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2))) Or (((Depth % 2) == 0) And ((QueenCountOppLocal == 0) And (RookMinorCountLocalOpp < 2))))
-                {
-                    If ((Depth < 4) Or (Horizon > 2))
-                    {
-                        Call IsDrawByStalemate((Depth + 2));
-                        If (IsDrawRes == 1)
-                        {
-                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                            Stop(this script);
-                        }
-                    }
-                }
-            }
-        }
-        Call //("Fast draw-by-material verification");
-        If (((QueenCounttOwnLocal == 0) And (QueenCountOppLocal == 0)) And ((PawnCounttOwnLocal == 0) And (PawnCountOppLocal == 0)))
-        {
-            If (((RookCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2)) And ((RookCountOppLocal == 0) And (RookMinorCountLocalOpp < 2)))
-            {
-                Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                Stop(this script);
-            }
-        }
-        Call //("Special K-KP endgame draw detection, according to pawn and king position. Finds draws otherwise not visible within search horizon");
-        If ((Depth > 1) And (Not (PrevQuiescence)))
-        {
-            If (((QueenCountOppLocal + RookMinorCountLocalOpp) == 0) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) == 0))
-            {
-                If ((PawnCounttOwnLocal + PawnCountOppLocal) == 1)
-                {
-                    Idx = 1;
-                    Repeat (64)
-                    {
-                        CurrentPiece = Board[(Idx + 0)];
-                        If ((CurrentPiece == GoK_OppPawn) And ((Depth % 2) == 0))
-                        {
-                            If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
-                            {
-                                If ((IdxToFile[Idx] == IdxToFile[KingIdxtOwn]) And (IdxToRank[KingIdxtOwn] < IdxToRank[Idx]))
-                                {
-                                    Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                    Stop(this script);
-                                }
-                            }
-                            Else
-                            {
-                                If (((Idx - 8) == KingIdxtOwn) Or ((Idx - 16) == KingIdxtOwn))
-                                {
-                                    If (Not ((((Idx - 1) == KingIdxOpp) Or ((Idx + 1) == KingIdxOpp))))
-                                    {
-                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                        Stop(this script);
-                                    }
-                                }
-                                If ((Idx - 24) == KingIdxtOwn)
-                                {
-                                    If ((IdxToRank[Idx] > 4) And ((Idx - 8) == KingIdxOpp))
-                                    {
-                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                        Stop(this script);
-                                    }
-                                }
-                            }
-                        }
-                        Else
-                        {
-                            If ((CurrentPiece == GoK_OwnPawn) And ((Depth % 2) == 1))
-                            {
-                                If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
-                                {
-                                    If ((IdxToFile[Idx] == IdxToFile[KingIdxOpp]) And (IdxToRank[KingIdxOpp] > IdxToRank[Idx]))
-                                    {
-                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                        Stop(this script);
-                                    }
-                                }
-                                Else
-                                {
-                                    If (((Idx + 8) == KingIdxOpp) Or ((Idx + 16) == KingIdxOpp))
-                                    {
-                                        If (Not ((((Idx - 1) == KingIdxtOwn) Or ((Idx + 1) == KingIdxtOwn))))
-                                        {
-                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                            Stop(this script);
-                                        }
-                                    }
-                                    If ((Idx + 24) == KingIdxOpp)
-                                    {
-                                        If ((IdxToRank[Idx] < 5) And ((Idx + 8) == KingIdxtOwn))
-                                        {
-                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                            Stop(this script);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Idx += 1;
-                    }
-                }
-            }
-        }
-    }
-    Call //("Search function (minimax / alpha-beta pruning)");
-    List.ReplaceItem(MinMaxResults, (Depth + 0), "");
-    List.ReplaceItem(MinMaxResultsIsDynamic, (Depth + 0), 0);
-    List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
-    List.ReplaceItem(BestMoves, (Depth + 0), "");
-    List.ReplaceItem(PV, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
-    List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
-    List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
-    List.ReplaceItem(PutsInCheck, Depth, 0);
-    If Quiescence
-    {
-        List.ReplaceItem(Quiescence, (Depth + 0), 1);
-    }
-    Else
-    {
-        List.ReplaceItem(Quiescence, (Depth + 0), 0);
-    }
-    Call //("Initialize local variables or forward state from previous ply");
-    If (Depth == 1)
-    {
-        List.ReplaceItem(CheckedState, (Depth + 0), "");
-        List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasOwnCastled, HasOwnKingMoved), Operator.Join(HasOwnRookKSMoved, HasOwnRookQSMoved)), Operator.Join(Operator.Join(HasOppCastled, HasOppKingMoved), Operator.Join(HasOppRookKSMoved, HasOppRookQSMoved))));
-        Call CalcBoardAttackedByMove(2);
-        Call StoreAttackInfo(2)(1);
-        List.ReplaceItem(BoardAttackedCalculated, 1, 1);
-    }
-    Else
-    {
-        List.ReplaceItem(CheckedState, (Depth + 0), PutsInCheck[(Depth - 1)]);
-        List.ReplaceItem(CheckedStateAttackLines, Depth, "");
-        List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
-        List.ReplaceItem(BoardAttackedCalculated, Depth, 0);
-        If (Depth == 2)
-        {
-            Call CalcBoardAttackedByMove(3);
-            Call StoreAttackInfo(3)(2);
-            List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-        }
-        Else
-        {
-            Idx = (((Depth - 1) * 100) + 1);
-            IdxSub = (((Depth - 3) * 100) + 1);
-            Repeat (64)
-            {
-                List.ReplaceItem(PersistedBoardAttackedByOppSnapshot, Idx, PersistedBoardAttackedByOppSnapshot[IdxSub]);
-                List.ReplaceItem(PersistedBoardAttackedByOppPieceSnapshot, Idx, PersistedBoardAttackedByOppPieceSnapshot[IdxSub]);
-                Idx += 1;
-                IdxSub += 1;
-            }
-        }
-    }
-    Call //("Invoke board evaluation to calculate intermediate results if required");
-    Call Evaluate((Depth - 1))((1 == 0));
-    Call TTProbeBoard(CurrentBoardHash)(Depth);
-    If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
-    {
-        List.ReplaceItem(BoardEval, (Depth + 0), TTProbeBoardScoreSumRes);
-    }
-    If Quiescence
-    {
-        If (CheckedState[Depth] == 1)
-        {
-            If ((Depth % 2) == 1)
-            {
-                List.ReplaceItem(MinMaxResults, Depth, (-100000 + (Depth * 1000)));
-            }
-            Else
-            {
-                List.ReplaceItem(MinMaxResults, Depth, (100000 - (Depth * 1000)));
-            }
-        }
-        Else
-        {
-            Call //("Standing pat");
-            If (BoardEval[Depth] == "")
-            {
-                Call Evaluate((Depth - 1))((1 == 1));
-                List.ReplaceItem(BoardEval, Depth, EvaluateRes);
-            }
-            Else
-            {
-                EvaluateRes = BoardEval[Depth];
-                EvaluateResIsDynamic = 0;
-            }
-            List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
-            If ((Depth % 2) == 1)
-            {
-                If (Not ((EvaluateRes < Betas[Depth])))
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
-                    If (1 == 0)
-                    {
-                        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("B")("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
-                    }
-                    Stop(this script);
-                }
-                If (EvaluateRes > Alphas[Depth])
-                {
-                    List.ReplaceItem(Alphas, Depth, EvaluateRes);
-                }
-            }
-            Else
-            {
-                If (Not ((EvaluateRes > Alphas[Depth])))
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, EvaluateResIsDynamic);
-                    If (1 == 0)
-                    {
-                        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")("A")("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
-                    }
-                    Stop(this script);
-                }
-                If (EvaluateRes < Betas[Depth])
-                {
-                    List.ReplaceItem(Betas, Depth, EvaluateRes);
-                }
-            }
-        }
-    }
-    If (((Not (Quiescence)) And (Depth > 1)) And ((ExcludeMove == "") And (CheckedState[Depth] == 0)))
-    {
-        If ((IsInNullMove == 0) And (1 == 0))
-        {
-            Call //("Reverse futility pruning");
-            If ((((Depth > 1) And (Horizon < 3)) And ((IsEndgame == 0) And ((PawnCounttOwnLocal + PawnCountOppLocal) > 0))) And (((Betas[Depth] - Alphas[Depth]) == 1) And (CheckedState[Depth] == 0)))
-            {
-                If ((((Depth % 2) == 1) And (abs(Betas[Depth]) < AbsMinCheckmateEval)) Or (((Depth % 2) == 0) And (abs(Alphas[Depth]) < AbsMinCheckmateEval)))
-                {
-                    Call TTProbeNode(CurrentBoardHash)(Depth);
-                    If (((TTProbeRes == 0) Or (TTProbeBestMoveRes == "")) Or (Not ((Board[floor((TTProbeBestMoveRes % 100))] == 0))))
-                    {
-                        If (BoardEval[Depth] == "")
-                        {
-                            Call Evaluate((Depth - 1))((1 == 1));
-                            List.ReplaceItem(BoardEval, Depth, EvaluateRes);
-                        }
-                        Margin = (80 + (80 * Horizon));
-                        If (Depth > 2)
-                        {
-                            If (Not ((BoardEval[(Depth - 2)] == "")))
-                            {
-                                If ((((Depth % 2) == 1) And (BoardEval[Depth] < BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] > BoardEval[(Depth - 2)])))
-                                {
-                                    Margin += -40;
-                                }
-                            }
-                        }
-                        If ((Depth % 2) == 1)
-                        {
-                            If (Not (((BoardEval[Depth] - Margin) < Betas[Depth])))
-                            {
-                                List.ReplaceItem(MinMaxResults, Depth, BoardEval[Depth]);
-                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-                                Stop(this script);
-                            }
-                        }
-                        Else
-                        {
-                            If (Not (((BoardEval[Depth] + Margin) > Alphas[Depth])))
-                            {
-                                List.ReplaceItem(MinMaxResults, Depth, BoardEval[Depth]);
-                                List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-                                Stop(this script);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Call //("Razoring");
-        If (1 == 0)
-        {
-            If (((Horizon + PlyExtension[Depth]) == 1) And ((Betas[Depth] - Alphas[Depth]) == 1))
-            {
-                If (BoardEval[Depth] == "")
-                {
-                    Call Evaluate((Depth - 1))((1 == 1));
-                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
-                }
-                If ((((Depth % 2) == 1) And ((BoardEval[Depth] + 300) < Alphas[Depth])) Or (((Depth % 2) == 0) And ((BoardEval[Depth] - 300) > Betas[Depth])))
-                {
-                    If (QuiescenceDepth > 0)
-                    {
-                        Call AlphaBetaMinMaxImpl((Depth + 1))(MinDepth)((MaxDepth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(Quiescence)(ShowProgress)(1)((1 == 1))(ExcludeNode);
-                        List.ReplaceItem(MinMaxResults, Depth, MinMaxResults[(Depth + 1)]);
-                        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, MinMaxResultsIsDynamic[(Depth + 1)]);
-                        Stop(this script);
-                    }
-                }
-            }
-        }
-        Call //("Null move pruning");
-        If (IsInNullMove == 0)
-        {
-            If ((Horizon > 2) And (((Betas[Depth] - Alphas[Depth]) == 1) And (CheckedState[Depth] == 0)))
-            {
-                If (((PawnCounttOwnLocal + PawnCountOppLocal) > 0) And ((((Depth % 2) == 1) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) > 1)) Or (((Depth % 2) == 0) And ((QueenCountOppLocal + RookMinorCountLocalOpp) > 1))))
-                {
-                    IsInNullMove += 1;
-                    If (BoardEval[Depth] == "")
-                    {
-                        Call Evaluate((Depth - 1))((1 == 1));
-                        List.ReplaceItem(BoardEval, Depth, EvaluateRes);
-                    }
-                    If ((Depth % 2) == 1)
-                    {
-                        CurrentValue = (BoardEval[Depth] - Betas[Depth]);
-                    }
-                    Else
-                    {
-                        CurrentValue = (Alphas[Depth] - BoardEval[Depth]);
-                    }
-                    If (CurrentValue > 512)
-                    {
-                        CurrentValue = 512;
-                    }
-                    Reduction = (2 + floor((((32 * Horizon) + CurrentValue) / 128)));
-                    If (Reduction < 0)
-                    {
-                        Reduction = 0;
-                    }
-                    If (Reduction > 0)
-                    {
-                        If ((((Depth % 2) == 1) And (Not ((BoardEval[Depth] < (Betas[Depth] + 0))))) Or (((Depth % 2) == 0) And (Not ((BoardEval[Depth] > (Alphas[Depth] - 0))))))
-                        {
-                            Call ClearMoveList((Depth + 0));
-                            Call AddMoveToList(0)((Depth + 0));
-                            List.ReplaceItem(MovesIdx, (Depth + 0), 1);
-                            Call ApplyMove((Depth + 0));
-                            Call Evaluate((Depth + 0))((1 == 0));
-                            If ((Depth % 2) == 1)
-                            {
-                                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                            }
-                            Else
-                            {
-                                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-                            }
-                            Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)))("");
-                            Score = MinMaxResults[(Depth + 1)];
-                            ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
-                            Call RevertMove((Depth + 0));
-                            If (Not ((abs(Score) > AbsMinCheckmateEval)))
-                            {
-                                If (((((Depth % 2) == 1) And (Not ((Score < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Score > Alphas[Depth]))))) And (Not ((abs(Score) > AbsMinCheckmateEval))))
-                                {
-                                    List.ReplaceItem(MinMaxResults, Depth, Score);
-                                    List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreIsDynamic);
-                                    IsInNullMove += -1;
-                                    Stop(this script);
-                                }
-                            }
-                        }
-                    }
-                    IsInNullMove += -1;
-                }
-            }
-        }
-    }
-    If (1 == 0)
-    {
-        If (BoardEval[Depth] == "")
-        {
-            If (CheckedState[Depth] == 0)
-            {
-                If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
-                {
-                    Call Evaluate((Depth - 1))((1 == 1));
-                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
-                }
-            }
-        }
-    }
-    If ((((Not (Quiescence)) And (Horizon > 5)) And (CheckedState[Depth] == 0)) And (Not (((Betas[Depth] - Alphas[Depth]) == 1))))
-    {
-        If (1 == 1)
-        {
-            Call //("Internal iterative deepening");
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 0) Or (TTProbeBestMoveRes == ""))
-            {
-                Call ClearMoveList(Depth);
-                Call AddMoveToList(0)(Depth);
-                Call ApplyMove(Depth);
-                Call Evaluate(Depth)((1 == 0));
-                Call ClearMoveList((Depth + 1));
-                Call AddMoveToList(0)((Depth + 1));
-                Call ApplyMove((Depth + 1));
-                Call Evaluate((Depth + 1))((1 == 0));
-                List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
-                List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
-                Call AlphaBetaMinMaxImpl((Depth + 2))(MinDepth)((MaxDepth - 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0))("");
-                Call RevertMove((Depth + 1));
-                Call RevertMove(Depth);
-            }
-        }
-    }
-    List.ReplaceItem(PickPhase, Depth, 1);
-    List.ReplaceItem(PickMoveRes, Depth, 1);
-    List.ReplaceItem(PickedMoveCount, Depth, 0);
-    List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
-    Call //("Move generation and application loop, recursive search invocation");
-    Repeat Until (PickMoveRes[Depth] == 0)
-    {
-        If ((Not (Quiescence)) And ((Depth == 1) Or (Horizon > 2)))
-        {
-            If ((IsMinMaxTimeout == 0) And ((Not (InitialDeepening)) Or (Not ((MinMaxMoveRes == "")))))
-            {
-                If (((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > ThinkTimeLimitMinMax)
-                {
-                    IsMinMaxTimeout = 1;
-                    PrevPly1Move = "";
-                }
-            }
-        }
-        If (IsMinMaxTimeout == 1)
-        {
-            If (Quiescence[Depth] == 0)
-            {
-                MoveCount += MovesCount[Depth];
-            }
-            Else
-            {
-                MoveCountQ += MovesCount[Depth];
-            }
-            Stop(this script);
-        }
-        If (IsBlockProfilerEnabled == 1)
-        {
-            Call Profile_MethodEnter(((5 * MaxSearchDepthStackFrames) + Depth));
-        }
-        If (BoardEval[Depth] == "")
-        {
-            If (CheckedState[Depth] == 0)
-            {
-                If (Quiescence Or ((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And (((Betas[Depth] - Alphas[Depth]) == 1) And (PickedMoveCount[Depth] > 0)))))
-                {
-                    Call Evaluate((Depth - 1))((1 == 1));
-                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
-                }
-            }
-        }
-        If (1 == 1)
-        {
-            If ((Depth == 1) And (PickedMoveCount[Depth] > 0))
-            {
-                If (Not ((Alphas[Depth] > MinMaxAlpha)))
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, MinMaxAlpha);
-                    Stop(this script);
-                }
-            }
-        }
-        Call //("Invoke move generator and apply next move from list");
-        Call PickMove(Depth)(Quiescence);
-        If (PickMoveRes[Depth] == 1)
-        {
-            If (AppliedMove[Depth] == ExcludeMove)
-            {
-                Call RevertMove(Depth);
-                Call PickMove(Depth)(Quiescence);
-            }
-        }
-        If (IsBlockProfilerEnabled == 1)
-        {
-            Call Profile_MethodExit(((5 * MaxSearchDepthStackFrames) + Depth));
-        }
-        If (PickMoveRes[Depth] == 1)
-        {
-            Call //("Show progress and collect statistics");
-            If (ShowProgress And ((Not (Quiescence)) And ((Depth == 1) Or (Horizon > 2))))
-            {
-                CurrentValue = (Sensing.DaysSince2000() * 86400);
-                If (CurrentValue > (PrevProgressUpdate + 1))
-                {
-                    Call OnProgressChanged((((CurrentValue - ThinkTimeStart) / ThinkTimeLimitMinMax) * 100));
-                    PrevProgressUpdate = CurrentValue;
-                }
-            }
-            List.ReplaceItem(PutsInCheck, Depth, 0);
-            List.ReplaceItem(PlyExtensionTagged, Depth, 0);
-            List.ReplaceItem(PlyExtension, Depth, 0);
-            SourceIdxOuter2 = floor((AppliedMove[Depth] / 100));
-            TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
-            Call //("Fast check detection for current move");
-            Call IsCheckingPiece(TargetIdxOuter2);
-            If (IsCheckingPieceRes == 1)
-            {
-                List.ReplaceItem(PutsInCheck, Depth, 1);
-                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
-                Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("");
-            }
-            Call //("Fast discovered check detection for current move");
-            Call IsCheckingPieceDiscovery(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
-            If (IsCheckingPieceRes == 1)
-            {
-                List.ReplaceItem(PutsInCheck, Depth, 1);
-                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
-                Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("");
-            }
-            Score = "";
-            ScoreIsDynamic = 0;
-            IsFutile = 0;
-            If (1 == 0)
-            {
-                Call //("LMP");
-                If ((((Not (Quiescence)) And (Horizon < 4)) And ((Betas[Depth] - Alphas[Depth]) == 1)) And (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And (PromotionPieces[Depth] == 0)))
-                {
-                    If (PickedMoveCountQuiet[Depth] > (4 + (Horizon * Horizon)))
-                    {
-                        IsFutile = 1;
-                    }
-                }
-            }
-            Call //("Futility pruning");
-            If (((IsFutile == 0) And (CheckedState[Depth] == 0)) And ((PutsInCheck[Depth] == 0) And (PromotionPieces[Depth] == 0)))
-            {
-                FP.Eval = "";
-                FP.SEE = "";
-                If (Not ((BoardEval[Depth] == "")))
-                {
-                    FutilityMargin = "";
-                    If Quiescence
-                    {
-                        If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) > 0)) Or (((Depth % 2) == 0) And ((QueenCountOppLocal + RookMinorCountLocalOpp) > 0))))
-                        {
-                            FutilityMargin = 400;
-                        }
-                    }
-                    Else
-                    {
-                        If ((Depth > 1) And (Horizon < 6))
-                        {
-                            If (((TargetPieces[Depth] == 0) And (PickedMoveCount[Depth] > 1)) And ((Betas[Depth] - Alphas[Depth]) == 1))
-                            {
-                                Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
-                                If (((Not ((SourcePieces[Depth] == GoK_OwnPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_OppPawn))) Or (Rank > 3)))
-                                {
-                                    FutilityMargin = (Horizon * 125);
-                                }
-                            }
-                        }
-                    }
-                    EvaluateRes = BoardEval[Depth];
-                    If ((Not ((FutilityMargin == ""))) And (Not ((EvaluateRes == ""))))
-                    {
-                        If ((Depth % 2) == 1)
-                        {
-                            FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) + FutilityMargin);
-                        }
-                        Else
-                        {
-                            FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) - FutilityMargin);
-                        }
-                        If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
-                        {
-                            IsFutile = 1;
-                            If Quiescence
-                            {
-                                If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
-                                {
-                                    Score = FP.Eval;
-                                    List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
-                                }
-                            }
-                        }
-                        Else
-                        {
-                            If Quiescence
-                            {
-                                If ((Depth % 2) == 1)
-                                {
-                                    FP.Eval = (EvaluateRes + FutilityMargin);
-                                }
-                                Else
-                                {
-                                    FP.Eval = (EvaluateRes - FutilityMargin);
-                                }
-                                If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
-                                {
-                                    Call SEE(Depth);
-                                    FP.SEE = SEE.Result;
-                                    If ((((Depth % 2) == 1) And (Not ((FP.SEE > 0)))) Or (((Depth % 2) == 0) And (Not ((FP.SEE < 0)))))
-                                    {
-                                        IsFutile = 1;
-                                        If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
-                                        {
-                                            Score = FP.Eval;
-                                            List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                If (1 == 0)
-                {
-                    If (IsFutile == 0)
-                    {
-                        If Quiescence
-                        {
-                            If ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0))
-                            {
-                                If (FP.SEE == "")
-                                {
-                                    Call SEE(Depth);
-                                    FP.SEE = SEE.Result;
-                                }
-                                If ((((Depth % 2) == 1) And (FP.SEE < 0)) Or (((Depth % 2) == 0) And (FP.SEE > 0)))
-                                {
-                                    IsFutile = 1;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            If (IsFutile == 1)
-            {
-                If (IsMinMaxTimeout == 0)
-                {
-                    If (Depth == 1)
-                    {
-                        List.Add(MinMaxPly1EvalMoves, AppliedMove[Depth]);
-                    }
-                }
-                Call RevertMove(Depth);
-            }
-            Else
-            {
-                If (Not (Quiescence))
-                {
-                    If (PlyExtension[Depth] == 0)
-                    {
-                        Call IsPassedPawnDanger(SourcePieces[Depth])(AppliedMove[Depth]);
-                        If (IsPassedPawnDangerRes == 1)
-                        {
-                            List.ReplaceItem(PlyExtension, Depth, 1);
-                        }
-                    }
-                    If (PlyExtension[Depth] == 0)
-                    {
-                        If ((Depth > 1) And (CheckedState[Depth] == 1))
-                        {
-                            Call SEE(Depth);
-                            If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
-                            {
-                                List.ReplaceItem(PlyExtension, Depth, 1);
-                            }
-                        }
-                    }
-                    If (PlyExtension[Depth] == 0)
-                    {
-                        If (1 == 1)
-                        {
-                            If (Horizon > 0)
-                            {
-                                SourceIdxOuter2 = floor((AppliedMove[Depth] % 100));
-                                SourcePieceOuter2 = Board[SourceIdxOuter2];
-                                If (abs(SourcePieceOuter2) < GoK_OwnRook)
-                                {
-                                    Call //("Fork detection, will trigger search extension or prevent reduction");
-                                    Factor = (((Depth % 2) * 2) - 1);
-                                    IdxOuter2 = ((PieceIdxLookup[abs(SourcePieceOuter2)] * 10000) + (SourceIdxOuter2 * 100));
-                                    CountOuter1 = 0;
-                                    TargetIdxOuter2 = 1;
-                                    Repeat (64)
-                                    {
-                                        If ((Board[TargetIdxOuter2] * Factor) < 0)
-                                        {
-                                            If (abs(SourcePieceOuter2) < abs(Board[TargetIdxOuter2]))
-                                            {
-                                                If ((((Depth % 2) == 1) And (MovePosLookupOwnLegal[(IdxOuter2 + TargetIdxOuter2)] == 1)) Or (((Depth % 2) == 0) And (MovePosLookupOppLegal[(IdxOuter2 + TargetIdxOuter2)] == 1)))
-                                                {
-                                                    CountOuter1 += 1;
-                                                }
-                                            }
-                                        }
-                                        TargetIdxOuter2 += 1;
-                                    }
-                                    If (CountOuter1 > 1)
-                                    {
-                                        CountOuter2 = 0;
-                                        Call ClearMoveList((Depth + 2));
-                                        Call GenerateMovesForSourceEx((Depth + 2))(floor((AppliedMove[Depth] % 100)))((1 == 0))((1 == 1));
-                                        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                                        Repeat Until ((MovesIdx[(Depth + 2)] > MovesCount[(Depth + 2)]) Or (CountOuter2 > 1))
-                                        {
-                                            Call GetCurrentMove((Depth + 2));
-                                            SourceIdxOuter2 = floor((CurrentMove / 100));
-                                            TargetIdxOuter2 = floor((CurrentMove % 100));
-                                            If (abs(Board[SourceIdxOuter2]) < abs(Board[TargetIdxOuter2]))
-                                            {
-                                                CountOuter2 += 1;
-                                            }
-                                            List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
-                                        }
-                                        If (CountOuter2 > 0)
-                                        {
-                                            List.ReplaceItem(PlyExtension, Depth, 1);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    If (PlyExtension[Depth] == 0)
-                    {
-                        Call //("Singular extensions");
-                        If (1 == 0)
-                        {
-                            If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 4))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludeMove == "")))
-                            {
-                                Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
-                                If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
-                                {
-                                    If (Not ((TTProbeHorizonRes < (Horizon - 3))))
-                                    {
-                                        If ((((Depth % 2) == 1) And (TTProbeNodeTypeRes == "A")) Or (((Depth % 2) == 0) And (TTProbeNodeTypeRes == "B")))
-                                        {
-                                            SE.BoundEval = TTProbeNodeScoreRes;
-                                            Call RevertMove(Depth);
-                                            List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
-                                            Call ApplyMove(Depth);
-                                            Call Evaluate(Depth)((1 == 0));
-                                            List.ReplaceItem(MovesIdx, (Depth + 1), 1);
-                                            Call ClearMoveList((Depth + 1));
-                                            Call AddMoveToList(0)((Depth + 1));
-                                            Call ApplyMove((Depth + 1));
-                                            Call Evaluate((Depth + 1))((1 == 0));
-                                            If ((Depth % 2) == 1)
-                                            {
-                                                SE.BoundEval += (0 - (Horizon * 2));
-                                                List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
-                                                List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
-                                            }
-                                            Else
-                                            {
-                                                SE.BoundEval += (Horizon * 2);
-                                                List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
-                                                List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
-                                            }
-                                            Reduction = floor((Horizon / 2));
-                                            Call AlphaBetaMinMaxNextPly((Depth + 2))(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
-                                            Score = MinMaxResults[(Depth + 2)];
-                                            Call RevertMove((Depth + 1));
-                                            Call RevertMove(Depth);
-                                            List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
-                                            Call ApplyMove(Depth);
-                                            If ((((Depth % 2) == 1) And (Score < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (Score > Alphas[(Depth + 2)])))
-                                            {
-                                                List.ReplaceItem(PlyExtension, Depth, 1);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    If (PlyExtension[Depth] == 1)
-                    {
-                        Count1 = 0;
-                        Idx = (Depth - 2);
-                        Repeat Until (Idx < 1)
-                        {
-                            If (PlyExtension[Idx] == 1)
-                            {
-                                Count1 += 1;
-                            }
-                            Idx += -2;
-                        }
-                        If (Count1 > 1)
-                        {
-                            List.ReplaceItem(PlyExtension, Depth, 0);
-                        }
-                    }
-                }
-                Score = "";
-                ScoreIsDynamic = 0;
-                Call //("Late move reduction preparation");
-                IsReductionAndDone = 0;
-                If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
-                {
-                    If (((Horizon > 1) And ((CheckedState[Depth] == 0) And (((TargetPieces[Depth] == 0) Or (1 == 0)) And (PromotionPieces[Depth] == 0)))) And (((QueenCountOppLocal + RookMinorCountLocalOpp) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) > 0))
-                    {
-                        Call IsPassedPawnDanger(SourcePieces[Depth])(AppliedMove[Depth]);
-                        If (IsPassedPawnDangerRes == 0)
-                        {
-                            Reduction = 0;
-                            If (PickedMoveCount[Depth] > (1 + (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
-                            {
-                                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
-                                If (1 == 0)
-                                {
-                                    Reduction = floor(((0.38 + ((TargetPieces[Depth] == 0) * 1.63)) + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / (2.32 + ((Not ((TargetPieces[Depth] == 0))) * 1.44)))));
-                                }
-                                If (1 == 1)
-                                {
-                                    If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
-                                    {
-                                        Reduction += -1;
-                                    }
-                                }
-                                If (1 == 1)
-                                {
-                                    If (PutsInCheck[Depth] == 1)
-                                    {
-                                        Reduction += -1;
-                                    }
-                                }
-                                If (1 == 0)
-                                {
-                                    IdxSub = ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100)));
-                                    CurrentValue = floor((0 - (HistoryMoveScores[(((Depth % 2) * 1000) + IdxSub)] / MaxHistoryMoveScore[((Depth % 2) + 1)])));
-                                    If (CurrentValue > 0.25)
-                                    {
-                                        Reduction += -1;
-                                    }
-                                }
-                                If (1 == 0)
-                                {
-                                    Call GetEndgameLocal;
-                                    If (IsEndgameLocal == 1)
-                                    {
-                                        Reduction += -1;
-                                    }
-                                }
-                                If (1 == 0)
-                                {
-                                    If Cutnode
-                                    {
-                                        Reduction += 1;
-                                    }
-                                }
-                                If (1 == 0)
-                                {
-                                    If (((QueenCountOppLocal + QueenCounttOwnLocal) + (RookCountOppLocal + RookCounttOwnLocal)) < 5)
-                                    {
-                                        Reduction += -1;
-                                    }
-                                }
-                                If (1 == 0)
-                                {
-                                    If (Depth > 1)
-                                    {
-                                        List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
-                                        List.ReplaceItem(EnPassantTarget, (Depth + 1), EnPassantTarget[Depth]);
-                                        Call Evaluate(Depth)((1 == 1));
-                                        List.ReplaceItem(BoardEval, (Depth + 1), EvaluateRes);
-                                        If (Not ((BoardEval[(Depth - 1)] == "")))
-                                        {
-                                            If ((((Depth % 2) == 1) And (EvaluateRes > BoardEval[(Depth - 1)])) Or (((Depth % 2) == 0) And (EvaluateRes < BoardEval[(Depth - 1)])))
-                                            {
-                                                Reduction += -1;
-                                            }
-                                        }
-                                    }
-                                }
-                                If (1 == 0)
-                                {
-                                    If (Reduction > (Horizon - 2))
-                                    {
-                                        Reduction = (Horizon - 2);
-                                    }
-                                }
-                                If (Reduction < 0)
-                                {
-                                    Reduction = 0;
-                                }
-                                Call //("Late move reduction");
-                                If (Reduction > 0)
-                                {
-                                    If ((Depth % 2) == 1)
-                                    {
-                                        List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                                        List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-                                    }
-                                    Else
-                                    {
-                                        List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                                        List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                                    }
-                                    If (PlyExtension[Depth] == 1)
-                                    {
-                                        List.ReplaceItem(PlyExtension, (Depth + 0), 0);
-                                        Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
-                                        List.ReplaceItem(PlyExtension, (Depth + 0), 1);
-                                    }
-                                    Else
-                                    {
-                                        Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
-                                    }
-                                    Score = MinMaxResults[(Depth + 1)];
-                                    ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
-                                    IsReductionAndDone = 1;
-                                }
-                            }
-                        }
-                    }
-                    Call //("Non-PV search");
-                    If ((((IsReductionAndDone == 1) And ((((Depth % 2) == 1) And (Score > Alphas[Depth])) Or (((Depth % 2) == 0) And (Score < Betas[Depth])))) Or ((IsReductionAndDone == 0) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsMinMaxTimeout == 0))
-                    {
-                        If ((Depth % 2) == 1)
-                        {
-                            List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                            List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-                        }
-                        Else
-                        {
-                            List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                            List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                        }
-                        Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)))("");
-                        Score = MinMaxResults[(Depth + 1)];
-                        ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
-                        If ((Score > Alphas[Depth]) And ((Depth == 1) Or (Score < Betas[Depth])))
-                        {
-                            IsReductionAndDone = 0;
-                        }
-                        Else
-                        {
-                            IsReductionAndDone = 1;
-                        }
-                    }
-                }
-                Call //("Move was not pruned upfront, enter standard search");
-                If ((IsReductionAndDone == 0) And (IsMinMaxTimeout == 0))
-                {
-                    List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                    List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    Call AlphaBetaMinMaxNextPly(Depth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
-                    Score = MinMaxResults[(Depth + 1)];
-                    ScoreIsDynamic = MinMaxResultsIsDynamic[(Depth + 1)];
-                }
-                If (IsMinMaxTimeout == 0)
-                {
-                    If (Depth == 1)
-                    {
-                        List.Add(MinMaxPly1EvalMoves, AppliedMove[Depth]);
-                    }
-                }
-                Call //("Revert applied move, restore board to previous state");
-                Call RevertMove(Depth);
-                If (IsMinMaxTimeout == 1)
-                {
-                    If (Quiescence[Depth] == 0)
-                    {
-                        MoveCount += MovesCount[Depth];
-                    }
-                    Else
-                    {
-                        MoveCountQ += MovesCount[Depth];
-                    }
-                    Stop(this script);
-                }
-                If (Not ((Score == "")))
-                {
-                    Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
-                    If ((Depth % 2) == 1)
-                    {
-                        If ((Score > MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
-                        {
-                            List.ReplaceItem(MinMaxResults, Depth, Score);
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreIsDynamic);
-                            If (Score > Alphas[Depth])
-                            {
-                                Call GetCurrentMove(Depth);
-                                List.ReplaceItem(BestMoves, Depth, CurrentMove);
-                                List.ReplaceItem(MovesIdxBestMove, Depth, MovesIdx[Depth]);
-                                Call UpdatePV(Depth)(CurrentMove);
-                                If Quiescence
-                                {
-                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score < Betas[Depth]))
-                                    {
-                                        List.ReplaceItem(Alphas, Depth, Score);
-                                    }
-                                    Else
-                                    {
-                                        Call //("Cutoff");
-                                        List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
-                                        List.ReplaceItem(PickPhase, Depth, "*");
-                                    }
-                                }
-                                Else
-                                {
-                                    List.ReplaceItem(Alphas, Depth, Score);
-                                    If ((Depth == 1) And (IsMinMaxTimeout == 0))
-                                    {
-                                        If (Not ((Score < (0 - AbsMaxCheckmateEval))))
-                                        {
-                                            Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
-                                            If (Score > MinMaxAlpha)
-                                            {
-                                                MinMaxMoveRes = BestMoves[Depth];
-                                                MinMaxEvalRes = Score;
-                                                If (1 == 1)
-                                                {
-                                                    Call Log((MaxDepth - 1))(" : ")(MinMaxMoveRes)(" : ")(MinMaxEvalRes)("")("")("");
-                                                }
-                                                Call OnEvaluationChanged(Score);
-                                            }
-                                            If (MinMaxMoveRes == GoK_OwnKingsideCastling)
-                                            {
-                                                Stg_BestMoveFromIdx = VirtualBoard[5];
-                                                Stg_BestMoveToIdx = VirtualBoard[7];
-                                            }
-                                            Else
-                                            {
-                                                If (MinMaxMoveRes == GoK_OwnQueensideCastling)
-                                                {
-                                                    Stg_BestMoveFromIdx = VirtualBoard[5];
-                                                    Stg_BestMoveToIdx = VirtualBoard[3];
-                                                }
-                                                Else
-                                                {
-                                                    Stg_BestMoveFromIdx = floor((MinMaxMoveRes / 100));
-                                                    Stg_BestMoveToIdx = floor((MinMaxMoveRes % 100));
-                                                }
-                                            }
-                                            Event.Broadcast("showbestmove");
-                                            If (Score > (AbsMaxCheckmateEval - ((MaxDepth - 1) * 1000)))
-                                            {
-                                                IsMinMaxTimeout = 1;
-                                                PrevPly1Move = "";
-                                            }
-                                            If (Not ((Score < MinMaxBeta)))
-                                            {
-                                                List.ReplaceItem(MinMaxResults, Depth, Score);
-                                                Stop(this script);
-                                            }
-                                        }
-                                    }
-                                    If (Not ((Score < Betas[Depth])))
-                                    {
-                                        If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
-                                        {
-                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
-                                        }
-                                        If (Depth > 1)
-                                        {
-                                            Call //("Cutoff");
-                                            List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
-                                            List.ReplaceItem(PickPhase, Depth, "*");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Else
-                    {
-                        If ((Score < MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
-                        {
-                            List.ReplaceItem(MinMaxResults, Depth, Score);
-                            List.ReplaceItem(MinMaxResultsIsDynamic, Depth, ScoreIsDynamic);
-                            If (Score < Betas[Depth])
-                            {
-                                Call GetCurrentMove(Depth);
-                                List.ReplaceItem(BestMoves, Depth, CurrentMove);
-                                List.ReplaceItem(MovesIdxBestMove, Depth, MovesIdx[Depth]);
-                                Call UpdatePV(Depth)(CurrentMove);
-                                If Quiescence
-                                {
-                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score > Alphas[Depth]))
-                                    {
-                                        List.ReplaceItem(Betas, Depth, Score);
-                                    }
-                                    Else
-                                    {
-                                        List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
-                                        List.ReplaceItem(PickPhase, Depth, "*");
-                                        Call //("Cutoff");
-                                    }
-                                }
-                                Else
-                                {
-                                    List.ReplaceItem(Betas, Depth, Score);
-                                    If (Not ((Score > Alphas[Depth])))
-                                    {
-                                        If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
-                                        {
-                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(MaxDepth);
-                                        }
-                                        List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
-                                        List.ReplaceItem(PickPhase, Depth, "*");
-                                        Call //("Cutoff");
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    If (Quiescence[Depth] == 0)
-    {
-        MoveCount += MovesCount[Depth];
-    }
-    Else
-    {
-        MoveCountQ += MovesCount[Depth];
-    }
-    Call //("Evaluation alpha-bound, beta-bound or exact?");
-    If ((Depth % 2) == 1)
-    {
-        If (Not ((MinMaxResults[Depth] < Betas[Depth])))
-        {
-            List.ReplaceItem(ScoreTypes, Depth, "B");
-        }
-        Else
-        {
-            If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] > AlphasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
-            {
-                List.ReplaceItem(ScoreTypes, Depth, "E");
-            }
-            Else
-            {
-                List.ReplaceItem(ScoreTypes, Depth, "A");
-            }
-        }
-    }
-    Else
-    {
-        If (Not ((MinMaxResults[Depth] > Alphas[Depth])))
-        {
-            List.ReplaceItem(ScoreTypes, Depth, "A");
-        }
-        Else
-        {
-            If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] < BetasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
-            {
-                List.ReplaceItem(ScoreTypes, Depth, "E");
-            }
-            Else
-            {
-                List.ReplaceItem(ScoreTypes, Depth, "B");
-            }
-        }
-    }
-    Call //("Fast quiescence search checkmate detection (no check evasion found)");
-    If (Quiescence And ((MovesCount[Depth] == 0) And (CheckedState[Depth] == 1)))
-    {
-        List.ReplaceItem(ScoreTypes, Depth, "E");
-        If ((Depth % 2) == 1)
-        {
-            List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
-        }
-        Else
-        {
-            List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
-        }
-        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-    }
-    Call //("Fast full search checkmate and stalemate detection");
-    If ((Not (Quiescence)) And ((MovesCount[Depth] == 0) And (ExcludeMove == "")))
-    {
-        List.ReplaceItem(ScoreTypes, Depth, "E");
-        If ((Depth % 2) == 1)
-        {
-            If (CheckedState[Depth] == 1)
-            {
-                List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
-            }
-            Else
-            {
-                Call CalcBoardAttackedByMoveChecked((Depth + 1));
-                If (IsOwnSideChecked == 1)
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
-                }
-                Else
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, 0);
-                }
-            }
-        }
-        Else
-        {
-            If (CheckedState[Depth] == 1)
-            {
-                List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
-            }
-            Else
-            {
-                Call CalcBoardAttackedByMoveChecked((Depth + 1));
-                If (IsOppSideChecked == 1)
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
-                }
-                Else
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, 0);
-                }
-            }
-        }
-        List.ReplaceItem(MinMaxResultsIsDynamic, Depth, 0);
-        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")(ScoreTypes[Depth])("")(99)("")("")("")("")("")(0);
-    }
-    If (BestMoves[Depth] == "")
-    {
-        If (MovesCount[Depth] > 0)
-        {
-            List.ReplaceItem(MovesIdx, Depth, 1);
-            Call GetCurrentMove(Depth);
-            List.ReplaceItem(BestMoves, Depth, CurrentMove);
-        }
-    }
-    If (((IsMinMaxTimeout == 0) And (Depth > 1)) And (ExcludeMove == ""))
-    {
-        Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
-        If Quiescence
-        {
-            Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
-        }
-        Else
-        {
-            Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(Horizon)("")("")("")("")("")(MinMaxResultsIsDynamic[Depth]);
-        }
-    }
-    Call //("Collect statistics");
-    If (MovesIdxBestMove[Depth] > 0)
-    {
-        If Quiescence
-        {
-            ProfBestMoveCountQ += 1;
-            ProfBestMoveIdxSumQ += MovesIdxBestMove[Depth];
-        }
-        Else
-        {
-            ProfBestMoveCount += 1;
-            ProfBestMoveIdxSum += MovesIdxBestMove[Depth];
-        }
-        If (1 == 0)
-        {
-            If (IsBlockProfilerEnabled == 1)
-            {
-                If (MovesIdxBestMove[Depth] > (3 - (Quiescence[Depth] * 2)))
-                {
-                    Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
-                    Call Log("Move ordering indication")(Operator.Join(Operator.Join(":", Depth), Operator.Join(":", MovesIdxBestMove[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] / 100))]), Operator.Join(":", BestMoves[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] % 100))]), Operator.Join(":", Quiescence[Depth])))(":")(ExportDataFEN)("")("");
-                }
-            }
-        }
-    }
-}
-
-Define AlphaBetaMinMaxNextPly(string CurrentDepth)(string MinDepth)(string MaxDepth)(bool CurrentInitialDeepening)(string QuiescenceDepth)(bool CurrentQuiescence)(bool ShowProgress)(string CurrentHorizon)(string Reduction)(bool CurrentCutnode)(string ExcludeNode) (warp=true)
-{
-    If (CurrentQuiescence Or ((Not (CurrentQuiescence)) And (((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) < 2)))
-    {
-        Call //("If on full search and max depth reached, extend or switch to quiescence. If on quiescence search, continue");
-        If (QuiescenceDepth > 0)
-        {
-            Call AlphaBetaMinMaxImpl((CurrentDepth + 1))(MinDepth)((MaxDepth + 1))(CurrentInitialDeepening)((QuiescenceDepth - 1))((1 == 1))(CurrentQuiescence)(ShowProgress)(1)((1 == 1))(ExcludeNode);
-        }
-        Else
-        {
-            Call AlphaBetaMinMaxImpl((CurrentDepth + 1))(MinDepth)((CurrentDepth + 1))(CurrentInitialDeepening)((QuiescenceDepth - 1))((1 == 1))(CurrentQuiescence)(ShowProgress)(0)((1 == 1))(ExcludeNode);
-        }
-    }
-    Else
-    {
-        Call AlphaBetaMinMaxImpl((CurrentDepth + 1))(MinDepth)(((MaxDepth + PlyExtension[CurrentDepth]) - Reduction))(CurrentInitialDeepening)(QuiescenceDepth)(CurrentQuiescence)(CurrentQuiescence)(ShowProgress)((((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) - 1))(CurrentCutnode)(ExcludeNode);
     }
 }
 
@@ -7156,83 +7197,6 @@ Define ImportBoardImpl(string ImpBoard) (warp=true)
     }
 }
 
-Define InitAlphaBeta(string MaxDepth)(bool InitialDeepening) (warp=true)
-{
-    IsInNullMove = 0;
-    IsMinMaxTimeout = 0;
-    If InitialDeepening
-    {
-        PV = "";
-        List.DeleteAll(PVStable);
-        List.DeleteAll(PVStablePrev);
-        Call Profile_Reset;
-        PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
-        TTCurrentAge = ((floor((TTCurrentAge / 100)) + 1) * 100);
-        If ((IsScratch3 == 0) And (Level > 3))
-        {
-            IdxOuter = 1;
-            Repeat (List.Length(TTNodeHash))
-            {
-                If (Not ((TTNodeHash[(IdxOuter + 0)] == 0)))
-                {
-                    If (((floor((TTNodeAge[(IdxOuter + 0)] / 100)) * 2) + TTNodeDepth[(IdxOuter + 0)]) < ((floor((TTCurrentAge / 100)) * 2) + 1))
-                    {
-                        List.ReplaceItem(TTNodeHash, (IdxOuter + 0), 0);
-                    }
-                }
-                IdxOuter += 1;
-            }
-            If (1 == 0)
-            {
-                IdxOuter = 1;
-                Repeat (List.Length(TTNodeHash))
-                {
-                    List.ReplaceItem(TTNodeHash, IdxOuter, 0);
-                    List.ReplaceItem(TTNodeAge, IdxOuter, 0);
-                    IdxOuter += 1;
-                }
-            }
-        }
-        IdxOuter = 1;
-        Repeat (List.Length(HistoryCounterMoves))
-        {
-            List.ReplaceItem(HistoryCounterMoves, (IdxOuter + 0), 0);
-            IdxOuter += 1;
-        }
-        IdxOuter = 1;
-        Repeat (List.Length(HistoryMoveScores))
-        {
-            List.ReplaceItem(HistoryMoveScores, (IdxOuter + 0), 0);
-            IdxOuter += 1;
-        }
-        IdxOuter = 1;
-        Repeat (List.Length(MaxHistoryMoveScore))
-        {
-            List.ReplaceItem(MaxHistoryMoveScore, (IdxOuter + 0), 0);
-            IdxOuter += 1;
-        }
-        If (IsScratch3 == 0)
-        {
-            IdxOuter = 1;
-            Repeat (List.Length(HistoryContinuationOwn))
-            {
-                List.ReplaceItem(HistoryContinuationOwn, (IdxOuter + 0), 0);
-                List.ReplaceItem(HistoryContinuationOpp, (IdxOuter + 0), 0);
-                List.ReplaceItem(HistoryContinuation2Own, (IdxOuter + 0), 0);
-                List.ReplaceItem(HistoryContinuation2Opp, (IdxOuter + 0), 0);
-                IdxOuter += 1;
-            }
-        }
-    }
-    Call SetInitialEnPassantTarget(1);
-    List.DeleteItem(MinMaxPly1EvalMoves, all);
-    TTCurrentAge += 1;
-    Call CalcBoardStats;
-    CalcAttackStateWithMobility = 0;
-    Call CreateCurrentBoardHash;
-    Call Log(MaxDepth)(" : ")("Search start, depth = ")(MaxDepth)("")("")("")("");
-}
-
 Define InitBoard (warp=true)
 {
     PV = "";
@@ -10859,3 +10823,4 @@ Define _ClearLists (warp=true)
     List.DeleteItem(HistoryContinuation2Own, all);
     List.DeleteItem(HistoryContinuation2Opp, all);
 }
+
