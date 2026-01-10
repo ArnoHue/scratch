@@ -381,6 +381,68 @@ Define //(string Comment) (warp=true)
 {
 }
 
+Define ABSearch(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool ShowProgress) (warp=true)
+{
+    MinMaxAlpha = Alpha;
+    MinMaxBeta = Beta;
+    MinMaxEvalRes = "";
+    MinMaxMoveRes = "";
+    Call ABSearch_Init((MaxDepth - 1))(InitialDeepening);
+    Call Evaluate(0)((1 == 0));
+    List.ReplaceItem(Alphas, MinDepth, Alpha);
+    List.ReplaceItem(Betas, MinDepth, Beta);
+    Eval.DebugLog = 0;
+    MoveCount = 0;
+    MoveCountQ = 0;
+    NodeCount = 0;
+    NodeCountQ = 0;
+    ProfBestMoveCount = 0;
+    ProfBestMoveIdxSum = 0;
+    ProfBestMoveCountQ = 0;
+    ProfBestMoveIdxSumQ = 0;
+    MinMaxTimer = (Sensing.DaysSince2000() * 86400);
+    Call ABSearch_Main(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
+    MinMaxTimer = ((Sensing.DaysSince2000() * 86400) - MinMaxTimer);
+    Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
+    Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
+    If ((ProfilerMode % 10) > 0)
+    {
+        Call Log("========================================")("")("")("")("")("")("")("");
+        Call Log("SEARCH STATS")("")("")("")("")("")("")("");
+        Call Log("========================================")("")("")("")("")("")("")("");
+        Call Log("Depth = ")((MaxDepth - 1))(", Time = ")((Operator.Round((MinMaxTimer * 100)) / 100))("")("")("")("");
+        Call Log(MoveCount)(" moves (full), ")((Operator.Round(((MoveCount / MinMaxTimer) / 100)) / 10))("k MPS")("")("")("")("");
+        Call Log(NodeCount)(" nodes (full), ")((Operator.Round(((NodeCount / MinMaxTimer) / 100)) / 10))("k NPS")("")("")("")("");
+        Call Log(MoveCountQ)(" moves (q), ")((Operator.Round(((MoveCountQ / MinMaxTimer) / 100)) / 10))("k MPS")("")("")("")("");
+        Call Log(NodeCountQ)(" nodes (q), ")((Operator.Round(((NodeCountQ / MinMaxTimer) / 100)) / 10))("k NPS")("")("")("")("");
+        Call Log((MoveCount + MoveCountQ))(" moves (all), ")((Operator.Round((((MoveCount + MoveCountQ) / MinMaxTimer) / 100)) / 10))("k MPS")("")("")("")("");
+        Call Log((NodeCount + NodeCountQ))(" nodes (all), ")((Operator.Round((((NodeCount + NodeCountQ) / MinMaxTimer) / 100)) / 10))("k NPS")("")("")("")("");
+        Call Log("Avg. best move idx (full) = ")((Operator.Round(((ProfBestMoveIdxSum / ProfBestMoveCount) * 100)) / 100))("")("")("")("")("")("");
+        Call Log("Avg. best move idx (q) = ")((Operator.Round(((ProfBestMoveIdxSumQ / ProfBestMoveCountQ) * 100)) / 100))("")("")("")("")("")("");
+        Call Log("========================================")("")("")("")("")("")("")("");
+    }
+    MPS = Operator.Round(((MoveCount + MoveCountQ) / MinMaxTimer));
+    NPS = Operator.Round(((NodeCount + NodeCountQ) / MinMaxTimer));
+    If (Not ((MinMaxMoveRes == "")))
+    {
+        List.DeleteAll(PVStablePrev);
+        Idx = 1;
+        Repeat (List.Length(PVStable))
+        {
+            List.Add(PVStablePrev, PVStable[Idx]);
+            Idx += 1;
+        }
+        If ((floor((MinMaxMoveRes / 100)) == 0) Or (Board[floor((MinMaxMoveRes % 100))] == 0))
+        {
+            Call StoreKillerMove(1)(MinMaxMoveRes)(MaxDepth);
+        }
+        If ((ProfilerMode % 10) > 0)
+        {
+            Call LogPVEval;
+        }
+    }
+}
+
 Define ABSearch_DetectExtension(string Depth)(string Horizon) (warp=true)
 {
     If (Not (Quiescence))
@@ -754,7 +816,7 @@ Define ABSearch_Main(string Depth)(string MinDepth)(string MaxDepth)(bool Initia
         List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
     }
-    Call ABSearch_PreProcess_(Depth)(MinDepth)(MaxDepth)(Quiescence)(Horizon)(ExcludeMove);
+    Call ABSearch_PreProcess(Depth)(MinDepth)(MaxDepth)(Quiescence)(Horizon)(ExcludeMove);
     If (Not ((MinMaxResults[Depth] == "")))
     {
         Stop(this script);
@@ -1324,7 +1386,7 @@ Define ABSearch_NextPly(string CurrentDepth)(string MinDepth)(string MaxDepth)(b
     }
 }
 
-Define ABSearch_PreProcess_(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescence)(string Horizon)(string ExcludeMove) (warp=true)
+Define ABSearch_PreProcess(string Depth)(string MinDepth)(string MaxDepth)(bool Quiescence)(string Horizon)(string ExcludeMove) (warp=true)
 {
     If (Depth > 1)
     {
@@ -2231,68 +2293,6 @@ Define AddToFiftyMoves(bool IsCaptureOrPawnMove) (warp=true)
             List.Add(BoardHistoryFiftyMoves, 0);
         }
         List.Add(BoardHistoryFiftyMoves, (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] + 1));
-    }
-}
-
-Define AlphaBetaMinMax(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool InitialDeepening)(string QuiescenceDepth)(bool ShowProgress) (warp=true)
-{
-    MinMaxAlpha = Alpha;
-    MinMaxBeta = Beta;
-    MinMaxEvalRes = "";
-    MinMaxMoveRes = "";
-    Call ABSearch_Init((MaxDepth - 1))(InitialDeepening);
-    Call Evaluate(0)((1 == 0));
-    List.ReplaceItem(Alphas, MinDepth, Alpha);
-    List.ReplaceItem(Betas, MinDepth, Beta);
-    Eval.DebugLog = 0;
-    MoveCount = 0;
-    MoveCountQ = 0;
-    NodeCount = 0;
-    NodeCountQ = 0;
-    ProfBestMoveCount = 0;
-    ProfBestMoveIdxSum = 0;
-    ProfBestMoveCountQ = 0;
-    ProfBestMoveIdxSumQ = 0;
-    MinMaxTimer = (Sensing.DaysSince2000() * 86400);
-    Call ABSearch_Main(MinDepth)(MinDepth)(MaxDepth)(InitialDeepening)(QuiescenceDepth)((1 == 0))((1 == 0))(ShowProgress)((MaxDepth - 1))((1 == 0))("");
-    MinMaxTimer = ((Sensing.DaysSince2000() * 86400) - MinMaxTimer);
-    Call ExportBoardFEN((IsPlayerBlack == 1))((1 == 0));
-    Call Log("PV: ")("[FEN "")(ExportDataFEN)(""] ")(PV)("")("")("");
-    If ((ProfilerMode % 10) > 0)
-    {
-        Call Log("========================================")("")("")("")("")("")("")("");
-        Call Log("SEARCH STATS")("")("")("")("")("")("")("");
-        Call Log("========================================")("")("")("")("")("")("")("");
-        Call Log("Depth = ")((MaxDepth - 1))(", Time = ")((Operator.Round((MinMaxTimer * 100)) / 100))("")("")("")("");
-        Call Log(MoveCount)(" moves (full), ")((Operator.Round(((MoveCount / MinMaxTimer) / 100)) / 10))("k MPS")("")("")("")("");
-        Call Log(NodeCount)(" nodes (full), ")((Operator.Round(((NodeCount / MinMaxTimer) / 100)) / 10))("k NPS")("")("")("")("");
-        Call Log(MoveCountQ)(" moves (q), ")((Operator.Round(((MoveCountQ / MinMaxTimer) / 100)) / 10))("k MPS")("")("")("")("");
-        Call Log(NodeCountQ)(" nodes (q), ")((Operator.Round(((NodeCountQ / MinMaxTimer) / 100)) / 10))("k NPS")("")("")("")("");
-        Call Log((MoveCount + MoveCountQ))(" moves (all), ")((Operator.Round((((MoveCount + MoveCountQ) / MinMaxTimer) / 100)) / 10))("k MPS")("")("")("")("");
-        Call Log((NodeCount + NodeCountQ))(" nodes (all), ")((Operator.Round((((NodeCount + NodeCountQ) / MinMaxTimer) / 100)) / 10))("k NPS")("")("")("")("");
-        Call Log("Avg. best move idx (full) = ")((Operator.Round(((ProfBestMoveIdxSum / ProfBestMoveCount) * 100)) / 100))("")("")("")("")("")("");
-        Call Log("Avg. best move idx (q) = ")((Operator.Round(((ProfBestMoveIdxSumQ / ProfBestMoveCountQ) * 100)) / 100))("")("")("")("")("")("");
-        Call Log("========================================")("")("")("")("")("")("")("");
-    }
-    MPS = Operator.Round(((MoveCount + MoveCountQ) / MinMaxTimer));
-    NPS = Operator.Round(((NodeCount + NodeCountQ) / MinMaxTimer));
-    If (Not ((MinMaxMoveRes == "")))
-    {
-        List.DeleteAll(PVStablePrev);
-        Idx = 1;
-        Repeat (List.Length(PVStable))
-        {
-            List.Add(PVStablePrev, PVStable[Idx]);
-            Idx += 1;
-        }
-        If ((floor((MinMaxMoveRes / 100)) == 0) Or (Board[floor((MinMaxMoveRes % 100))] == 0))
-        {
-            Call StoreKillerMove(1)(MinMaxMoveRes)(MaxDepth);
-        }
-        If ((ProfilerMode % 10) > 0)
-        {
-            Call LogPVEval;
-        }
     }
 }
 
@@ -6148,7 +6148,7 @@ Define GetBestMoveBlitz (warp=false)
     {
         If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
-            Call AlphaBetaMinMax(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(8)((1 == 1));
+            Call ABSearch(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(8)((1 == 1));
             If (Not ((MinMaxMoveRes == "")))
             {
                 If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
@@ -6180,7 +6180,7 @@ Define GetBestMoveEasy (warp=false)
             JuniorSearchQuota = 20;
         }
     }
-    Call AlphaBetaMinMax(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
+    Call ABSearch(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
     BestMove = MinMaxMoveRes;
     CurrentValue = Operator.Random(1 , 100);
     If ((CurrentValue > ((JuniorSearchQuota + 100) / 2)) Or (((BoardAttackedByOpp[floor((BestMove / 100))] == 0) And (Board[floor((BestMove % 100))] == 0)) And (CurrentValue > JuniorSearchQuota)))
@@ -6281,7 +6281,7 @@ Define GetBestMoveMedDiff (warp=false)
         Repeat Until ((IsAWDone == 1) Or (IsMinMaxTimeout == 1))
         {
             ThinkTimeLimitMinMax = ThinkTimeLimit;
-            Call AlphaBetaMinMax(AWAlpha)(AWBeta)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
+            Call ABSearch(AWAlpha)(AWBeta)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
             If (Not ((MinMaxMoveRes == "")))
             {
                 If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
@@ -10823,4 +10823,3 @@ Define _ClearLists (warp=true)
     List.DeleteItem(HistoryContinuation2Own, all);
     List.DeleteItem(HistoryContinuation2Opp, all);
 }
-
