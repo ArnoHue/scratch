@@ -614,77 +614,81 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
     {
         FP.Eval = "";
         FP.SEE = "";
-        If (Not ((BoardEval[Depth] == "")))
+        FutilityMargin = "";
+        If Quiescence
         {
-            FutilityMargin = "";
-            If Quiescence
+            If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) > 0)) Or (((Depth % 2) == 0) And ((QueenCountOppLocal + RookMinorCountLocalOpp) > 0))))
             {
-                If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) > 0)) Or (((Depth % 2) == 0) And ((QueenCountOppLocal + RookMinorCountLocalOpp) > 0))))
+                FutilityMargin = 400;
+            }
+        }
+        Else
+        {
+            If ((Depth > 1) And (Horizon < 6))
+            {
+                If (((TargetPieces[Depth] == 0) And (PickedMoveCount[Depth] > 1)) And ((Betas[Depth] - Alphas[Depth]) == 1))
                 {
-                    FutilityMargin = 400;
+                    Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
+                    If (((Not ((SourcePieces[Depth] == GoK_OwnPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_OppPawn))) Or (Rank > 3)))
+                    {
+                        FutilityMargin = (Horizon * 125);
+                    }
+                }
+            }
+        }
+        If (Not ((FutilityMargin == "")))
+        {
+            If (BoardEval[Depth] == "")
+            {
+                Call RevertMove(Depth);
+                Call Evaluate((Depth - 1))((1 == 1));
+                List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+                Call ApplyMove(Depth);
+            }
+            EvaluateRes = BoardEval[Depth];
+            If ((Depth % 2) == 1)
+            {
+                FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) + FutilityMargin);
+            }
+            Else
+            {
+                FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) - FutilityMargin);
+            }
+            If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
+            {
+                IsFutile = 1;
+                If Quiescence
+                {
+                    If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
+                    {
+                        Score = FP.Eval;
+                        List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
+                    }
                 }
             }
             Else
             {
-                If ((Depth > 1) And (Horizon < 6))
+                If Quiescence
                 {
-                    If (((TargetPieces[Depth] == 0) And (PickedMoveCount[Depth] > 1)) And ((Betas[Depth] - Alphas[Depth]) == 1))
+                    If ((Depth % 2) == 1)
                     {
-                        Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
-                        If (((Not ((SourcePieces[Depth] == GoK_OwnPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_OppPawn))) Or (Rank > 3)))
-                        {
-                            FutilityMargin = (Horizon * 125);
-                        }
+                        FP.Eval = (EvaluateRes + FutilityMargin);
                     }
-                }
-            }
-            EvaluateRes = BoardEval[Depth];
-            If ((Not ((FutilityMargin == ""))) And (Not ((EvaluateRes == ""))))
-            {
-                If ((Depth % 2) == 1)
-                {
-                    FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) + FutilityMargin);
-                }
-                Else
-                {
-                    FP.Eval = (((EvaluateRes + PosScoreDelta[Depth]) - TargetPieces[Depth]) - FutilityMargin);
-                }
-                If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
-                {
-                    IsFutile = 1;
-                    If Quiescence
+                    Else
                     {
-                        If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
-                        {
-                            Score = FP.Eval;
-                            List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
-                        }
+                        FP.Eval = (EvaluateRes - FutilityMargin);
                     }
-                }
-                Else
-                {
-                    If Quiescence
+                    If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
                     {
-                        If ((Depth % 2) == 1)
+                        Call SEE(Depth);
+                        FP.SEE = SEE.Result;
+                        If ((((Depth % 2) == 1) And (Not ((FP.SEE > 0)))) Or (((Depth % 2) == 0) And (Not ((FP.SEE < 0)))))
                         {
-                            FP.Eval = (EvaluateRes + FutilityMargin);
-                        }
-                        Else
-                        {
-                            FP.Eval = (EvaluateRes - FutilityMargin);
-                        }
-                        If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
-                        {
-                            Call SEE(Depth);
-                            FP.SEE = SEE.Result;
-                            If ((((Depth % 2) == 1) And (Not ((FP.SEE > 0)))) Or (((Depth % 2) == 0) And (Not ((FP.SEE < 0)))))
+                            IsFutile = 1;
+                            If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
                             {
-                                IsFutile = 1;
-                                If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
-                                {
-                                    Score = FP.Eval;
-                                    List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
-                                }
+                                Score = FP.Eval;
+                                List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
                             }
                         }
                     }
@@ -961,20 +965,9 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         {
             Call Profile_MethodEnter(((5 * MaxSearchDepthStackFrames) + Depth));
         }
-        If (BoardEval[Depth] == "")
+        If (PickedMoveCount[Depth] > 0)
         {
-            If (CheckedState[Depth] == 0)
-            {
-                If (Quiescence Or ((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And (((Betas[Depth] - Alphas[Depth]) == 1) And (PickedMoveCount[Depth] > 0)))))
-                {
-                    Call Evaluate((Depth - 1))((1 == 1));
-                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
-                }
-            }
-        }
-        If (1 == 1)
-        {
-            If ((Depth == 1) And (PickedMoveCount[Depth] > 2))
+            If ((Depth == 1) And (PickedMoveCount[Depth] > (List.Length(AWSize) - AWCount)))
             {
                 If (Not ((Alphas[Depth] > MinMaxAlpha)))
                 {
@@ -1718,20 +1711,6 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                         }
                     }
                     IsInNullMove += -1;
-                }
-            }
-        }
-    }
-    If (1 == 0)
-    {
-        If (BoardEval[Depth] == "")
-        {
-            If (CheckedState[Depth] == 0)
-            {
-                If (((Not (Quiescence)) And (((Depth > 1) And (Horizon < 6)) And ((Betas[Depth] - Alphas[Depth]) == 1))) Or Quiescence)
-                {
-                    Call Evaluate((Depth - 1))((1 == 1));
-                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
                 }
             }
         }
@@ -6217,8 +6196,9 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 35);
-    List.Add(AWSize, 55);
+    List.Add(AWSize, 20);
+    List.Add(AWSize, 30);
+    List.Add(AWSize, 60);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsMinMaxTimeout = 0;
     IsDeepeningDone = 0;
