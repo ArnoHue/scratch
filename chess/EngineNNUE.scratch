@@ -93,7 +93,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (19.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338a (20.01.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3390,12 +3390,6 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             }
         }
     }
-    If (floor((Move / 100)) == 0)
-    {
-        Call //("Castling");
-        MoveScoreRes = (500000 * Factor);
-        Stop(this script);
-    }
     Call //("4: Killer moves");
     Call PrepareCurrentKillerMoves(Depth);
     If (CurrentKillerMoves[1] == Move)
@@ -3420,18 +3414,33 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             Stop(this script);
         }
     }
-    If (1 == 1)
+    MoveScoreRes = (1000000 * Factor);
+    MoveScoreRes += (HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))] * Factor);
+    If (BoardAttackedCalculated[Depth] == 1)
     {
-        If (BoardAttackedCalculated[Depth] == 1)
+        CurrentPieceAbs = abs(SourcePieceParam);
+        If ((CurrentPieceAbs > GoK_BlackPawn) And (CurrentPieceAbs < GoK_BlackKing))
         {
-            If ((BoardAttackedByOpponentSnapshot[(((Depth - 1) * 100) + FromIdx)] > 0) And (BoardAttackedByOpponentSnapshot[(((Depth - 1) * 100) + ToIdx)] == 0))
+            Idx = (((Depth - 1) * 100) + FromIdx);
+            If (BoardAttackedByOpponentSnapshot[Idx] > 0)
             {
-                MoveScoreRes = (1000000 * Factor);
-                Stop(this script);
+                ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[Idx]]);
+                If (((CurrentPieceAbs == GoK_BlackQueen) And (ThreatenedByPieceAbs < GoK_BlackQueen)) Or (((CurrentPieceAbs == GoK_BlackRook) And (ThreatenedByPieceAbs < GoK_BlackRook)) Or (ThreatenedByPieceAbs == GoK_BlackPawn)))
+                {
+                    ThreatenedByPieceAbs = 0;
+                    Idx = (((Depth - 1) * 100) + ToIdx);
+                    If (BoardAttackedByOpponentSnapshot[Idx] > 0)
+                    {
+                        ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[Idx]]);
+                    }
+                    If ((ThreatenedByPieceAbs == 0) Or (Not ((((CurrentPieceAbs == GoK_BlackQueen) And (ThreatenedByPieceAbs < GoK_BlackQueen)) Or (((CurrentPieceAbs == GoK_BlackRook) And (ThreatenedByPieceAbs < GoK_BlackRook)) Or (ThreatenedByPieceAbs == GoK_BlackPawn))))))
+                    {
+                        MoveScoreRes += ((100000 * PieceIdxLookup[CurrentPieceAbs]) * Factor);
+                    }
+                }
             }
         }
     }
-    MoveScoreRes = ((1000 + HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))]) * Factor);
 }
 
 Define GetNormalizedMove(string Move) (warp=true)
@@ -5122,12 +5131,17 @@ Define IsCheckingPiece(string Idx) (warp=true)
 Define IsCheckingPieceDiscovery(string SourceIdx)(string TargetIdx)(string Depth) (warp=true)
 {
     IsCheckingPieceRes = 0;
-    If (BoardAttackedByOpponentSnapshot[(((Depth - 1) * 100) + SourceIdx)] > 0)
+    If (BoardAttackedCalculated[Depth] == 1)
     {
-        SourceIdx = BoardAttackedByOpponentPieceSnapshot[(((Depth - 1) * 100) + SourceIdx)];
-        If ((Board[SourceIdx] * DepthEvalFactor[Depth]) > GoK_BlackKnight)
+        Caller.Idx = (((Depth - 1) * 100) + SourceIdx);
+        If (BoardAttackedByOpponentSnapshot[Caller.Idx] > 0)
         {
-            Call IsCheckingPiece(SourceIdx);
+            Caller.SourceIdx = BoardAttackedByOpponentPieceSnapshot[Caller.Idx];
+            Caller.SourcePiece = abs(Board[Caller.SourceIdx]);
+            If ((Caller.SourcePiece > GoK_BlackKnight) And (Caller.SourcePiece < GoK_BlackKing))
+            {
+                Call IsCheckingPiece(Caller.SourceIdx);
+            }
         }
     }
 }
@@ -8091,93 +8105,22 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     Search.LmrNonPV.IsReSearchRequired = 1;
     If ((Not (Quiescence)) And (IsSearchTimeout == 0))
     {
-        CurrentValue = (BlackQueenCountLocal + BlackRookCountLocal);
-        CurrentValue2 = (WhiteQueenCountLocal + WhiteRookCountLocal);
-        If ((Horizon > 1) And (((CheckedState[Depth] == 0) And (((TargetPieces[Depth] == 0) Or (1 == 0)) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
+        If ((Horizon > 1) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
         {
             Call //("LMR search");
             Reduction = 0;
             If (PickedMoveCount[Depth] > 1)
             {
                 Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
-                If (1 == 0)
+                If (1 == 1)
                 {
-                    Reduction = floor(((0.38 + ((TargetPieces[Depth] == 0) * 1.63)) + ((ln((Horizon + SearchExtension[Depth])) * ln(PickedMoveCount[Depth])) / (2.32 + ((Not ((TargetPieces[Depth] == 0))) * 1.44)))));
-                }
-                If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
-                {
-                    Reduction += -1;
-                }
-                If (1 == 0)
-                {
-                    If ((Depth > 2) And ((Not ((BoardEval[Depth] == ""))) And (Not ((BoardEval[(Depth - 2)] == "")))))
+                    If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                     {
-                        If ((Depth % 2) == 1)
-                        {
-                            If (BoardEval[Depth] > BoardEval[(Depth - 2)])
-                            {
-                                Reduction += -1;
-                            }
-                        }
-                        Else
-                        {
-                            If (BoardEval[Depth] < BoardEval[(Depth - 2)])
-                            {
-                                Reduction += -1;
-                            }
-                        }
+                        Reduction += -1;
                     }
-                }
-                If (1 == 0)
-                {
-                    If ((Depth > 1) And (Not ((TargetPieces[(Depth - 1)] == 0))))
-                    {
-                        If (floor((AppliedMove[Depth] / 100)) == floor((AppliedMove[(Depth - 1)] / 100)))
-                        {
-                            Reduction += -1;
-                        }
-                    }
-                }
-                If (1 == 0)
-                {
                     If (PutsInCheck[Depth] == 1)
                     {
                         Reduction += -1;
-                    }
-                }
-                If (1 == 0)
-                {
-                    If ((((Depth % 2) == 1) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) < 2)) Or (((Depth % 2) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) < 2)))
-                    {
-                        Reduction += 1;
-                    }
-                }
-                If (1 == 0)
-                {
-                    If (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) < 5)
-                    {
-                        Reduction += -1;
-                    }
-                }
-                If (1 == 0)
-                {
-                    If Cutnode
-                    {
-                        Reduction += 1;
-                    }
-                }
-                If (1 == 0)
-                {
-                    If (Reduction > 2)
-                    {
-                        Reduction = 2;
-                    }
-                }
-                If (1 == 0)
-                {
-                    If (Reduction > (Horizon - 2))
-                    {
-                        Reduction = (Horizon - 2);
                     }
                 }
             }
