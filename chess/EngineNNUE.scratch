@@ -93,7 +93,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338a (20.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (21.01.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3339,7 +3339,6 @@ Define GetMoveNotation(num Move) (warp=true)
 
 Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
 {
-    MoveScoreRes = 0;
     Factor = (((Depth % 2) * 2) - 1);
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
     If (CheckedState[Depth] == 1)
@@ -7052,7 +7051,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     Call //("We could not return prematurely => initialize stack data for additional functionality");
     Call Search_InitStack(Depth)(InitialDeepening)(Quiescence);
     Call Evaluate((Depth - 1))((1 == 0));
-    If (Horizon == 0)
+    If ((Horizon == 0) Or (Depth > (MaxSearchDepthStackFrames - 2)))
     {
         Call //("Search tree leaf reached => evaluate board and return result");
         Call //("This will seldomly be invoked, as the usual search termination is quiescence search having reached a quite position");
@@ -7739,7 +7738,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
 
 Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
 {
-    If ((Not (Quiescence)) And (IsScratch3 == 0))
+    If (Not (Quiescence))
     {
         If (SearchExtension[Depth] == 1)
         {
@@ -7768,14 +7767,14 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
         }
         If (SearchExtension[Depth] == 0)
         {
-            If (1 == 0)
+            If (1 == 1)
             {
                 If (Horizon > 1)
                 {
                     Call //("Fork detection for Scratch 3 runtime. Forks at low search depth will trigger search extension");
                     Caller.SourceIdx = floor((AppliedMove[Depth] % 100));
                     Caller.SourcePiece = Board[Caller.SourceIdx];
-                    If ((((Depth < 5) And (IsScratch3 == 1)) And (IsEndgame == 0)) And (abs(Caller.SourcePiece) < GoK_BlackRook))
+                    If (abs(Caller.SourcePiece) < GoK_BlackRook)
                     {
                         Search.Count = 0;
                         Caller.TargetIdx = 1;
@@ -8017,6 +8016,7 @@ Define Search_InitStack(string Depth)(bool InitialDeepening)(bool Quiescence) (w
     List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
     List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
     List.ReplaceItem(PutsInCheck, Depth, 0);
+    List.ReplaceItem(SearchExtension, Depth, 0);
     List.ReplaceItem(NodeTypes, (Depth + 0), "E");
     List.ReplaceItem(BestMoves, (Depth + 0), "");
     List.ReplaceItem(AppliedMove, (Depth + 0), "");
@@ -8049,7 +8049,7 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
                 Call ApplyMove(Depth);
                 Call ClearMoveList((Depth + 1));
                 Call AddMoveToList(0)((Depth + 1));
-                List.ReplaceItem(MovesIdx, Depth, 1);
+                List.ReplaceItem(MovesIdx, (Depth + 1), 1);
                 Call ApplyMove((Depth + 1));
                 List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[(Depth - 1)]);
                 List.ReplaceItem(EnPassantTarget, (Depth + 2), EnPassantTarget[Depth]);
@@ -8109,7 +8109,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
         {
             Call //("LMR search");
             Reduction = 0;
-            If (PickedMoveCount[Depth] > 1)
+            If (PickedMoveCount[Depth] > (1 + (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
             {
                 Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
                 If (1 == 1)
@@ -8348,21 +8348,27 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
 {
     If ((Depth > 1) And (ExcludedMove == ""))
     {
-        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
+        Call //("Probe transposition table for cached node evaluations");
+        Call TTProbeNode(CurrentBoardHash)(Depth);
+        If (TTProbeRes == 1)
         {
-            Call //("Probe transposition table for cached node evaluations");
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
+            If ((TTProbeNode.CheckedRes == 1) And (Not ((CheckedState[Depth] == 1))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or Quiescence)
+                List.ReplaceItem(CheckedState, Depth, 1);
+            }
+            If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
+            {
+                If ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))
                 {
-                    If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
+                    If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or Quiescence)
                     {
-                        If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                        If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)]))))))
                         {
-                            List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
-                            List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
-                            Stop(this script);
+                            If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                            {
+                                List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
+                                List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, TTProbeNode.EvalIsDynamicRes);
+                            }
                         }
                     }
                 }
@@ -8373,6 +8379,11 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
 
 Define SEE(string MoveDepth) (warp=true)
 {
+    SEE.Result = 0;
+    If (floor((AppliedMove[MoveDepth] / 100)) == 0)
+    {
+        Stop(this script);
+    }
     Depth = MoveDepth;
     SEE.TargetIdx = floor((AppliedMove[Depth] % 100));
     SEE.Result = (0 - TargetPieces[Depth]);
