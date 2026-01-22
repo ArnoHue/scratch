@@ -1,6 +1,3 @@
-//----- Variables ----------------------------------------------------------------------------------------------------
-NNUE_OutputBias_CSV = 68491
-
 //----- Green flag events ---------------------------------------------------------------------------------------------
 
 WhenGreenFlagClicked()
@@ -93,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338a (21.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (22.01.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1742,6 +1739,7 @@ Define ClearTTImpl(string Size) (warp=true)
     List.DeleteItem(TTNodeCheckedAttackLines, all);
     List.DeleteItem(TTNodeEvalIsDynamic, all);
     List.DeleteItem(TTBoardEvalIsDynamic, all);
+    List.DeleteItem(TTNodeQSMeta, all);
     Repeat (Size)
     {
         List.Add(TTNodeHash, 0);
@@ -1756,6 +1754,7 @@ Define ClearTTImpl(string Size) (warp=true)
         List.Add(TTNodeCheckedAttackLines, "");
         List.Add(TTNodeBoardAttackedByOpp, "");
         List.Add(TTNodeBoardAttackedByOppPiece, "");
+        List.Add(TTNodeQSMeta, "");
     }
     Repeat ((Size * 1))
     {
@@ -5044,15 +5043,18 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
         TT.CurrentAge = ((floor((TT.CurrentAge / 100)) + 1) * 100);
         If ((IsScratch3 == 0) And (Level > 3))
         {
-            If (1 == 1)
+            If (1 == 0)
             {
                 Idx = 1;
-                Repeat (List.Length(TTNodeEval))
+                Repeat (List.Length(TTNodeHash))
                 {
-                    If (Not ((TTNodeEval[(Idx + 0)] == "")))
-                    {
-                        List.ReplaceItem(TTNodeEval, (Idx + 0), "");
-                    }
+                    List.ReplaceItem(TTNodeHash, (Idx + 0), 0);
+                    Idx += 1;
+                }
+                Idx = 1;
+                Repeat (List.Length(TTBoardHash))
+                {
+                    List.ReplaceItem(TTBoardHash, (Idx + 0), 0);
                     Idx += 1;
                 }
             }
@@ -5335,6 +5337,10 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
+    If (Quiescence[(Depth - 1)] == 0)
+    {
+        IsQuiescentCheckRes = 1;
+    }
 }
 
 Define IsWhiteKingCheckMate (warp=true)
@@ -7064,11 +7070,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         If (((Depth > 1) And (IsInNullMove == 0)) And ((ExcludedMove == "") And (CheckedState[Depth] == 0)))
         {
-            Call Search_InternalIterativeReductions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
-            If (Not ((SearchEvalResults[Depth] == "")))
-            {
-                Stop(this script);
-            }
             Call Search_ReverseFutilityPruning(Depth)(Horizon);
             If (Not ((SearchEvalResults[Depth] == "")))
             {
@@ -7494,7 +7495,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
         If Quiescence
         {
-            Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth])(0);
+            Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)("")("")("")("")("")(SearchEvalResultsIsDynamic[Depth])(Quiescence[(Depth - 1)]);
         }
         Else
         {
@@ -7824,7 +7825,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
         If (SearchExtension[Depth] == 0)
         {
             Call //("Singular extensions");
-            If (1 == 1)
+            If (1 == 0)
             {
                 If (((Depth > 1) And (Horizon > 4)) And ((AppliedMove[Depth] == HashMove[Depth]) And (ExcludedMove == "")))
                 {
@@ -8037,7 +8038,7 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
 {
     If (((Not (Quiescence)) And (Horizon > 5)) And ((CheckedState[Depth] == 0) And (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
     {
-        If (1 == 0)
+        If (1 == 1)
         {
             Call //("IID");
             Call TTProbeNode(CurrentBoardHash)(Depth);
@@ -8064,41 +8065,6 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
     }
 }
 
-Define Search_InternalIterativeReductions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
-{
-    If (Not (Quiescence))
-    {
-        If (((Depth > 1) And (IsInNullMove == 0)) And (CheckedState[Depth] == 0))
-        {
-            If (1 == 0)
-            {
-                Call //("IIR");
-                HorizonLoc = Horizon;
-                Call TTProbeNode(CurrentBoardHash)(Depth);
-                If (TTProbeRes == 0)
-                {
-                    If (Horizon > 2)
-                    {
-                        HorizonLoc += -1;
-                    }
-                    If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
-                    {
-                        HorizonLoc += -1;
-                    }
-                }
-                If (HorizonLoc < 1)
-                {
-                    List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                    List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1)(Cutnode)("");
-                    List.ReplaceItem(SearchEvalResults, Depth, SearchEvalResults[(Depth + 1)]);
-                    List.ReplaceItem(SearchEvalResultsIsDynamic, Depth, SearchEvalResultsIsDynamic[(Depth + 1)]);
-                }
-            }
-        }
-    }
-}
-
 Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
 {
     Call //("Late move reduction preparation");
@@ -8109,15 +8075,18 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
         {
             Call //("LMR search");
             Reduction = 0;
-            If (PickedMoveCount[Depth] > 1)
+            If (PickedMoveCount[Depth] > (1 + (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
             {
-                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
+                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 1.75)));
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                     {
                         Reduction += -1;
                     }
+                }
+                If (1 == 0)
+                {
                     If (PutsInCheck[Depth] == 1)
                     {
                         Reduction += -1;
@@ -8360,7 +8329,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
             {
                 If ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))
                 {
-                    If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or Quiescence)
+                    If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((Quiescence[(Depth - 1)] > TTProbeNode.QSMeta))))))
                     {
                         If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)]))))))
                         {
@@ -8925,7 +8894,7 @@ Define TTProbeNodeImpl(string NodeHash)(string Depth)(string BoardHash) (warp=tr
     TTProbeNode.AgeRes = TTNodeAge[(HashBucket + 0)];
     TTProbeNode.BlackMobRes = 0;
     TTProbeNode.WhiteMobRes = 0;
-    TTProbeNode.QSMeta = 0;
+    TTProbeNode.QSMeta = TTNodeQSMeta[(HashBucket + 0)];
 }
 
 Define TTStoreBoard(string BoardHash)(string Depth)(string Eval) (warp=true)
@@ -9039,6 +9008,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
                 List.ReplaceItem(TTNodeHorizon, (HashBucket + 0), Horizon);
                 List.ReplaceItem(TTNodeAge, (HashBucket + 0), TT.CurrentAge);
                 List.ReplaceItem(TTNodeBestMove, (HashBucket + 0), BestMove);
+                List.ReplaceItem(TTNodeQSMeta, (HashBucket + 0), QSMeta);
             }
         }
         Else
@@ -9064,6 +9034,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
         List.ReplaceItem(TTNodeEvalIsDynamic, (HashBucket + 0), IsDynamic);
         List.ReplaceItem(TTNodeHorizon, (HashBucket + 0), Horizon);
         List.ReplaceItem(TTNodeAge, (HashBucket + 0), TT.CurrentAge);
+        List.ReplaceItem(TTNodeQSMeta, (HashBucket + 0), QSMeta);
     }
     TTProbeNode.PrevMiss = -1;
 }
@@ -9198,3 +9169,4 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
 Define _ClearLists (warp=true)
 {
 }
+
