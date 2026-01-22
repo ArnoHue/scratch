@@ -1013,7 +1013,7 @@ Define ApplyMove(num Depth) (warp=true)
     {
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
     }
-    List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
+    List.ReplaceItem(EnPassantTarget, Depth, "");
     List.ReplaceItem(PreviousBoardHash, Depth, CurrentBoardHash);
     List.ReplaceItem(PreviousBoardHashKP, Depth, CurrentBoardHashKP);
     Call GetCurrentMove(Depth);
@@ -1059,7 +1059,7 @@ Define ApplyMove(num Depth) (warp=true)
             }
             If ((TargetIdx - SourceIdx) == (16 * DepthEvalFactor[Depth]))
             {
-                List.ReplaceItem(EnPassantTarget, (Depth + 1), TargetIdx);
+                List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
             }
             If (TargetIdx < 9)
             {
@@ -3057,7 +3057,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         Else
         {
-            QuiescenceDepth = 10;
+            QuiescenceDepth = 12;
         }
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
@@ -5046,15 +5046,12 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
             If (1 == 0)
             {
                 Idx = 1;
-                Repeat (List.Length(TTNodeHash))
+                Repeat (List.Length(TTNodeEval))
                 {
-                    List.ReplaceItem(TTNodeHash, (Idx + 0), 0);
-                    Idx += 1;
-                }
-                Idx = 1;
-                Repeat (List.Length(TTBoardHash))
-                {
-                    List.ReplaceItem(TTBoardHash, (Idx + 0), 0);
+                    If (TTNodeHorizon[Idx] == -1)
+                    {
+                        List.ReplaceItem(TTNodeEval, (Idx + 0), "");
+                    }
                     Idx += 1;
                 }
             }
@@ -6705,15 +6702,21 @@ Define QuickSortImpl(string Lo)(string Hi) (warp=true)
 
 Define RevertMove(num Depth) (warp=true)
 {
+    If (Depth == 1)
+    {
+        List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+        Call SetInitialEnPassantTarget(1);
+    }
+    Else
+    {
+        List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
+        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
+    }
     CurrentMove = AppliedMove[Depth];
     SourceIdx = floor((CurrentMove / 100));
     If (SourceIdx > 0)
     {
         TargetIdx = floor((CurrentMove % 100));
-        If (abs(Board[TargetIdx]) == GoK_BlackPawn)
-        {
-            List.ReplaceItem(EnPassantTarget, (Depth + 1), "");
-        }
         List.ReplaceItem(Board, SourceIdx, Board[TargetIdx]);
         List.ReplaceItem(Board, TargetIdx, 0);
         List.ReplaceItem(Board, TargetPiecesIdx[Depth], TargetPieces[Depth]);
@@ -7026,11 +7029,13 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     If (Depth == 1)
     {
         List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+        Call SetInitialEnPassantTarget(1);
         List.ReplaceItem(CheckedState, 1, "");
     }
     Else
     {
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
+        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
     }
     Call //("Fast checkmate/draw detection + TT evaluation probing");
@@ -7212,6 +7217,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 List.ReplaceItem(PutsInCheck, Depth, 1);
                 List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
+                List.ReplaceItem(EnPassantTarget, (Depth + 1), EnPassantTarget[Depth]);
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("")("");
             }
             Call //("Fast discovered check detection for current move");
@@ -7220,6 +7226,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 List.ReplaceItem(PutsInCheck, Depth, 1);
                 List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
+                List.ReplaceItem(EnPassantTarget, (Depth + 1), EnPassantTarget[Depth]);
                 Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(1)("")("")("")("")("")("")("")("");
             }
             Eval = "";
@@ -7753,7 +7760,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                 }
                 Idx += -2;
             }
-            If (Count > 1)
+            If (Count > 0)
             {
                 Stop(this script);
             }
@@ -8052,9 +8059,6 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
                 Call AddMoveToList(0)((Depth + 1));
                 List.ReplaceItem(MovesIdx, (Depth + 1), 1);
                 Call ApplyMove((Depth + 1));
-                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[(Depth - 1)]);
-                List.ReplaceItem(EnPassantTarget, (Depth + 2), EnPassantTarget[Depth]);
-                List.ReplaceItem(PutsInCheck, (Depth + 1), PutsInCheck[(Depth - 1)]);
                 List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
                 List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
                 Call SearchImpl((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((Horizon - 3))(Cutnode)("");
@@ -9169,4 +9173,3 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
 Define _ClearLists (warp=true)
 {
 }
-
