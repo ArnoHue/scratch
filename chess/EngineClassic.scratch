@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (22.01.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (23.01.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -443,23 +443,198 @@ Define ABSearch(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(boo
     }
 }
 
-Define ABSearch_DetectExtension(string Depth)(string Horizon)(string ExcludedMove) (warp=true)
+Define ABSearch_DetectCheckmatesAndDraws(string Depth)(bool Quiescence)(string Horizon)(string ExcludedMove) (warp=true)
+{
+    If (Depth > 1)
+    {
+        Call //("Virtual king captures on previous ply => depth-corrected checkmate evaluation");
+        If (TargetPieces[(Depth - 1)] == GoK_OppKing)
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth - 1) * 1000)));
+            List.ReplaceItem(ScoreTypes, Depth, "E");
+            Stop(this script);
+        }
+        If (TargetPieces[(Depth - 1)] == GoK_OwnKing)
+        {
+            List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth - 1) * 1000)));
+            List.ReplaceItem(ScoreTypes, Depth, "E");
+            Stop(this script);
+        }
+    }
+    If ((Depth > 1) And (IsInNullMove == 0))
+    {
+        Call //("Rule of 50 moves");
+        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > (99 - 0))
+        {
+            List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
+            List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
+            Stop(this script);
+        }
+        Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
+        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 5)
+        {
+            Count1 = 1;
+            If List.ContainsItem(PreviousBoardHash, CurrentBoardHash)
+            {
+                Idx = (Depth - 2);
+                Repeat Until ((Idx < 2) Or (Count1 > 2))
+                {
+                    If (CurrentBoardHash == PreviousBoardHash[Idx])
+                    {
+                        Count1 += 1;
+                    }
+                    Idx += -2;
+                }
+            }
+            If List.ContainsItem(BoardHistoryHash, CurrentBoardHash)
+            {
+                Idx = ((List.Length(BoardHistoryHash) - 1) + (Depth % 2));
+                Repeat Until ((Idx < 1) Or (Count1 > 2))
+                {
+                    If (CurrentBoardHash == BoardHistoryHash[Idx])
+                    {
+                        Count1 += 1;
+                    }
+                    Idx += -2;
+                }
+            }
+            If (Count1 > 1)
+            {
+                List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
+                List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
+                Stop(this script);
+            }
+        }
+    }
+    If ((Depth > 1) And (IsInNullMove == 0))
+    {
+        Call //("Draw-by-stalemate detection. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
+        If (Not (Quiescence))
+        {
+            If (Not ((CheckedState[(Depth + 0)] == 1)))
+            {
+                If ((((Depth % 2) == 1) And ((QueenCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2))) Or (((Depth % 2) == 0) And ((QueenCountOppLocal == 0) And (RookMinorCountLocalOpp < 2))))
+                {
+                    If ((Depth < 4) Or (Horizon > 2))
+                    {
+                        Call IsDrawByStalemate((Depth + 2));
+                        If (IsDrawRes == 1)
+                        {
+                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                            Stop(this script);
+                        }
+                    }
+                }
+            }
+        }
+        Call //("Fast draw-by-material verification");
+        If (((QueenCounttOwnLocal == 0) And (QueenCountOppLocal == 0)) And ((PawnCounttOwnLocal == 0) And (PawnCountOppLocal == 0)))
+        {
+            If (((RookCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2)) And ((RookCountOppLocal == 0) And (RookMinorCountLocalOpp < 2)))
+            {
+                Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                Stop(this script);
+            }
+        }
+        Call //("Special K-KP endgame draw detection, according to pawn and king position. Finds draws otherwise not visible within search horizon");
+        If ((Depth > 1) And (Quiescence[(Depth - 1)] == 0))
+        {
+            If (((QueenCountOppLocal + RookMinorCountLocalOpp) == 0) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) == 0))
+            {
+                If ((PawnCounttOwnLocal + PawnCountOppLocal) == 1)
+                {
+                    Idx = 1;
+                    Repeat (64)
+                    {
+                        CurrentPiece = Board[(Idx + 0)];
+                        If ((CurrentPiece == GoK_OppPawn) And ((Depth % 2) == 0))
+                        {
+                            If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
+                            {
+                                If ((IdxToFile[Idx] == IdxToFile[KingIdxtOwn]) And (IdxToRank[KingIdxtOwn] < IdxToRank[Idx]))
+                                {
+                                    Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                    Stop(this script);
+                                }
+                            }
+                            Else
+                            {
+                                If (((Idx - 8) == KingIdxtOwn) Or ((Idx - 16) == KingIdxtOwn))
+                                {
+                                    If (Not ((((Idx - 1) == KingIdxOpp) Or ((Idx + 1) == KingIdxOpp))))
+                                    {
+                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                        Stop(this script);
+                                    }
+                                }
+                                If ((Idx - 24) == KingIdxtOwn)
+                                {
+                                    If ((IdxToRank[Idx] > 4) And ((Idx - 8) == KingIdxOpp))
+                                    {
+                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                        Stop(this script);
+                                    }
+                                }
+                            }
+                        }
+                        Else
+                        {
+                            If ((CurrentPiece == GoK_OwnPawn) And ((Depth % 2) == 1))
+                            {
+                                If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
+                                {
+                                    If ((IdxToFile[Idx] == IdxToFile[KingIdxOpp]) And (IdxToRank[KingIdxOpp] > IdxToRank[Idx]))
+                                    {
+                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                        Stop(this script);
+                                    }
+                                }
+                                Else
+                                {
+                                    If (((Idx + 8) == KingIdxOpp) Or ((Idx + 16) == KingIdxOpp))
+                                    {
+                                        If (Not ((((Idx - 1) == KingIdxtOwn) Or ((Idx + 1) == KingIdxtOwn))))
+                                        {
+                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                            Stop(this script);
+                                        }
+                                    }
+                                    If ((Idx + 24) == KingIdxOpp)
+                                    {
+                                        If ((IdxToRank[Idx] < 5) And ((Idx + 8) == KingIdxtOwn))
+                                        {
+                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
+                                            Stop(this script);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Idx += 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string QuiescenceHorizon)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
 {
     If ((Not (Quiescence)) And (IsScratch3 == 0))
     {
         If (PlyExtension[Depth] == 1)
         {
             Count1 = 0;
-            Idx = (Depth - 2);
+            Idx = (Depth - 1);
             Repeat Until (Idx < 1)
             {
                 If (PlyExtension[Idx] == 1)
                 {
                     Count1 += 1;
                 }
-                Idx += -2;
+                Idx += -1;
             }
-            If (Count1 > 1)
+            If (Count1 > 3)
             {
                 Stop(this script);
             }
@@ -485,7 +660,7 @@ Define ABSearch_DetectExtension(string Depth)(string Horizon)(string ExcludedMov
         }
         If (PlyExtension[Depth] == 0)
         {
-            If (1 == 0)
+            If (1 == 1)
             {
                 If (Horizon > 0)
                 {
@@ -543,7 +718,7 @@ Define ABSearch_DetectExtension(string Depth)(string Horizon)(string ExcludedMov
             Call //("Singular extensions");
             If (1 == 1)
             {
-                If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 4))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedMove == "")))
+                If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 6))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedMove == "")))
                 {
                     Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
                     If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
@@ -575,7 +750,7 @@ Define ABSearch_DetectExtension(string Depth)(string Horizon)(string ExcludedMov
                                     List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
                                 }
                                 Reduction = floor((Horizon / 2));
-                                Call ABSearch_NextPly((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
+                                Call ABSearch_NextPly((Depth + 2))(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
                                 Score = MinMaxResults[(Depth + 2)];
                                 Call RevertMove((Depth + 1));
                                 Call RevertMove(Depth);
@@ -835,10 +1010,32 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
     }
-    Call ABSearch_PreProcess(Depth)(Quiescence)(Horizon)(ExcludedMove);
+    Call ABSearch_DetectCheckmatesAndDraws(Depth)(Quiescence)(Horizon)(ExcludedMove);
     If (Not ((MinMaxResults[Depth] == "")))
     {
         Stop(this script);
+    }
+    If ((Depth > 1) And (ExcludedMove == ""))
+    {
+        Call //("Probe transposition table for cached node evaluations");
+        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
+        {
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+            {
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And ((Not ((TTProbeNodeQSMetaRes == ""))) And (Not ((TTProbeNodeQSMetaRes > Quiescence[(Depth - 1)]))))))
+                {
+                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
+                    {
+                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                        {
+                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                            Stop(this script);
+                        }
+                    }
+                }
+            }
+        }
     }
     Call //("Search function (minimax / alpha-beta pruning)");
     List.ReplaceItem(PlyExtension, Depth, 0);
@@ -870,6 +1067,13 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             Call StoreAttackInfo(3)(2);
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
         }
+    }
+    Call //("Search tree leaf reached");
+    If ((Horizon == 0) Or (Depth > (MaxSearchDepthStackFrames - 10)))
+    {
+        Call Evaluate((Depth - 1))((1 == 1));
+        List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
+        Stop(this script);
     }
     Call //("Invoke board evaluation to calculate incremental results");
     Call Evaluate((Depth - 1))((1 == 0));
@@ -1059,7 +1263,6 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             {
                 If (Not (Quiescence))
                 {
-                    Call ABSearch_DetectExtension(Depth)(Horizon)(ExcludedMove);
                 }
                 Call ABSearch_SearchCore(Depth)(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
                 If (IsMinMaxTimeout == 0)
@@ -1388,210 +1591,6 @@ Define ABSearch_NextPly(string CurrentDepth)(bool CurrentInitialDeepening)(strin
     Else
     {
         Call ABSearch_Main((CurrentDepth + 1))(CurrentInitialDeepening)(CurrentQuiescenceHorizon)(CurrentQuiescence)(ShowProgress)((((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) - 1))(CurrentCutnode)(ExcludedMove);
-    }
-}
-
-Define ABSearch_PreProcess(string Depth)(bool Quiescence)(string Horizon)(string ExcludedMove) (warp=true)
-{
-    If (Depth > 1)
-    {
-        Call //("Virtual king captures on previous ply => depth-corrected checkmate evaluation");
-        If (TargetPieces[(Depth - 1)] == GoK_OppKing)
-        {
-            List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth - 1) * 1000)));
-            List.ReplaceItem(ScoreTypes, Depth, "E");
-            Stop(this script);
-        }
-        If (TargetPieces[(Depth - 1)] == GoK_OwnKing)
-        {
-            List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth - 1) * 1000)));
-            List.ReplaceItem(ScoreTypes, Depth, "E");
-            Stop(this script);
-        }
-    }
-    If ((Depth > 1) And (IsInNullMove == 0))
-    {
-        Call //("Rule of 50 moves");
-        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > (99 - 0))
-        {
-            List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
-            List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
-            Stop(this script);
-        }
-        Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
-        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 5)
-        {
-            Count1 = 1;
-            If List.ContainsItem(PreviousBoardHash, CurrentBoardHash)
-            {
-                Idx = (Depth - 2);
-                Repeat Until ((Idx < 2) Or (Count1 > 2))
-                {
-                    If (CurrentBoardHash == PreviousBoardHash[Idx])
-                    {
-                        Count1 += 1;
-                    }
-                    Idx += -2;
-                }
-            }
-            If List.ContainsItem(BoardHistoryHash, CurrentBoardHash)
-            {
-                Idx = ((List.Length(BoardHistoryHash) - 1) + (Depth % 2));
-                Repeat Until ((Idx < 1) Or (Count1 > 2))
-                {
-                    If (CurrentBoardHash == BoardHistoryHash[Idx])
-                    {
-                        Count1 += 1;
-                    }
-                    Idx += -2;
-                }
-            }
-            If (Count1 > 1)
-            {
-                List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
-                List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
-                Stop(this script);
-            }
-        }
-    }
-    Call //("Search tree leaf reached");
-    If ((Horizon == 0) Or (Depth > (MaxSearchDepthStackFrames - 2)))
-    {
-        Call Evaluate((Depth - 1))((1 == 1));
-        List.ReplaceItem(MinMaxResults, Depth, EvaluateRes);
-        Stop(this script);
-    }
-    If ((Depth > 1) And (ExcludedMove == ""))
-    {
-        Call //("Probe transposition table for cached node evaluations");
-        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
-        {
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
-            {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And ((Not ((TTProbeNodeQSMetaRes == ""))) And (Not ((TTProbeNodeQSMetaRes > Quiescence[(Depth - 1)]))))))
-                {
-                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
-                    {
-                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
-                        {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            Stop(this script);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    If ((Depth > 1) And (IsInNullMove == 0))
-    {
-        Call //("Draw-by-stalemate detection. This is expensive, and is only applied at low search depth or during late endgame stage (no minor pieces left)");
-        If (Not (Quiescence))
-        {
-            If (Not ((CheckedState[(Depth + 0)] == 1)))
-            {
-                If ((((Depth % 2) == 1) And ((QueenCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2))) Or (((Depth % 2) == 0) And ((QueenCountOppLocal == 0) And (RookMinorCountLocalOpp < 2))))
-                {
-                    If ((Depth < 4) Or (Horizon > 2))
-                    {
-                        Call IsDrawByStalemate((Depth + 2));
-                        If (IsDrawRes == 1)
-                        {
-                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                            Stop(this script);
-                        }
-                    }
-                }
-            }
-        }
-        Call //("Fast draw-by-material verification");
-        If (((QueenCounttOwnLocal == 0) And (QueenCountOppLocal == 0)) And ((PawnCounttOwnLocal == 0) And (PawnCountOppLocal == 0)))
-        {
-            If (((RookCounttOwnLocal == 0) And (RookMinorCounttOwnLocal < 2)) And ((RookCountOppLocal == 0) And (RookMinorCountLocalOpp < 2)))
-            {
-                Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                Stop(this script);
-            }
-        }
-        Call //("Special K-KP endgame draw detection, according to pawn and king position. Finds draws otherwise not visible within search horizon");
-        If ((Depth > 1) And (Quiescence[(Depth - 1)] == 0))
-        {
-            If (((QueenCountOppLocal + RookMinorCountLocalOpp) == 0) And ((QueenCounttOwnLocal + RookMinorCounttOwnLocal) == 0))
-            {
-                If ((PawnCounttOwnLocal + PawnCountOppLocal) == 1)
-                {
-                    Idx = 1;
-                    Repeat (64)
-                    {
-                        CurrentPiece = Board[(Idx + 0)];
-                        If ((CurrentPiece == GoK_OppPawn) And ((Depth % 2) == 0))
-                        {
-                            If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
-                            {
-                                If ((IdxToFile[Idx] == IdxToFile[KingIdxtOwn]) And (IdxToRank[KingIdxtOwn] < IdxToRank[Idx]))
-                                {
-                                    Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                    Stop(this script);
-                                }
-                            }
-                            Else
-                            {
-                                If (((Idx - 8) == KingIdxtOwn) Or ((Idx - 16) == KingIdxtOwn))
-                                {
-                                    If (Not ((((Idx - 1) == KingIdxOpp) Or ((Idx + 1) == KingIdxOpp))))
-                                    {
-                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                        Stop(this script);
-                                    }
-                                }
-                                If ((Idx - 24) == KingIdxtOwn)
-                                {
-                                    If ((IdxToRank[Idx] > 4) And ((Idx - 8) == KingIdxOpp))
-                                    {
-                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                        Stop(this script);
-                                    }
-                                }
-                            }
-                        }
-                        Else
-                        {
-                            If ((CurrentPiece == GoK_OwnPawn) And ((Depth % 2) == 1))
-                            {
-                                If ((IdxToFile[Idx] == 1) Or (IdxToFile[Idx] == 8))
-                                {
-                                    If ((IdxToFile[Idx] == IdxToFile[KingIdxOpp]) And (IdxToRank[KingIdxOpp] > IdxToRank[Idx]))
-                                    {
-                                        Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                        Stop(this script);
-                                    }
-                                }
-                                Else
-                                {
-                                    If (((Idx + 8) == KingIdxOpp) Or ((Idx + 16) == KingIdxOpp))
-                                    {
-                                        If (Not ((((Idx - 1) == KingIdxtOwn) Or ((Idx + 1) == KingIdxtOwn))))
-                                        {
-                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                            Stop(this script);
-                                        }
-                                    }
-                                    If ((Idx + 24) == KingIdxOpp)
-                                    {
-                                        If ((IdxToRank[Idx] < 5) And ((Idx + 8) == KingIdxtOwn))
-                                        {
-                                            Call StoreMinMaxDrawResult(CurrentBoardHash)(Depth);
-                                            Stop(this script);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Idx += 1;
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -6135,7 +6134,7 @@ Define GetBestMoveEasy (warp=false)
 
 Define GetBestMoveMedDiff (warp=false)
 {
-    MaxSearchDepth = (MaxSearchDepthStackFrames - 10);
+    MaxSearchDepth = (MaxSearchDepthStackFrames - 20);
     IsEvalStable = 1;
     If (Level == 5)
     {
@@ -10585,7 +10584,7 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
     }
     If (Depth == 1)
     {
-        If (PV[1] > 0)
+        If ((PV[1] > 0) Or (1 == 1))
         {
             Call UpdateMoveNotationPV;
             List.DeleteAll(PVStable);
