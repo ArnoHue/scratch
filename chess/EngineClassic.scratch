@@ -725,12 +725,7 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
                                 Call ApplyMove(Depth);
-                                Call Evaluate(Depth)((1 == 0));
-                                List.ReplaceItem(MovesIdx, (Depth + 1), 1);
-                                Call ClearMoveList((Depth + 1));
-                                Call AddMoveToList(0)((Depth + 1));
-                                Call ApplyMove((Depth + 1));
-                                Call Evaluate((Depth + 1))((1 == 0));
+                                Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
                                 If ((Depth % 2) == 1)
                                 {
                                     SE.BoundEval += (0 - (Horizon * 2));
@@ -746,7 +741,7 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
                                 Reduction = floor((Horizon / 2));
                                 Call ABSearch_NextPly((Depth + 2))(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
                                 Score = MinMaxResults[(Depth + 2)];
-                                Call RevertMove((Depth + 1));
+                                Call SkipSearchFrameExit((Depth + 1));
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
                                 Call ApplyMove(Depth);
@@ -951,46 +946,9 @@ Define ABSearch_Init(string MaxDepth)(bool InitialDeepening) (warp=true)
     Call Log(MaxDepth)(" : ")("Search start, depth = ")(MaxDepth)("")("")("")("");
 }
 
-Define ABSearch_InternalIterative_Deepening(string Depth)(bool InitialDeepening)(string QuiescenceHorizon)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
+Define ABSearch_InitStack(string Depth)(bool Quiescence) (warp=true)
 {
-    If (((Not (Quiescence)) And (Horizon > 5)) And ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (CheckedState[Depth] == 0)))
-    {
-        If (1 == 1)
-        {
-            Call //("Internal iterative deepening");
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 0) Or (TTProbeBestMoveRes == ""))
-            {
-                Call ClearMoveList(Depth);
-                Call AddMoveToList(0)(Depth);
-                List.ReplaceItem(MovesIdx, Depth, 1);
-                Call ApplyMove(Depth);
-                Call Evaluate(Depth)((1 == 0));
-                Call ClearMoveList((Depth + 1));
-                Call AddMoveToList(0)((Depth + 1));
-                List.ReplaceItem(MovesIdx, (Depth + 1), 1);
-                Call ApplyMove((Depth + 1));
-                Call Evaluate((Depth + 1))((1 == 0));
-                List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
-                List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
-                Call ABSearch_Main((Depth + 2))(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0))("");
-                Call RevertMove((Depth + 1));
-                Call RevertMove(Depth);
-            }
-        }
-    }
-}
-
-Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHorizon)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
-{
-    List.ReplaceItem(MinMaxResults, Depth, "");
-    List.ReplaceItem(ScoreTypes, Depth, "");
-    List.ReplaceItem(BestMoves, Depth, "");
-    If (IsMinMaxTimeout == 1)
-    {
-        Stop(this script);
-    }
-    List.ReplaceItem(BoardEval, Depth, "");
+    Call //("Search function (minimax / alpha-beta pruning)");
     Call //("Required for early TT access and draw detection");
     If (Depth == 1)
     {
@@ -1004,34 +962,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
     }
-    Call ABSearch_DetectCheckmatesAndDraws(Depth)(Quiescence)(Horizon)(ExcludedMove);
-    If (Not ((MinMaxResults[Depth] == "")))
-    {
-        Stop(this script);
-    }
-    If ((Depth > 1) And (ExcludedMove == ""))
-    {
-        Call //("Probe transposition table for cached node evaluations");
-        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
-        {
-            Call TTProbeNode(CurrentBoardHash)(Depth);
-            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
-            {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And ((Not ((TTProbeNodeQSMetaRes == ""))) And (Not ((TTProbeNodeQSMetaRes > Quiescence[(Depth - 1)]))))))
-                {
-                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
-                    {
-                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
-                        {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            Stop(this script);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Call //("Search function (minimax / alpha-beta pruning)");
+    List.ReplaceItem(BoardEval, Depth, "");
     List.ReplaceItem(PlyExtension, Depth, 0);
     List.ReplaceItem(PV, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
     List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
@@ -1062,6 +993,71 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
         }
     }
+    Call Evaluate((Depth - 1))((1 == 0));
+}
+
+Define ABSearch_InternalIterative_Deepening(string Depth)(bool InitialDeepening)(string QuiescenceHorizon)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
+{
+    If (((Not (Quiescence)) And (Horizon > 5)) And ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (CheckedState[Depth] == 0)))
+    {
+        If (1 == 1)
+        {
+            Call //("Internal iterative deepening");
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 0) Or (TTProbeBestMoveRes == ""))
+            {
+                Call ClearMoveList(Depth);
+                Call AddMoveToList(0)(Depth);
+                List.ReplaceItem(MovesIdx, Depth, 1);
+                Call ApplyMove(Depth);
+                Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
+                List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
+                List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
+                Call ABSearch_Main((Depth + 2))(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)((Horizon - 3))((1 == 0))("");
+                Call SkipSearchFrameExit((Depth + 1));
+                Call RevertMove(Depth);
+            }
+        }
+    }
+}
+
+Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHorizon)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
+{
+    List.ReplaceItem(MinMaxResults, Depth, "");
+    List.ReplaceItem(ScoreTypes, Depth, "");
+    List.ReplaceItem(BestMoves, Depth, "");
+    If (IsMinMaxTimeout == 1)
+    {
+        Stop(this script);
+    }
+    Call ABSearch_InitStack(Depth)(Quiescence);
+    Call ABSearch_DetectCheckmatesAndDraws(Depth)(Quiescence)(Horizon)(ExcludedMove);
+    If (Not ((MinMaxResults[Depth] == "")))
+    {
+        Stop(this script);
+    }
+    If ((Depth > 1) And (ExcludedMove == ""))
+    {
+        Call //("Probe transposition table for cached node evaluations");
+        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
+        {
+            Call TTProbeNode(CurrentBoardHash)(Depth);
+            If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
+            {
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And ((Not ((TTProbeNodeQSMetaRes == ""))) And (Not ((TTProbeNodeQSMetaRes > Quiescence[(Depth - 1)]))))))
+                {
+                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
+                    {
+                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                        {
+                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                            Stop(this script);
+                        }
+                    }
+                }
+            }
+        }
+    }
     Call //("Search tree leaf reached");
     If ((Horizon == 0) Or (Depth > (MaxSearchDepthStackFrames - 10)))
     {
@@ -1070,7 +1066,6 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         Stop(this script);
     }
     Call //("Invoke board evaluation to calculate incremental results");
-    Call Evaluate((Depth - 1))((1 == 0));
     Call //("Re-use static eval from TT");
     Call TTProbeBoard(CurrentBoardHash)(Depth);
     If ((TTProbeRes == 1) And (Not ((TTProbeBoardScoreSumRes == ""))))
@@ -9938,6 +9933,20 @@ Define SetInitialEnPassantTarget(string Depth) (warp=true)
     }
 }
 
+Define SkipSearchFrameEnter(string Depth)(bool Quiescence) (warp=true)
+{
+    Call ABSearch_InitStack(Depth)(Quiescence);
+    Call ClearMoveList(Depth);
+    Call AddMoveToList(0)(Depth);
+    List.ReplaceItem(MovesIdx, Depth, 1);
+    Call ApplyMove(Depth);
+}
+
+Define SkipSearchFrameExit(string Depth) (warp=true)
+{
+    Call RevertMove(Depth);
+}
+
 Define SortMoveList(string Depth) (warp=true)
 {
     If ((Depth % 2) == 1)
@@ -10333,6 +10342,7 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
 {
     If (TTProbeBoardPrevMiss == BoardHash)
     {
+        TTProbeRes = 0;
         Stop(this script);
     }
     HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
@@ -10376,6 +10386,7 @@ Define TTProbeNodeImpl(string NodeHash) (warp=true)
 {
     If (TTProbeNodePrevMiss == NodeHash)
     {
+        TTProbeRes = 0;
         Stop(this script);
     }
     HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
