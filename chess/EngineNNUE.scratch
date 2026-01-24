@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (24.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338a (24.01.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3032,8 +3032,8 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimit = CustomThinkTime;
     }
     List.DeleteAll(AWSize);
-    List.Add(AWSize, 30);
-    List.Add(AWSize, 90);
+    List.Add(AWSize, 35);
+    List.Add(AWSize, 55);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -3049,7 +3049,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         Else
         {
-            QuiescenceDepth = 12;
+            QuiescenceDepth = 10;
         }
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
@@ -3448,26 +3448,22 @@ Define GetNormalizedMove(string Move) (warp=true)
 Define GetOpeningMoves (warp=true)
 {
     List.DeleteItem(OpeningMovesRes, all);
-    If (IsScratch3 == 0)
+    If (1 == 1)
     {
-        If ((List.Length(BoardHistoryHash) > 11) And (Operator.Random(1 , 2) == 2))
+        Call GenerateMovesPublic(1);
+        Call CreateCurrentBoardHash;
+        Idx = 1;
+        Repeat (List.Length(OpeningMovesMapHash))
         {
-            Stop(this script);
-        }
-    }
-    Call GenerateMovesPublic(1);
-    Call CreateCurrentBoardHash;
-    Idx = 1;
-    Repeat (List.Length(OpeningMovesMapHash))
-    {
-        If (OpeningMovesMapHash[Idx] == CurrentBoardHash)
-        {
-            If List.ContainsItem(Moves1, OpeningMovesMapMove[Idx])
+            If (OpeningMovesMapHash[Idx] == CurrentBoardHash)
             {
-                List.Add(OpeningMovesRes, OpeningMovesMapMove[Idx]);
+                If List.ContainsItem(Moves1, OpeningMovesMapMove[Idx])
+                {
+                    List.Add(OpeningMovesRes, OpeningMovesMapMove[Idx]);
+                }
             }
+            Idx += 1;
         }
-        Idx += 1;
     }
 }
 
@@ -7010,18 +7006,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         Stop(this script);
     }
     Call //("Required for TT access and drawe detection");
-    If (Depth == 1)
-    {
-        List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
-        Call SetInitialEnPassantTarget(1);
-        List.ReplaceItem(CheckedState, 1, "");
-    }
-    Else
-    {
-        List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
-        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
-        List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
-    }
+    Call Search_InitStack(Depth)(Quiescence);
     Call //("Fast checkmate/draw detection + TT evaluation probing");
     Call Search_DetectCheckmate(Depth);
     If (Not ((SearchEvalResults[(Depth + 0)] == "")))
@@ -7043,8 +7028,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         Stop(this script);
     }
-    Call //("We could not return prematurely => initialize stack data for additional functionality");
-    Call Search_InitStack(Depth)(InitialDeepening)(Quiescence);
     Call Evaluate((Depth - 1))((1 == 0));
     If ((Horizon == 0) Or (Depth > (MaxSearchDepthStackFrames - 10)))
     {
@@ -7730,7 +7713,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
             }
             Idx += -1;
         }
-        If (Count > 2)
+        If (Count > 1)
         {
             Stop(this script);
         }
@@ -7801,7 +7784,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
         If (SearchExtension[Depth] == 0)
         {
             Call //("Singular extensions");
-            If (1 == 1)
+            If (1 == 0)
             {
                 If (((Depth > 1) And (Horizon > 6)) And ((AppliedMove[Depth] == HashMove[Depth]) And (ExcludedMove == "")))
                 {
@@ -7816,10 +7799,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
                                 Call ApplyMove(Depth);
-                                Call ClearMoveList((Depth + 1));
-                                Call AddMoveToList(0)((Depth + 1));
-                                List.ReplaceItem(MovesIdx, (Depth + 1), 1);
-                                Call ApplyMove((Depth + 1));
+                                Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
                                 If ((Depth % 2) == 1)
                                 {
                                     SE.BoundEval += (0 - (Horizon * 2));
@@ -7835,7 +7815,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                                 Reduction = ceiling((Horizon / 2));
                                 Call SearchNextPly((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
                                 ChildEval = SearchEvalResults[(Depth + 2)];
-                                Call RevertMove((Depth + 1));
+                                Call SkipSearchFrameExit((Depth + 1));
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
                                 Call ApplyMove(Depth);
@@ -7972,7 +7952,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
     }
 }
 
-Define Search_InitStack(string Depth)(bool InitialDeepening)(bool Quiescence) (warp=true)
+Define Search_InitStack(string Depth)(bool Quiescence) (warp=true)
 {
     Call //("Initialize local variables or forward state from previous ply");
     If (Depth == 1)
@@ -7981,6 +7961,7 @@ Define Search_InitStack(string Depth)(bool InitialDeepening)(bool Quiescence) (w
         Call StoreAttackInfo(1);
         List.ReplaceItem(BoardAttackedCalculated, 1, 1);
         List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(HasBlackCastled, HasBlackKingMoved), Operator.Join(HasBlackRookKSMoved, HasBlackRookQSMoved)), Operator.Join(Operator.Join(HasWhiteCastled, HasWhiteKingMoved), Operator.Join(HasWhiteRookKSMoved, HasWhiteRookQSMoved))));
+        Call SetInitialEnPassantTarget(1);
     }
     Else
     {
@@ -7988,6 +7969,7 @@ Define Search_InitStack(string Depth)(bool InitialDeepening)(bool Quiescence) (w
         List.ReplaceItem(CheckedState, Depth, PutsInCheck[(Depth - 1)]);
         List.ReplaceItem(CheckedStateAttackLines, Depth, "");
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
+        List.ReplaceItem(EnPassantTarget, Depth, EnPassantTarget[(Depth - 1)]);
     }
     List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
     List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
@@ -8013,7 +7995,7 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
 {
     If (((Not (Quiescence)) And (Horizon > 5)) And ((CheckedState[Depth] == 0) And (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
     {
-        If (1 == 1)
+        If (1 == 0)
         {
             Call //("IID");
             Call TTProbeNode(CurrentBoardHash)(Depth);
@@ -8023,14 +8005,11 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
                 Call AddMoveToList(0)(Depth);
                 List.ReplaceItem(MovesIdx, Depth, 1);
                 Call ApplyMove(Depth);
-                Call ClearMoveList((Depth + 1));
-                Call AddMoveToList(0)((Depth + 1));
-                List.ReplaceItem(MovesIdx, (Depth + 1), 1);
-                Call ApplyMove((Depth + 1));
+                Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
                 List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
                 List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
                 Call SearchImpl((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)((Horizon - 3))(Cutnode)("");
-                Call RevertMove((Depth + 1));
+                Call SkipSearchFrameExit((Depth + 1));
                 Call RevertMove(Depth);
             }
         }
@@ -8510,6 +8489,23 @@ Define SetInitialEnPassantTarget(string Depth) (warp=true)
     {
         List.ReplaceItem(EnPassantTarget, Depth, TargetIdx);
     }
+}
+
+Define SkipSearchFrameEnter(string Depth)(bool Quiescence) (warp=true)
+{
+    List.ReplaceItem(Alphas, Depth, (Depth - 1));
+    List.ReplaceItem(Betas, Depth, (Depth - 1));
+    Call Search_InitStack(Depth)(Quiescence);
+    Call Evaluate(Depth)((1 == 0));
+    Call ClearMoveList(Depth);
+    Call AddMoveToList(0)(Depth);
+    List.ReplaceItem(MovesIdx, Depth, 1);
+    Call ApplyMove(Depth);
+}
+
+Define SkipSearchFrameExit(string Depth) (warp=true)
+{
+    Call RevertMove(Depth);
 }
 
 Define SortList (warp=true)
