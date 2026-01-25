@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (25.01.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248a (25.01.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3493,28 +3493,40 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                         If ((Attacked == 0) Or (AttackerPieceAbs > GoK_OwnPawn))
                         {
                             Call //("Outposts");
-                            If (CurrentPieceAbs == GoK_OwnKnight)
+                            OppPawnOffset = (8 + (8 * (Side == 1)));
+                            ME.OppPawnRankLeft = 0;
+                            If (File > 1)
                             {
-                                Call TaperedEval.Add((34 * Factor))((11 * Factor))("Eval.MajorsMinors.KnightOutpost")(TE.Idx)("")("");
-                                If (1 == 0)
-                                {
-                                    If (((File == 4) Or (File == 5)) And ((Rank == 4) Or (Rank == 5)))
-                                    {
-                                        Call TaperedEval.Add((10 * Factor))((5 * Factor))("")("")("")("");
-                                    }
-                                }
+                                ME.OppPawnRankLeft = PawnAdvancePerFile[(OppPawnOffset + (File - 1))];
+                            }
+                            ME.OppPawnRankRight = 0;
+                            If (File < 8)
+                            {
+                                ME.OppPawnRankRight = PawnAdvancePerFile[(OppPawnOffset + (File + 1))];
+                            }
+                            If (((ME.OppPawnRankLeft > 0) And (((ME.OppPawnRankLeft - Rank) * Factor) > 0)) Or ((ME.OppPawnRankRight > 0) And (((ME.OppPawnRankRight - Rank) * Factor) > 0)))
+                            {
+                                OutpostFactor = 1;
                             }
                             Else
                             {
-                                Call TaperedEval.Add((17 * Factor))((6 * Factor))("Eval.MajorsMinors.BishopOutpost")(TE.Idx)("")("");
+                                OutpostFactor = 2;
+                            }
+                            If (CurrentPieceAbs == GoK_OwnKnight)
+                            {
+                                Call TaperedEval.Add((17 * (OutpostFactor * Factor)))((6 * (OutpostFactor * Factor)))("Eval.MajorsMinors.KnightOutpost")(TE.Idx)("")("");
+                            }
+                            Else
+                            {
+                                Call TaperedEval.Add((9 * (OutpostFactor * Factor)))((2 * (OutpostFactor * Factor)))("Eval.MajorsMinors.BishopOutpost")(TE.Idx)("")("");
                             }
                         }
                     }
                 }
             }
-            If (Board[(TE.Idx - (8 * Factor))] == (GoK_OwnPawn * Factor))
+            If (Board[(TE.Idx + (8 * Factor))] == (GoK_OwnPawn * Factor))
             {
-                Call TaperedEval.Add((8 * Factor))((1 * Factor))("Eval.MajorsMinors.FriendlyPawnBehind")(TE.Idx)("")("");
+                Call TaperedEval.Add((8 * Factor))((1 * Factor))("Eval.MajorsMinors.MnorBehindFriendlyPawn")(TE.Idx)("")("");
             }
             Delta = ChebyshevDistance[((TE.Idx * 100) + KingIdx)];
             Call TaperedEval.Add(((-3 * Delta) * Factor))(((-4 * Delta) * Factor))("Eval.MajorsMinors.KingTropism")(TE.Idx)("")("");
@@ -4198,11 +4210,44 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                 {
                     If (PE.Passed == 0)
                     {
-                        Call TaperedEval.AddIdentical((-16 * PE.Factor))("Eval.Pawns.Isolated")(PE.OwnForwardIdx)(Side)("");
+                        If (PE.OppPawnCount > 0)
+                        {
+                            Call TaperedEval.Add((-5 * PE.Factor))((-7 * PE.Factor))("Eval.Pawns.Isolated.Opposed")(PE.OwnForwardIdx)(Side)("");
+                        }
+                        Else
+                        {
+                            Call TaperedEval.Add((-11 * PE.Factor))((-12 * PE.Factor))("Eval.Pawns.Isolated.Unopposed")(PE.OwnForwardIdx)(Side)("");
+                        }
                     }
                 }
                 Else
                 {
+                    If (((PE.Passed == 0) And (PE.OppPawnCount == 0)) And ((PE.OwnForwardRankNormalized > 2) And (PE.OwnForwardRankNormalized < 7)))
+                    {
+                        LeverPawns = 0;
+                        SupportPawns = 0;
+                        If ((PE.LeftOppPawnRank > 0) And (PE.NormalizedRank[PE.LeftOppPawnRank] == PE.OwnForwardRankNormalized))
+                        {
+                            LeverPawns += 1;
+                        }
+                        If ((PE.RightOwnPawnRank > 0) And (PE.NormalizedRank[PE.RightOwnPawnRank] == PE.OwnForwardRankNormalized))
+                        {
+                            LeverPawns += 1;
+                        }
+                        If ((PE.LeftOwnPawnRank > 0) And (PE.NormalizedRank[PE.LeftOwnPawnRank] > (PE.OwnForwardRankNormalized - 2)))
+                        {
+                            SupportPawns += 1;
+                        }
+                        If ((PE.RightOwnPawnRank > 0) And (PE.NormalizedRank[PE.RightOwnPawnRank] > (PE.OwnForwardRankNormalized - 2)))
+                        {
+                            SupportPawns += 1;
+                        }
+                        If (Not ((SupportPawns < LeverPawns)))
+                        {
+                            Idx = ((PE.OwnForwardRankNormalized * 2) - 1);
+                            Call TaperedEval.Add((PassedPawnCandidateBonus[Idx] * PE.Factor))((PassedPawnCandidateBonus[(Idx + 1)] * PE.Factor))("Eval.Pawns.PassedPawnCandidate")(PE.OwnForwardIdx)(Side)("");
+                        }
+                    }
                     IsBackward = 0;
                     If ((IsPawnShelter == 0) And (PE.OwnForwardRankNormalized < 6))
                     {
@@ -7563,6 +7608,8 @@ Define InitKingSafety (warp=true)
     Call LoadList("0, 15, 19, 20, 28, 22, 34, 55, 30, 59, 0, 0")("MinorAttackWeight");
     List.DeleteItem(RookAttackWeight, all);
     Call LoadList("0, 11, 18, 34, 16, 32, 0, 17, 25, 19, 0, 0")("RookAttackWeight");
+    List.DeleteItem(PassedPawnCandidateBonus, all);
+    Call LoadList("0, 0, 0, 0, 5, 15, 10, 30, 20, 45, 30, 50, 40, 60, 0, 0")("PassedPawnCandidateBonus");
     List.DeleteAll(KingRings);
     Repeat (640)
     {
@@ -8621,6 +8668,10 @@ Define LoadList(string Data)(string ListName) (warp=true)
             If (ListName == "RookAttackWeight")
             {
                 List.Add(RookAttackWeight, Operator.Round((CurrentValue * 1)));
+            }
+            If (ListName == "PassedPawnCandidateBonus")
+            {
+                List.Add(PassedPawnCandidateBonus, Operator.Round((CurrentValue * 1)));
             }
             CurrentValue = "";
         }
