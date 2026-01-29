@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (26.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (28.01.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -582,7 +582,7 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool Attack
     }
     List.Add(CalcMovesMoveList, CurrentMove);
     Call GetNormalizedMove(CurrentMove);
-    If Operator.Contains(PickedMoves[Depth], NormalzedMoveRes)
+    If Operator.Contains(PickedMoves[Depth], NormalizedMoveRes)
     {
         If ((Depth % 2) == 1)
         {
@@ -961,24 +961,8 @@ Define AddSlidingMoveForAttackTable(string SourceIdx)(string Depth)(bool Sliding
 Define AddSpecialMove(string Move)(string Depth) (warp=true)
 {
     List.Add(CalcMovesMoveList, Move);
-    If (Variable.Length(PickedMoves[Depth]) > 0)
-    {
-        Call GetNormalizedMove(Move);
-        If Operator.Contains(PickedMoves[Depth], NormalzedMoveRes)
-        {
-            If ((Depth % 2) == 1)
-            {
-                List.Add(CalcMovesScoreList, MaxMoveOrderScore);
-            }
-            Else
-            {
-                List.Add(CalcMovesScoreList, (0 - MaxMoveOrderScore));
-            }
-            Stop(this script);
-        }
-    }
     SourcePiece = "";
-    If (Variable.Length(Move) == 6)
+    If (Not ((Move == floor(Move))))
     {
         SourcePiece = GoK_BlackPawn;
     }
@@ -3332,6 +3316,11 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
 {
     Factor = (((Depth % 2) * 2) - 1);
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
+    If ((Not ((Move == ""))) And (Move == HashMove[Depth]))
+    {
+        MoveScoreRes = (9100000 * Factor);
+        Stop(this script);
+    }
     If (CheckedState[Depth] == 1)
     {
         Call //("2: Check evasions");
@@ -3437,11 +3426,11 @@ Define GetNormalizedMove(string Move) (warp=true)
 {
     If (Move == floor(Move))
     {
-        NormalzedMoveRes = MoveToZeroPaddedStr[(Move + 1)];
+        NormalizedMoveRes = MoveToZeroPaddedStr[(Move + 1)];
     }
     Else
     {
-        NormalzedMoveRes = Operator.Join(MoveToZeroPaddedStr[(floor(Move) + 1)], Operator.Join(".", Operator.LetterOf(Move, Variable.Length(Move))));
+        NormalizedMoveRes = Operator.Join(MoveToZeroPaddedStr[(floor(Move) + 1)], Operator.Join(".", Operator.LetterOf(Move, Variable.Length(Move))));
     }
 }
 
@@ -5315,7 +5304,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
-    If (Quiescence[(Depth - 1)] == 0)
+    If ((Quiescence[Depth] == 1) And (Quiescence[(Depth - 1)] == 0))
     {
         IsQuiescentCheckRes = 1;
     }
@@ -6391,7 +6380,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                     List.ReplaceItem(MovesIdx, Depth, 1);
                     Call ApplyMove(Depth);
                     Call GetNormalizedMove(AppliedMove[Depth]);
-                    List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
+                    List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalizedMoveRes, ":")));
                     List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
                     List.ReplaceItem(PickPhase, Depth, 2);
                     List.ReplaceItem(PickMoveRes, Depth, 1);
@@ -6411,135 +6400,37 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         Else
         {
-            List.ReplaceItem(EnPassantTarget, (Depth + 2), EnPassantTarget[Depth]);
-            List.ReplaceItem(CastlingState, (Depth + 2), CastlingState[Depth]);
-            Call GenerateMovesImplWrapper((Depth + 2))((1 == 0))((1 == 1));
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 1));
             If (GenerateMovesRequiresAttackRecalc == 1)
             {
-                Call CalcBoardAttackedByMove((Depth + 3));
-                Call StoreAttackInfo((Depth + 2));
-                List.ReplaceItem(BoardAttackedCalculated, (Depth + 2), 1);
+                Call CalcBoardAttackedByMove((Depth + 1));
                 Call StoreAttackInfo(Depth);
                 List.ReplaceItem(BoardAttackedCalculated, Depth, 1);
-                Call GenerateMovesImplWrapper((Depth + 2))((1 == 0))((1 == 1));
+                Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 1));
             }
-            Idx = 1;
-            Repeat (List.Length(CalcMovesScoreList))
+            If (Not ((HashMove[Depth] == "")))
             {
-                If (Not ((abs(CalcMovesScoreList[Idx]) < 7000000)))
+                If (Not (List.ContainsItem(CalcMovesMoveList, HashMove[Depth])))
                 {
-                    Call GetNormalizedMove(CalcMovesMoveList[Idx]);
-                    If (Not (Operator.Contains(PickedMoves[Depth], NormalzedMoveRes)))
-                    {
-                        Call AddMoveToList(CalcMovesMoveList[Idx])(Depth);
-                    }
+                    List.Add(CalcMovesMoveList, HashMove[Depth]);
+                    Call GetMoveScore("")("")("")("")(HashMove[Depth])(Depth);
+                    List.Add(CalcMovesScoreList, MoveScoreRes);
+                    Call SortMoveList(Depth);
                 }
-                Idx += 1;
             }
             List.ReplaceItem(PickPhase, Depth, 3);
         }
     }
     If (PickPhase[Depth] == 3)
     {
-        Call //("Phase 3: Return moves found in phase 2 on subsequent PickMove() invocations");
-        If (MovesIdx[Depth] < MovesCount[Depth])
-        {
-            List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call ApplyMove(Depth);
-            Call GetNormalizedMove(AppliedMove[Depth]);
-            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
-            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-            List.ReplaceItem(PickMoveRes, Depth, 1);
-            Stop(this script);
-        }
-        List.ReplaceItem(PickPhase, Depth, 4);
+        Call PickMove.Iterate(Depth)(4);
     }
     If (PickPhase[Depth] == 4)
     {
-        Call //("Phase 4: Search for killer moves applicable on current board");
-        If ((Quiescence Or (CheckedState[Depth] == 1)) Or (Depth == 1))
-        {
-            Call //("During quiescence search or when in check, quiet killer moves are of no interest => skip");
-            List.ReplaceItem(PickPhase, Depth, 6);
-        }
-        Else
-        {
-            Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
-            List.DeleteAll(TmpList1);
-            List.DeleteAll(TmpList2);
-            Call PrepareCurrentKillerMoves(Depth);
-            If (Depth > 1)
-            {
-                CurrentValue = HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((AppliedMove[(Depth - 1)] % 100))])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))];
-                If (Not ((CurrentValue == "")))
-                {
-                    List.InsertItem(CurrentKillerMoves, 1, CurrentValue);
-                }
-            }
-            MoveGen.Idx = List.Length(CurrentKillerMoves);
-            Repeat Until (MoveGen.Idx == 0)
-            {
-                Caller.CurrentMove = CurrentKillerMoves[MoveGen.Idx];
-                MoveGen.SourceIdx = floor((Caller.CurrentMove / 100));
-                MoveGen.TargetIdx = floor((Caller.CurrentMove % 100));
-                MoveGen.SourcePiece = Board[MoveGen.SourceIdx];
-                If ((MoveGen.SourceIdx > 0) And (Board[MoveGen.TargetIdx] == 0))
-                {
-                    If ((MoveGen.SourcePiece * DepthEvalFactor[Depth]) > 0)
-                    {
-                        If (Not ((MoveToHash[((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(MoveGen.SourcePiece)] * 10000)) + ((MoveGen.SourceIdx * 100) + MoveGen.TargetIdx))] == 0)))
-                        {
-                            Call //("When killer move is applicable, add to temp list");
-                            Call StagedMoveGenKillerMoves(Depth)(Caller.CurrentMove)(MoveGen.SourceIdx)(MoveGen.TargetIdx)(abs(MoveGen.SourcePiece));
-                        }
-                    }
-                }
-                MoveGen.Idx += -1;
-            }
-            If (List.Length(TmpList1) > 0)
-            {
-                Call //("Convert temp list to move list and sort moves");
-                If (List.Length(TmpList1) == 1)
-                {
-                    Call AddMoveToList(TmpList1[1])(Depth);
-                }
-                Else
-                {
-                    List.DeleteAll(CalcMovesMoveList);
-                    List.DeleteAll(CalcMovesScoreList);
-                    Idx = 1;
-                    Repeat (List.Length(TmpList1))
-                    {
-                        List.Add(CalcMovesMoveList, TmpList1[Idx]);
-                        List.Add(CalcMovesScoreList, TmpList2[Idx]);
-                        Idx += 1;
-                    }
-                    Call SortMoveList((Depth + 2));
-                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                    Repeat (MovesCount[(Depth + 2)])
-                    {
-                        Call GetCurrentMove((Depth + 2));
-                        Call AddMoveToList(CurrentMove)(Depth);
-                        List.ReplaceItem(MovesIdx, (Depth + 2), (MovesIdx[(Depth + 2)] + 1));
-                    }
-                }
-            }
-            List.ReplaceItem(PickPhase, Depth, 5);
-        }
+        List.ReplaceItem(PickPhase, Depth, 5);
     }
     If (PickPhase[Depth] == 5)
     {
-        Call //("Phase 5: Return moves found in phase 4 on subsequent PickMove() invocations");
-        If (MovesIdx[Depth] < MovesCount[Depth])
-        {
-            List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            Call ApplyMove(Depth);
-            Call GetNormalizedMove(AppliedMove[Depth]);
-            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
-            List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-            List.ReplaceItem(PickMoveRes, Depth, 1);
-            Stop(this script);
-        }
         List.ReplaceItem(PickPhase, Depth, 6);
     }
     If (PickPhase[Depth] == 6)
@@ -6562,39 +6453,41 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     }
     If (PickPhase[Depth] == 7)
     {
-        Call //("Phase 7: Return moves detected in phase 6 on each invocation, skip those applied in earlier stages");
-        If (MovesIdx[Depth] < MovesCount[Depth])
+        Call PickMove.Iterate(Depth)("*");
+    }
+    If (PickPhase[Depth] == "*")
+    {
+        List.ReplaceItem(PickMoveRes, Depth, 0);
+    }
+}
+
+Define PickMove.Iterate(string Depth)(string NextPhase) (warp=true)
+{
+    If (MovesIdx[Depth] < MovesCount[Depth])
+    {
+        List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
+        If (Variable.Length(PickedMoves[Depth]) > 0)
         {
-            List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-            If (Variable.Length(PickedMoves[Depth]) > 0)
+            Call GetCurrentMove(Depth);
+            Call GetNormalizedMove(CurrentMove);
+            Repeat Until ((Not (Operator.Contains(PickedMoves[Depth], NormalizedMoveRes))) Or (MovesIdx[Depth] > MovesCount[Depth]))
             {
+                List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
                 Call GetCurrentMove(Depth);
                 Call GetNormalizedMove(CurrentMove);
-                Repeat Until (Not (Operator.Contains(PickedMoves[Depth], NormalzedMoveRes)))
-                {
-                    List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-                    If (MovesIdx[Depth] > MovesCount[Depth])
-                    {
-                        List.ReplaceItem(PickPhase, Depth, "*");
-                        List.ReplaceItem(PickMoveRes, Depth, 0);
-                        Stop(this script);
-                    }
-                    Call GetCurrentMove(Depth);
-                    Call GetNormalizedMove(CurrentMove);
-                }
             }
+        }
+        If (Not ((MovesIdx[Depth] > MovesCount[Depth])))
+        {
             Call ApplyMove(Depth);
             Call GetNormalizedMove(AppliedMove[Depth]);
-            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalzedMoveRes, ":")));
+            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalizedMoveRes, ":")));
             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
             List.ReplaceItem(PickMoveRes, Depth, 1);
             Stop(this script);
         }
-        Call //("* as PickPhase indicates we are done");
-        List.ReplaceItem(PickPhase, Depth, "*");
-        List.ReplaceItem(PickMoveRes, Depth, 0);
     }
-    List.ReplaceItem(PickMoveRes, Depth, 0);
+    List.ReplaceItem(PickPhase, Depth, NextPhase);
 }
 
 Define PrepareCurrentKillerMoves(string Depth) (warp=true)
@@ -8025,9 +7918,9 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
         {
             Call //("LMR search");
             Reduction = 0;
-            If (PickedMoveCount[Depth] > (1 + (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
+            If (PickedMoveCount[Depth] > 1)
             {
-                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 1.75)));
+                Reduction = floor((1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2)));
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
@@ -8035,7 +7928,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         Reduction += -1;
                     }
                 }
-                If (1 == 0)
+                If (1 == 1)
                 {
                     If (PutsInCheck[Depth] == 1)
                     {
@@ -8635,7 +8528,7 @@ Define StagedMoveGenKillerMoves(string Depth)(string Move)(string SourceIdx)(str
         }
     }
     Call GetNormalizedMove(Move);
-    If Operator.Contains(PickedMoves[Depth], NormalzedMoveRes)
+    If Operator.Contains(PickedMoves[Depth], NormalizedMoveRes)
     {
         Stop(this script);
     }
@@ -8791,6 +8684,7 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
     TTProbeBoard.Eval1Res = "";
     TTProbeBoard.Eval2Res = "";
     TTProbeBoard.Eval3Res = "";
+    List.ReplaceItem(TTBoardAge, (HashBucket + 0), TT.CurrentAge);
 }
 
 Define TTProbeNode(string BoardHash)(string Depth) (warp=true)
