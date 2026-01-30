@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (28.01.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (31.01.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -2980,7 +2980,7 @@ Define GetBestMoveEasy (warp=false)
 
 Define GetBestMoveMedDiff (warp=false)
 {
-    MaxSearchDepth = (MaxSearchDepthStackFrames - 15);
+    MaxSearchDepth = (MaxSearchDepthStackFrames - 30);
     IsEvalStable = 1;
     If (Level == 5)
     {
@@ -3029,11 +3029,11 @@ Define GetBestMoveMedDiff (warp=false)
     {
         If (IsScratch3 == 1)
         {
-            QuiescenceDepth = 8;
+            QuiescenceDepth = 10;
         }
         Else
         {
-            QuiescenceDepth = 10;
+            QuiescenceDepth = ((MaxSearchDepthStackFrames - MaxSearchDepth) - 10);
         }
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
@@ -3353,29 +3353,21 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If (Not ((TargetPieceParam == 0)))
     {
         MvvLvaScore = ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]));
-        If (Quiescence[Depth] == 1)
+        Call ClearMoveList((Depth + 2));
+        Call AddMoveToList(Move)((Depth + 2));
+        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+        Call ApplyMoveLight((Depth + 2));
+        Call SEE((Depth + 2));
+        Call RevertMoveLight((Depth + 2));
+        If (((SourcePieceParam > 0) And (Not ((SEE.Result < 0)))) Or ((SourcePieceParam < 0) And (Not ((SEE.Result > 0)))))
         {
             MoveScoreRes = ((7000000 + MvvLvaScore) * Factor);
             Stop(this script);
         }
         Else
         {
-            Call ClearMoveList((Depth + 2));
-            Call AddMoveToList(Move)((Depth + 2));
-            List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-            Call ApplyMoveLight((Depth + 2));
-            Call SEE((Depth + 2));
-            Call RevertMoveLight((Depth + 2));
-            If (((SourcePieceParam > 0) And (Not ((SEE.Result < 0)))) Or ((SourcePieceParam < 0) And (Not ((SEE.Result > 0)))))
-            {
-                MoveScoreRes = ((7000000 + MvvLvaScore) * Factor);
-                Stop(this script);
-            }
-            Else
-            {
-                MoveScoreRes = (MvvLvaScore * Factor);
-                Stop(this script);
-            }
+            MoveScoreRes = (MvvLvaScore * Factor);
+            Stop(this script);
         }
     }
     Call //("4: Killer moves");
@@ -3403,7 +3395,19 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
     }
     MoveScoreRes = (1000000 * Factor);
-    MoveScoreRes += (HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))] * Factor);
+    MoveScoreRes += ((2 * HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))]) * Factor);
+    If (Depth > 1)
+    {
+        Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(SourcePieceParam)] * 64) + ToIdx));
+        If ((Depth % 2) == 1)
+        {
+            MoveScoreRes += ((HistoryContinuationOwn[(Idx + 0)] * 2) * Factor);
+        }
+        Else
+        {
+            MoveScoreRes += ((HistoryContinuationOpp[(Idx + 0)] * 2) * Factor);
+        }
+    }
     If (BoardAttackedCalculated[Depth] == 1)
     {
         CurrentPieceAbs = abs(SourcePieceParam);
@@ -4069,7 +4073,7 @@ Define InitBoard (warp=true)
     DrawByRepetitionEval = -19.9;
     MaxPly1DeepeningMoveOrderScore = 9999999;
     MaxMoveOrderScore = 9999999;
-    MaxSearchDepthStackFrames = 50;
+    MaxSearchDepthStackFrames = 60;
     MaxMovesPerGeneration = 300;
     Call InitCoordLookup;
     Call FillBoard;
@@ -4113,6 +4117,13 @@ Define InitBoard (warp=true)
     Repeat (10000)
     {
         List.Add(HistoryCounterMoves, "");
+    }
+    List.DeleteItem(HistoryContinuationOpp, all);
+    List.DeleteItem(HistoryContinuationOwn, all);
+    Repeat (200000)
+    {
+        List.Add(HistoryContinuationOpp, "");
+        List.Add(HistoryContinuationOwn, "");
     }
     List.DeleteItem(BoardHistory, all);
     List.DeleteItem(BoardHistoryHash, all);
@@ -5025,7 +5036,7 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
         TT.CurrentAge = ((floor((TT.CurrentAge / 100)) + 1) * 100);
         If ((IsScratch3 == 0) And (Level > 3))
         {
-            If (1 == 1)
+            If (1 == 0)
             {
                 Idx = 1;
                 Repeat (List.Length(TTNodeEval))
@@ -8630,16 +8641,24 @@ Define StoreKillerMove(string Depth)(string Move)(string Horizon) (warp=true)
         List.ReplaceItem(KillerMoves, Idx2, KillerMoves[(Idx2 + 1)]);
         List.ReplaceItem(KillerMoves, (Idx2 + 1), Move);
     }
-    Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 100) + floor((Move % 100))));
-    CurrentValue = (HistoryMoveScores[Idx] + (Horizon * Horizon));
-    List.ReplaceItem(HistoryMoveScores, Idx, CurrentValue);
-    If (CurrentValue > MaxHistoryMoveScore[((Depth % 2) + 1)])
+    If (Not ((floor((Move / 100)) == 0)))
     {
-        List.ReplaceItem(MaxHistoryMoveScore, ((Depth % 2) + 1), CurrentValue);
-    }
-    If (Depth > 1)
-    {
-        List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
+        Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 100) + floor((Move % 100))));
+        HistoryBonus = (Horizon * Horizon);
+        List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + HistoryBonus));
+        If (Depth > 1)
+        {
+            List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
+            Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(HistoryContinuationOwn, (Idx + 0), (HistoryContinuationOwn[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuationOwn[(Idx + 0)] * (HistoryBonus / 10000))))));
+            }
+            Else
+            {
+                List.ReplaceItem(HistoryContinuationOpp, (Idx + 0), (HistoryContinuationOpp[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuationOpp[(Idx + 0)] * (HistoryBonus / 10000))))));
+            }
+        }
     }
 }
 
