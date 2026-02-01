@@ -3018,7 +3018,6 @@ Define GetBestMoveMedDiff (warp=false)
     List.DeleteAll(AWSize);
     List.Add(AWSize, 35);
     List.Add(AWSize, 55);
-    List.Add(AWSize, 85);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeIteration = 0;
     IsSearchTimeout = 0;
@@ -3354,6 +3353,11 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If (Not ((TargetPieceParam == 0)))
     {
         MvvLvaScore = ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]));
+        If (Quiescence[Depth] == 1)
+        {
+            MoveScoreRes = ((0 + MvvLvaScore) * Factor);
+            Stop(this script);
+        }
         Call ClearMoveList((Depth + 2));
         Call AddMoveToList(Move)((Depth + 2));
         List.ReplaceItem(MovesIdx, (Depth + 2), 1);
@@ -3367,7 +3371,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
         Else
         {
-            MoveScoreRes = (MvvLvaScore * Factor);
+            MoveScoreRes = ((0 + MvvLvaScore) * Factor);
             Stop(this script);
         }
     }
@@ -3428,7 +3432,19 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
                     }
                     If ((ThreatenedByPieceAbs == 0) Or (Not ((((CurrentPieceAbs == GoK_BlackQueen) And (ThreatenedByPieceAbs < GoK_BlackQueen)) Or (((CurrentPieceAbs == GoK_BlackRook) And (ThreatenedByPieceAbs < GoK_BlackRook)) Or (ThreatenedByPieceAbs == GoK_BlackPawn))))))
                     {
-                        MoveScoreRes += ((100000 * PieceIdxLookup[CurrentPieceAbs]) * Factor);
+                        MoveScoreRes += ((2000 * PieceIdxLookup[CurrentPieceAbs]) * Factor);
+                    }
+                }
+            }
+            Else
+            {
+                Idx = (((Depth - 1) * 100) + ToIdx);
+                If (BoardAttackedByOpponentSnapshot[Idx] > 0)
+                {
+                    ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[Idx]]);
+                    If (((CurrentPieceAbs == GoK_BlackQueen) And (ThreatenedByPieceAbs < GoK_BlackQueen)) Or (((CurrentPieceAbs == GoK_BlackRook) And (ThreatenedByPieceAbs < GoK_BlackRook)) Or (ThreatenedByPieceAbs == GoK_BlackPawn)))
+                    {
+                        MoveScoreRes += ((-1500 * PieceIdxLookup[CurrentPieceAbs]) * Factor);
                     }
                 }
             }
@@ -3859,7 +3875,6 @@ Define ImportBoard(string ImpBoard) (warp=false)
         {
             HasWhiteRookKSMoved = 1;
         }
-        Call InitHIstoryScores;
         Call AddBoardToHistory("");
         Call DrawBoardAndWait;
         GoK_IsGameSuspended = 0;
@@ -4123,8 +4138,8 @@ Define InitBoard (warp=true)
     List.DeleteItem(HistoryContinuationOwn, all);
     Repeat (200000)
     {
-        List.Add(HistoryContinuationOpp, "");
-        List.Add(HistoryContinuationOwn, "");
+        List.Add(HistoryContinuationOpp, 0);
+        List.Add(HistoryContinuationOwn, 0);
     }
     List.DeleteItem(BoardHistory, all);
     List.DeleteItem(BoardHistoryHash, all);
@@ -4138,8 +4153,6 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardAttackedByBlackPiece, all);
     List.DeleteItem(BoardAttackedByOpponentSnapshot, all);
     List.DeleteItem(BoardAttackedByOpponentPieceSnapshot, all);
-    List.DeleteItem(BoardAttackedByOwnSnapshot, all);
-    List.DeleteItem(BoardAttackedByOwnPieceSnapshot, all);
     Repeat (64)
     {
         List.Add(BoardAttackedByWhite, 0);
@@ -4152,8 +4165,6 @@ Define InitBoard (warp=true)
     {
         List.Add(BoardAttackedByOpponentSnapshot, 0);
         List.Add(BoardAttackedByOpponentPieceSnapshot, 0);
-        List.Add(BoardAttackedByOwnSnapshot, 0);
-        List.Add(BoardAttackedByOwnPieceSnapshot, 0);
     }
     Call //("Due to the lack of local variables in Scratch, we emulate a method stack for recursive Minimax using lists");
     List.DeleteItem(Alphas, all);
@@ -4304,7 +4315,6 @@ Define InitBoardPhase2 (warp=true)
     Call InitOpeningBook;
     Call InitChebyshev;
     Call NNUE_Init;
-    Call InitHIstoryScores;
     Call AddBoardToHistory("");
 }
 
@@ -4359,22 +4369,6 @@ Define InitHashLookup (warp=true)
         List.Add(PosPieceHashLookup, Operator.Random(1 , ((65536 * 65536) * (16384 * 1))));
     }
     Call ClearTT;
-}
-
-Define InitHIstoryScores (warp=true)
-{
-    Idx = 1;
-    Repeat (List.Length(HistoryMoveScores))
-    {
-        List.ReplaceItem(HistoryMoveScores, Idx, 0);
-        Idx += 1;
-    }
-    Idx = 1;
-    Repeat (List.Length(MaxHistoryMoveScore))
-    {
-        List.ReplaceItem(MaxHistoryMoveScore, Idx, 0);
-        Idx += 1;
-    }
 }
 
 Define InitKingSafety (warp=true)
@@ -5051,29 +5045,6 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
         Repeat (10000)
         {
             List.Add(HistoryCounterMoves, "");
-        }
-    }
-    If (1 == 1)
-    {
-        If InitialDeepening
-        {
-            Factor = 0;
-        }
-        Else
-        {
-            Factor = 1;
-        }
-        Idx = 1;
-        Repeat (List.Length(HistoryMoveScores))
-        {
-            List.ReplaceItem(HistoryMoveScores, Idx, Operator.Round((HistoryMoveScores[Idx] * Factor)));
-            Idx += 1;
-        }
-        Idx = 1;
-        Repeat (List.Length(MaxHistoryMoveScore))
-        {
-            List.ReplaceItem(MaxHistoryMoveScore, Idx, Operator.Round((MaxHistoryMoveScore[Idx] * Factor)));
-            Idx += 1;
         }
     }
     Call SetInitialEnPassantTarget(1);
@@ -7609,7 +7580,7 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
 
 Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
 {
-    If (1 == 0)
+    If (IsScratch3 == 0)
     {
         If (Not (Quiescence))
         {
@@ -7629,10 +7600,13 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
             }
             If ((Depth > 1) And (CheckedState[Depth] == 1))
             {
-                If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                List.ReplaceItem(SearchExtension, Depth, 1);
+                If (1 == 0)
                 {
-                    List.ReplaceItem(SearchExtension, Depth, 1);
                     Call SEE(Depth);
+                    If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+                    {
+                    }
                 }
             }
             If (SearchExtension[Depth] == 0)
@@ -7765,7 +7739,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
         {
             If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackRookCountLocal) > 0)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteRookCountLocal) > 0))))
             {
-                FutilityMargin = 450;
+                FutilityMargin = 400;
             }
         }
         Else
@@ -7777,7 +7751,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                     Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
                     If (((Not ((SourcePieces[Depth] == GoK_BlackPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_WhitePawn))) Or (Rank > 3)))
                     {
-                        FutilityMargin = (Horizon * 150);
+                        FutilityMargin = (Horizon * 125);
                     }
                 }
             }
@@ -8652,7 +8626,7 @@ Define StoreKillerMove(string Depth)(string Move)(string Horizon) (warp=true)
     {
         Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 100) + floor((Move % 100))));
         HistoryBonus = (Horizon * Horizon);
-        List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + HistoryBonus));
+        List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + (HistoryBonus - floor((HistoryMoveScores[(Idx + 0)] * (HistoryBonus / 10000))))));
         If (Depth > 1)
         {
             List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
