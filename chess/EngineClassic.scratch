@@ -1047,7 +1047,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             Call TTProbeNode(CurrentBoardHash)(Depth);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And ((IsScratch3 == 1) Or ((Not ((TTProbeNodeQSMetaRes == ""))) And (Not ((TTProbeNodeQSMetaRes > Quiescence[(Depth - 1)])))))))
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < (Horizon + (1 - (floor((TTProbeNodeAgeRes / 100)) == floor((TTCurrentAge / 100))))))))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And ((IsScratch3 == 1) Or ((Not ((TTProbeNodeQSMetaRes == ""))) And (Not ((TTProbeNodeQSMetaRes > Quiescence[(Depth - 1)])))))))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                     {
@@ -1779,10 +1779,6 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
                     }
                 }
                 Reduction = floor((Reduction / 128));
-                If (Reduction > (Horizon - 2))
-                {
-                    Reduction = (Horizon - 2);
-                }
                 If (Reduction < 0)
                 {
                     Reduction = 0;
@@ -6681,35 +6677,49 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
     }
     Call //("6: Quiets with high history score");
-    If ((Not ((SourcePieceParam == 0))) And (Not ((SourcePieceParam == ""))))
+    MoveScoreRes = (1000000 * GMS.Factor);
+    If ((SourcePieceParam == 0) Or (SourcePieceParam == ""))
     {
-        MoveScoreRes = (1000000 * GMS.Factor);
+        MoveScoreRes += ((2 * HistoryMoveScores[(((Depth % 2) * 1000) + ToIdx)]) * GMS.Factor);
+        IdxSub = ToIdx;
+    }
+    Else
+    {
         MoveScoreRes += ((2 * HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))]) * GMS.Factor);
         IdxSub = ((PieceIdxLookup[abs(SourcePieceParam)] * 64) + ToIdx);
-        Idx = -1;
-        If (Depth > 1)
+    }
+    Idx = -1;
+    If (Depth > 1)
+    {
+        If (Not ((floor((AppliedMove[(Depth - 1)] / 100)) == 0)))
         {
             Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + IdxSub);
         }
-        Else
+    }
+    Else
+    {
+        If (Not ((PrevPly1Move == "")))
         {
-            If (Not ((PrevPly1Move == "")))
+            If (Not ((floor((PrevPly1Move / 100)) == 0)))
             {
                 Idx = ((((PieceIdxLookup[abs(Board[floor((PrevPly1Move % 100))])] * 64) + floor((PrevPly1Move % 100))) * 384) + IdxSub);
             }
         }
-        If (Not ((Idx == -1)))
+    }
+    If (Not ((Idx == -1)))
+    {
+        If ((Depth % 2) == 1)
         {
-            If ((Depth % 2) == 1)
-            {
-                MoveScoreRes += ((HistoryContinuationOwn[(Idx + 0)] * 2) * GMS.Factor);
-            }
-            Else
-            {
-                MoveScoreRes += ((HistoryContinuationOpp[(Idx + 0)] * 2) * GMS.Factor);
-            }
+            MoveScoreRes += ((HistoryContinuationOwn[(Idx + 0)] * 2) * GMS.Factor);
         }
-        If (Depth > 2)
+        Else
+        {
+            MoveScoreRes += ((HistoryContinuationOpp[(Idx + 0)] * 2) * GMS.Factor);
+        }
+    }
+    If (Depth > 2)
+    {
+        If ((Not ((floor((AppliedMove[(Depth - 2)] / 100)) == 0))) And ((Not ((Move == ""))) And (Not ((floor((Move / 100)) == 0)))))
         {
             Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 64) + floor((AppliedMove[(Depth - 2)] % 100))) * 384) + ((PieceIdxLookup[abs(SourcePieceParam)] * 64) + ToIdx));
             If ((Depth % 2) == 1)
@@ -6721,29 +6731,29 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
                 MoveScoreRes += ((HistoryContinuation2Opp[(Idx + 0)] * 1) * GMS.Factor);
             }
         }
-        If (1 == 1)
+    }
+    If (1 == 1)
+    {
+        If (BoardAttackedCalculated[(Depth + 0)] == 1)
         {
-            If (BoardAttackedCalculated[(Depth + 0)] == 1)
+            CurrentPieceAbs = abs(SourcePieceParam);
+            If ((CurrentPieceAbs > GoK_OwnPawn) And (CurrentPieceAbs < GoK_OwnKing))
             {
-                CurrentPieceAbs = abs(SourcePieceParam);
-                If ((CurrentPieceAbs > GoK_OwnPawn) And (CurrentPieceAbs < GoK_OwnKing))
+                IdxSub = (((Depth - 1) * 100) + FromIdx);
+                If (PersistedBoardAttackedSnapshot[(IdxSub + 0)] > 0)
                 {
-                    IdxSub = (((Depth - 1) * 100) + FromIdx);
-                    If (PersistedBoardAttackedSnapshot[(IdxSub + 0)] > 0)
+                    ThreatenedByPieceAbs = abs(Board[PersistedBoardAttackerSnapshot[(IdxSub + 0)]]);
+                    If (((CurrentPieceAbs == GoK_OwnQueen) And (ThreatenedByPieceAbs < GoK_OwnQueen)) Or (((CurrentPieceAbs == GoK_OwnRook) And (ThreatenedByPieceAbs < GoK_OwnRook)) Or (ThreatenedByPieceAbs == GoK_OwnPawn)))
                     {
-                        ThreatenedByPieceAbs = abs(Board[PersistedBoardAttackerSnapshot[(IdxSub + 0)]]);
-                        If (((CurrentPieceAbs == GoK_OwnQueen) And (ThreatenedByPieceAbs < GoK_OwnQueen)) Or (((CurrentPieceAbs == GoK_OwnRook) And (ThreatenedByPieceAbs < GoK_OwnRook)) Or (ThreatenedByPieceAbs == GoK_OwnPawn)))
+                        ThreatenedByPieceAbs = 0;
+                        IdxSub = (((Depth - 1) * 100) + ToIdx);
+                        If (PersistedBoardAttackedSnapshot[(IdxSub + 0)] > 0)
                         {
-                            ThreatenedByPieceAbs = 0;
-                            IdxSub = (((Depth - 1) * 100) + ToIdx);
-                            If (PersistedBoardAttackedSnapshot[(IdxSub + 0)] > 0)
-                            {
-                                ThreatenedByPieceAbs = abs(Board[PersistedBoardAttackerSnapshot[(IdxSub + 0)]]);
-                            }
-                            If ((ThreatenedByPieceAbs == 0) Or (Not ((((CurrentPieceAbs == GoK_OwnQueen) And (ThreatenedByPieceAbs < GoK_OwnQueen)) Or (((CurrentPieceAbs == GoK_OwnRook) And (ThreatenedByPieceAbs < GoK_OwnRook)) Or (ThreatenedByPieceAbs == GoK_OwnPawn))))))
-                            {
-                                MoveScoreRes += ((100000 * PieceIdxLookup[(CurrentPieceAbs + 0)]) * GMS.Factor);
-                            }
+                            ThreatenedByPieceAbs = abs(Board[PersistedBoardAttackerSnapshot[(IdxSub + 0)]]);
+                        }
+                        If ((ThreatenedByPieceAbs == 0) Or (Not ((((CurrentPieceAbs == GoK_OwnQueen) And (ThreatenedByPieceAbs < GoK_OwnQueen)) Or (((CurrentPieceAbs == GoK_OwnRook) And (ThreatenedByPieceAbs < GoK_OwnRook)) Or (ThreatenedByPieceAbs == GoK_OwnPawn))))))
+                        {
+                            MoveScoreRes += ((100000 * PieceIdxLookup[(CurrentPieceAbs + 0)]) * GMS.Factor);
                         }
                     }
                 }
@@ -10151,38 +10161,51 @@ Define StoreKillerMove(string Depth)(string Horizon)(string Move) (warp=true)
         List.ReplaceItem(KillerMoves, IdxSub, KillerMoves[(IdxSub + 1)]);
         List.ReplaceItem(KillerMoves, (IdxSub + 1), Move);
     }
-    If (Not ((floor((Move / 100)) == 0)))
+    If (floor((Move / 100)) == 0)
+    {
+        Idx = (((Depth % 2) * 1000) + ((GoK_OwnKing * 100) + floor((Move % 100))));
+    }
+    Else
     {
         Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 100) + floor((Move % 100))));
-        HistoryBonus = (Horizon * Horizon);
-        List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + (HistoryBonus - floor((HistoryMoveScores[Idx] * (HistoryBonus / 10000))))));
+    }
+    HistoryBonus = (Horizon * Horizon);
+    List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + (HistoryBonus - floor((HistoryMoveScores[Idx] * (HistoryBonus / 10000))))));
+    If (Depth > 1)
+    {
+        List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
+        Idx = -1;
         If (Depth > 1)
         {
-            List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
-            Idx = -1;
-            If (Depth > 1)
+            If (Not ((floor((AppliedMove[(Depth - 1)] / 100)) == 0)))
             {
                 Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
             }
-            Else
+        }
+        Else
+        {
+            If (Not ((PrevPly1Move == "")))
             {
-                If (Not ((PrevPly1Move == "")))
+                If (Not ((floor((PrevPly1Move / 100)) == 0)))
                 {
                     Idx = ((((PieceIdxLookup[abs(Board[floor((PrevPly1Move % 100))])] * 64) + floor((PrevPly1Move % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
                 }
             }
-            If (Not ((Idx == -1)))
+        }
+        If (Not ((Idx == -1)))
+        {
+            If ((Depth % 2) == 1)
             {
-                If ((Depth % 2) == 1)
-                {
-                    List.ReplaceItem(HistoryContinuationOwn, Idx, (HistoryContinuationOwn[Idx] + (HistoryBonus - floor((HistoryContinuationOwn[Idx] * (HistoryBonus / 10000))))));
-                }
-                Else
-                {
-                    List.ReplaceItem(HistoryContinuationOpp, Idx, (HistoryContinuationOpp[Idx] + (HistoryBonus - floor((HistoryContinuationOpp[Idx] * (HistoryBonus / 10000))))));
-                }
+                List.ReplaceItem(HistoryContinuationOwn, Idx, (HistoryContinuationOwn[Idx] + (HistoryBonus - floor((HistoryContinuationOwn[Idx] * (HistoryBonus / 10000))))));
             }
-            If (Depth > 2)
+            Else
+            {
+                List.ReplaceItem(HistoryContinuationOpp, Idx, (HistoryContinuationOpp[Idx] + (HistoryBonus - floor((HistoryContinuationOpp[Idx] * (HistoryBonus / 10000))))));
+            }
+        }
+        If (Depth > 2)
+        {
+            If ((Not ((floor((AppliedMove[(Depth - 2)] / 100)) == 0))) And (Not ((floor((Move / 100)) == 0))))
             {
                 Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 64) + floor((AppliedMove[(Depth - 2)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
                 If ((Depth % 2) == 1)
