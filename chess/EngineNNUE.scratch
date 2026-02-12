@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (11.02.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338a (12.02.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1587,16 +1587,11 @@ Define CalcBoardStats (warp=true)
         Idx += 1;
     }
     IsClassicEndgameEval = 0;
-    If (IsScratch3 == 1)
+    If ((BlackPawnCount + WhitePawnCount) == 0)
     {
-        If (((BlackQueenCount + BlackMinorCount) == 0) Or ((WhiteQueenCount + WhiteMinorCount) == 0))
-        {
-            IsClassicEndgameEval = 1;
-        }
-    }
-    Else
-    {
-        If (((((BlackQueenCount + BlackMinorCount) + BlackPawnCount) == 0) And ((WhiteQueenCount == 0) And (WhiteMinorCount < 3))) Or ((((WhiteQueenCount + WhiteMinorCount) + WhitePawnCount) == 0) And ((BlackQueenCount == 0) And (BlackMinorCount < 3))))
+        CurrentValue = (BlackQueenCount + BlackMinorCount);
+        CurrentValue2 = (WhiteQueenCount + WhiteMinorCount);
+        If (((CurrentValue == 0) And (CurrentValue2 > 0)) Or ((CurrentValue2 == 0) And (CurrentValue > 0)))
         {
             IsClassicEndgameEval = 1;
         }
@@ -1836,13 +1831,6 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
             If ((TTProbeRes == 1) And (Not ((TTProbeBoard.EvalSumRes == ""))))
             {
                 EvaluationRes = TTProbeBoard.EvalSumRes;
-                If (IsClassicEndgameEval == 1)
-                {
-                    If (Not ((PromotionPieces[1] == 0)))
-                    {
-                        EvaluationRes += 75;
-                    }
-                }
                 If (IsBlockProfilerEnabled == 1)
                 {
                     Call ProfilerMethodExit(Depth);
@@ -1853,38 +1841,64 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         If (IsClassicEndgameEval == 0)
         {
             Call NNUE_Public_Evaluate((Depth + 1));
-            Call EvaluatePostProcess(Depth);
             EvaluationRes = Operator.Round(NNUE_EvalRes);
-            Call TTStoreBoard(CurrentBoardHash)(Depth)(EvaluationRes);
         }
         Else
         {
             EvaluationRes = (EvalBase + (PosEvalDeltaSum[Depth] - CapturesDeltaSum[Depth]));
-            If (((BlackQueenCountLocal + BlackMinorCountLocal) == 0) Or ((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0))
+            If ((((BlackQueenCountLocal + BlackMinorCountLocal) == 0) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)) Or (((WhiteQueenCountLocal + WhiteMinorCountLocal) == 0) And ((BlackQueenCountLocal + BlackMinorCountLocal) > 0)))
             {
-                Side = 0;
+                PE.Side = 0;
                 If ((BlackQueenCountLocal + BlackMinorCountLocal) > 0)
                 {
-                    Side = 1;
+                    PE.Side = 1;
                 }
                 Else
                 {
                     If ((WhiteQueenCountLocal + WhiteMinorCountLocal) > 0)
                     {
-                        Side = 2;
+                        PE.Side = 2;
                     }
                 }
-                If (Not ((Side == 0)))
+                If (Not ((PE.Side == 0)))
                 {
                     CurrentValue = ChebyshevDistance[((WhiteKingIdx * 100) + BlackKingIdx)];
-                    If (Side == 1)
+                    If (PE.Side == 1)
                     {
-                        EvaluationRes += (-20 * CurrentValue);
+                        If (WhitePawnCountLocal == 0)
+                        {
+                            EvaluationRes += (-20 * CurrentValue);
+                        }
                     }
                     Else
                     {
-                        EvaluationRes += (20 * CurrentValue);
+                        If (BlackPawnCountLocal == 0)
+                        {
+                            EvaluationRes += (20 * CurrentValue);
+                        }
                     }
+                }
+            }
+            If (((BlackQueenCountLocal + BlackMinorCountLocal) < 3) And ((WhiteQueenCountLocal + WhiteMinorCountLocal) < 3))
+            {
+                PE.Side = 0;
+                If (((BlackQueenCountLocal * 2) + BlackMinorCountLocal) > ((WhiteQueenCountLocal * 2) + WhiteMinorCountLocal))
+                {
+                    PE.Side = 1;
+                }
+                Else
+                {
+                    If (((WhiteQueenCountLocal * 2) + WhiteMinorCountLocal) > ((BlackQueenCountLocal * 2) + BlackMinorCountLocal))
+                    {
+                        PE.Side = 2;
+                    }
+                }
+            }
+            Side = 1;
+            Repeat (2)
+            {
+                If ((Side == PE.Side) Or (PE.Side == 0))
+                {
                     If (Side == 1)
                     {
                         File = IdxToFile[WhiteKingIdx];
@@ -1919,23 +1933,24 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
                             Delta2 = (File - 5);
                         }
                     }
+                    If (Delta < Delta2)
+                    {
+                        Delta = Delta2;
+                    }
                     If (Side == 1)
                     {
-                        EvaluationRes += (20 * (Delta + Delta2));
+                        EvaluationRes += (20 * Delta);
                     }
                     Else
                     {
-                        EvaluationRes += (-20 * (Delta + Delta2));
+                        EvaluationRes += (-20 * Delta);
                     }
                 }
+                Side += 1;
             }
             Call EvaluatePostProcess(Depth);
-            Call TTStoreBoard(CurrentBoardHash)(Depth)(EvaluationRes);
-            If (Not ((PromotionPieces[1] == 0)))
-            {
-                EvaluationRes += 75;
-            }
         }
+        Call TTStoreBoard(CurrentBoardHash)(Depth)(EvaluationRes);
     }
     If (IsBlockProfilerEnabled == 1)
     {
@@ -4949,32 +4964,35 @@ Define InitOpeningMovesMapImpl(string Depth)(string GameMovesLen)(string Move)(b
 
 Define InitPieceSquareTables (warp=true)
 {
-    List.DeleteItem(PawnPieceSquarePreCastling, all);
-    Call LoadList("0, 0, 0, 0, 0, 0, 0, 0,  7, 11, 23, 39, 39, 23, 11, 7, -7, 1, 14, 29, 29, 14, 1, -7, -21, -8, 6, 26, 26, 6, -8, -21, -21, -16, -1, 22, 22, -1, -16, -21, -21, -16, -6, 12, 12, -6, -16, -21, -14, -8, 6, -1, -1, 6, -8, -14, 0, 0, 0, 0, 0, 0, 0, 0")("PawnPieceSquarePreCastling");
-    List.DeleteItem(PawnPieceSquare, all);
-    Call LoadList("0, 0, 0, 0, 0, 0, 0, 0,     7, 11, 23, 39, 39, 23, 11, 7,     -5, 1, 14, 29, 29, 14, 1, -5,     -10, -12, -4, 26, 26, -4, -12, -16,     -16, -12, -4, 22, 22, -4, -12, -16,     -12, -8, 0, 12, 12, 0, -8, -12,     -8, -4, 4, -1, -1, 4, -4, -8,     0, 0, 0, 0, 0, 0, 0, 0")("PawnPieceSquare");
-    List.DeleteItem(PawnPieceSquareEndgame, all);
-    Call LoadList("0, 0, 0, 0, 0, 0, 0, 0,   40, 35, 25, 20, 20, 25, 35, 40,   30, 14, 10, 10, 10, 1, 14, 30,   18, 5, 5, 0, 0, 5, 5, 18,   10, -5, -5, -10, -10, -5, -5, 10,   5, -10, -15, -20, -20, -15, -10, 5,   5, -10, -20, -25, -25, -20, -10, 5,   0, 0, 0, 0, 0, 0, 0, 0")("PawnPieceSquareEndgame");
-    List.DeleteItem(KnightPieceSquare, all);
-    Call LoadList("-59, -39, -29, -29, -29, -29, -39, -59, -39, 21, 41, 41, 41, 41, 21, -39, -39, 46, 61, 71, 71, 61, 46, -39,  -39, 41, 51, 51, 51, 51, 41, -39,  -39, 11, 41, 36, 36, 41, 11, -39,  -39, 1, 31, 21, 21, 31, 1, -39,  -54, -39, -9, 11, 11, -9, -39, -54,  -69, -19, -24, -14, -14, -24, -19, -69")("KnightPieceSquare");
-    List.DeleteItem(KnightPieceSquareEndgame, all);
-    Call LoadList("-63, -53, -43, -43, -43, -43, -53, -63,  -53, -43, 38, 48, 48, 38, -43, -53,  -43, 28, 78, 73, 73, 78, 28, -43,  -43, 38, 73, 78, 78, 73, 38, -43,  -43, 38, 58, 68, 68, 58, 38, -43,  -43, 18, 48, 38, 38, 48, 18, -43,  -53, -43, 18, 28, 28, 18, -43, -53,  -63, -53, -43, -43, -43, -43, -53, -63")("KnightPieceSquareEndgame");
-    List.DeleteItem(BishopPieceSquare, all);
-    Call LoadList("-20, -18, -16, -14, -14, -16, -18, -20,  -10, 11, 1, 1, 1, 1, 11, -10,   1, 11, 21, 26, 26, 21, 11, 1,   1, 21, 21, 26, 26, 21, 21, 1,   1, 1, 16, 21, 21, 16, 1, 1,   -25, 6, 16, 11, 11, 16, 6, -25,   -28, 11, 6, 1, 1, 6, 11, -28,   -30, -25, -20, -20, -20, -20, -25, -30")("BishopPieceSquare");
-    List.DeleteItem(BishopPieceSquareEndgame, all);
-    Call LoadList("-38, -18, -8, 2, 2, -8, -18, -38,  -18, -8, 0, 12, 12, 0, -8, -18,  -8, 2, 20, 22, 22, 20, 2, -8,  2, 12, 17, 22, 22, 17, 12, 2,  2, 12, 16, 20, 20, 16, 12, 2,  -8, 2, 10, 12, 12, 10, 2, -8,  -18, -8, 2, 7, 7, 2, -8, -18,  -38, -18, -8, 2, 2, -8, -18, -38")("BishopPieceSquareEndgame");
-    List.DeleteItem(RookPieceSquare, all);
-    Call LoadList("-8, -6, 2, 7, 7, 2, -6, -8,  2, 2, 7, 12, 12, 7, 2, 2,  -8, -6, 6, 10, 10, 6, -6, -8,  -8, -6, 6, 8, 8, 6, -6, -8,  -8, -6, 6, 7, 7, 6, -6, -8,  -8, -6, 6, 7, 7, 6, -6, -8,  -8, -6, 2, 7, 7, 2, -6, -8,  -8, -6, 2, 7, 7, 2, -6, -8")("RookPieceSquare");
-    List.DeleteItem(RookPieceSquareEndgame, all);
-    Call LoadList("0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0")("RookPieceSquareEndgame");
-    List.DeleteItem(QueenPieceSquare, all);
-    Call LoadList("4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  -6, -6, -1, 4, 4, -1, -6, -6,  -16, -11, -1, 4, 4, -1, -11, -16,  -26, -16, -6, 4, 4, -6, -16, -26")("QueenPieceSquare");
-    List.DeleteItem(QueenPieceSquareEndgame, all);
-    Call LoadList("-26, -6, -1, 4, 4, -1, -6, -26,  -16, 4, 19, 29, 29, 19, 4, -16,  -6, 9, 24, 34, 34, 24, 9, -6,  -6, 9, 24, 34, 34, 24, 9, -6,  -6, 9, 24, 34, 34, 24, 9, -6,  -16, -1, 14, 24, 24, 14, -1, -16,  -31, -26, -16, -6, -6, -16, -26, -31,  -46, -41, -31, -26, -26, -31, -41, -46")("QueenPieceSquareEndgame");
-    List.DeleteItem(KingPieceSquare, all);
-    Call LoadList("-55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -50, -50, -55, -60, -60, -55, -50, -50,  -40, -40, -45, -50, -50, -45, -40, -40,  -30, -30, -30, -35, -35, -30, -30, -30,  -20, 0, 0, -10, -10, 0, 0, -20")("KingPieceSquare");
-    List.DeleteItem(KingPieceSquareEndgame, all);
-    Call LoadList("-10, 10, 15, 20, 20, 15, 10, -10,  0, 20, 35, 45, 45, 35, 20, 0,  10, 25, 40, 50, 50, 40, 25, 10,  10, 25, 40, 50, 50, 40, 25, 10,  10, 25, 40, 50, 50, 40, 25, 10,  0, 15, 30, 40, 40, 30, 15, 0,  -15, -10, 0, 10, 10, 0, -10, -15,  -30, -25, -15, -10, -10, -15, -25, -30")("KingPieceSquareEndgame");
+    If (1 == 0)
+    {
+        List.DeleteItem(PawnPieceSquarePreCastling, all);
+        Call LoadList("0, 0, 0, 0, 0, 0, 0, 0,  7, 11, 23, 39, 39, 23, 11, 7, -7, 1, 14, 29, 29, 14, 1, -7, -21, -8, 6, 26, 26, 6, -8, -21, -21, -16, -1, 22, 22, -1, -16, -21, -21, -16, -6, 12, 12, -6, -16, -21, -14, -8, 6, -1, -1, 6, -8, -14, 0, 0, 0, 0, 0, 0, 0, 0")("PawnPieceSquarePreCastling");
+        List.DeleteItem(PawnPieceSquare, all);
+        Call LoadList("0, 0, 0, 0, 0, 0, 0, 0,     7, 11, 23, 39, 39, 23, 11, 7,     -5, 1, 14, 29, 29, 14, 1, -5,     -10, -12, -4, 26, 26, -4, -12, -16,     -16, -12, -4, 22, 22, -4, -12, -16,     -12, -8, 0, 12, 12, 0, -8, -12,     -8, -4, 4, -1, -1, 4, -4, -8,     0, 0, 0, 0, 0, 0, 0, 0")("PawnPieceSquare");
+        List.DeleteItem(PawnPieceSquareEndgame, all);
+        Call LoadList("0, 0, 0, 0, 0, 0, 0, 0,   40, 35, 25, 20, 20, 25, 35, 40,   30, 14, 10, 10, 10, 1, 14, 30,   18, 5, 5, 0, 0, 5, 5, 18,   10, -5, -5, -10, -10, -5, -5, 10,   5, -10, -15, -20, -20, -15, -10, 5,   5, -10, -20, -25, -25, -20, -10, 5,   0, 0, 0, 0, 0, 0, 0, 0")("PawnPieceSquareEndgame");
+        List.DeleteItem(KnightPieceSquare, all);
+        Call LoadList("-59, -39, -29, -29, -29, -29, -39, -59, -39, 21, 41, 41, 41, 41, 21, -39, -39, 46, 61, 71, 71, 61, 46, -39,  -39, 41, 51, 51, 51, 51, 41, -39,  -39, 11, 41, 36, 36, 41, 11, -39,  -39, 1, 31, 21, 21, 31, 1, -39,  -54, -39, -9, 11, 11, -9, -39, -54,  -69, -19, -24, -14, -14, -24, -19, -69")("KnightPieceSquare");
+        List.DeleteItem(KnightPieceSquareEndgame, all);
+        Call LoadList("-63, -53, -43, -43, -43, -43, -53, -63,  -53, -43, 38, 48, 48, 38, -43, -53,  -43, 28, 78, 73, 73, 78, 28, -43,  -43, 38, 73, 78, 78, 73, 38, -43,  -43, 38, 58, 68, 68, 58, 38, -43,  -43, 18, 48, 38, 38, 48, 18, -43,  -53, -43, 18, 28, 28, 18, -43, -53,  -63, -53, -43, -43, -43, -43, -53, -63")("KnightPieceSquareEndgame");
+        List.DeleteItem(BishopPieceSquare, all);
+        Call LoadList("-20, -18, -16, -14, -14, -16, -18, -20,  -10, 11, 1, 1, 1, 1, 11, -10,   1, 11, 21, 26, 26, 21, 11, 1,   1, 21, 21, 26, 26, 21, 21, 1,   1, 1, 16, 21, 21, 16, 1, 1,   -25, 6, 16, 11, 11, 16, 6, -25,   -28, 11, 6, 1, 1, 6, 11, -28,   -30, -25, -20, -20, -20, -20, -25, -30")("BishopPieceSquare");
+        List.DeleteItem(BishopPieceSquareEndgame, all);
+        Call LoadList("-38, -18, -8, 2, 2, -8, -18, -38,  -18, -8, 0, 12, 12, 0, -8, -18,  -8, 2, 20, 22, 22, 20, 2, -8,  2, 12, 17, 22, 22, 17, 12, 2,  2, 12, 16, 20, 20, 16, 12, 2,  -8, 2, 10, 12, 12, 10, 2, -8,  -18, -8, 2, 7, 7, 2, -8, -18,  -38, -18, -8, 2, 2, -8, -18, -38")("BishopPieceSquareEndgame");
+        List.DeleteItem(RookPieceSquare, all);
+        Call LoadList("-8, -6, 2, 7, 7, 2, -6, -8,  2, 2, 7, 12, 12, 7, 2, 2,  -8, -6, 6, 10, 10, 6, -6, -8,  -8, -6, 6, 8, 8, 6, -6, -8,  -8, -6, 6, 7, 7, 6, -6, -8,  -8, -6, 6, 7, 7, 6, -6, -8,  -8, -6, 2, 7, 7, 2, -6, -8,  -8, -6, 2, 7, 7, 2, -6, -8")("RookPieceSquare");
+        List.DeleteItem(RookPieceSquareEndgame, all);
+        Call LoadList("0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0")("RookPieceSquareEndgame");
+        List.DeleteItem(QueenPieceSquare, all);
+        Call LoadList("4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  4, 4, 4, 4, 4, 4, 4, 4,  -6, -6, -1, 4, 4, -1, -6, -6,  -16, -11, -1, 4, 4, -1, -11, -16,  -26, -16, -6, 4, 4, -6, -16, -26")("QueenPieceSquare");
+        List.DeleteItem(QueenPieceSquareEndgame, all);
+        Call LoadList("-26, -6, -1, 4, 4, -1, -6, -26,  -16, 4, 19, 29, 29, 19, 4, -16,  -6, 9, 24, 34, 34, 24, 9, -6,  -6, 9, 24, 34, 34, 24, 9, -6,  -6, 9, 24, 34, 34, 24, 9, -6,  -16, -1, 14, 24, 24, 14, -1, -16,  -31, -26, -16, -6, -6, -16, -26, -31,  -46, -41, -31, -26, -26, -31, -41, -46")("QueenPieceSquareEndgame");
+        List.DeleteItem(KingPieceSquare, all);
+        Call LoadList("-55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -55, -55, -60, -70, -70, -60, -55, -55,  -50, -50, -55, -60, -60, -55, -50, -50,  -40, -40, -45, -50, -50, -45, -40, -40,  -30, -30, -30, -35, -35, -30, -30, -30,  -20, 0, 0, -10, -10, 0, 0, -20")("KingPieceSquare");
+        List.DeleteItem(KingPieceSquareEndgame, all);
+        Call LoadList("-10, 10, 15, 20, 20, 15, 10, -10,  0, 20, 35, 45, 45, 35, 20, 0,  10, 25, 40, 50, 50, 40, 25, 10,  10, 25, 40, 50, 50, 40, 25, 10,  10, 25, 40, 50, 50, 40, 25, 10,  0, 15, 30, 40, 40, 30, 15, 0,  -15, -10, 0, 10, 10, 0, -10, -15,  -30, -25, -15, -10, -10, -15, -25, -30")("KingPieceSquareEndgame");
+    }
 }
 
 Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
@@ -8167,7 +8185,7 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
 
 Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
 {
-    If (1 == 0)
+    If (1 == 1)
     {
         If ((((Depth > 1) And (Horizon < 6)) And (IsInNullMove == 0)) And ((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1)))
         {
