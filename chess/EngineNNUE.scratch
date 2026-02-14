@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (14.02.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (15.02.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -2742,6 +2742,17 @@ Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool AttackTable
 
 Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bool IsBlackMove) (warp=true)
 {
+    GMI.SkipIdx = -1;
+    List.DeleteAll(CalcMovesScoreList);
+    List.DeleteAll(CalcMovesMoveList);
+    Call PrepareCurrentKillerMoves(Depth);
+    Call ClearMoveList(Depth);
+    Idx = 1;
+    Repeat (64)
+    {
+        List.ReplaceItem(PieceMobility, Idx, 0);
+        Idx += 1;
+    }
     If (Not (AttackTableOnly))
     {
         If (BoardAttackedCalculated[Depth] == 0)
@@ -2783,35 +2794,29 @@ Define GenerateMovesImpl(string Depth)(bool AttackTableOnly)(bool Quiescence)(bo
             }
             If IsBlackMove
             {
-                KingIdx = BlackKingIdx;
+                GMI.SkipIdx = BlackKingIdx;
             }
             Else
             {
-                KingIdx = WhiteKingIdx;
+                GMI.SkipIdx = WhiteKingIdx;
             }
-            Call GenerateMovesForSource(Depth)(KingIdx)(AttackTableOnly)(Quiescence);
+            Call GenerateMovesForSource(Depth)(GMI.SkipIdx)(AttackTableOnly)(Quiescence);
             If (GenerateMovesRequiresAttackRecalc == 1)
             {
                 Stop(this script);
             }
         }
-        List.DeleteAll(PieceMobility);
-        Repeat (64)
-        {
-            List.Add(PieceMobility, 0);
-        }
     }
-    List.DeleteAll(CalcMovesScoreList);
-    List.DeleteAll(CalcMovesMoveList);
-    Call PrepareCurrentKillerMoves(Depth);
-    Call ClearMoveList(Depth);
     Caller.SourceIdx = 1;
     Repeat (64)
     {
-        If ((IsBlackMove And (Board[Caller.SourceIdx] > 0)) Or ((Not (IsBlackMove)) And (Board[Caller.SourceIdx] < 0)))
+        If (Not ((Caller.SourceIdx == GMI.SkipIdx)))
         {
-            Piece = Board[Caller.SourceIdx];
-            Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(AttackTableOnly)(Quiescence);
+            If ((IsBlackMove And (Board[Caller.SourceIdx] > 0)) Or ((Not (IsBlackMove)) And (Board[Caller.SourceIdx] < 0)))
+            {
+                Piece = Board[Caller.SourceIdx];
+                Call GenerateMovesForSource(Depth)(Caller.SourceIdx)(AttackTableOnly)(Quiescence);
+            }
         }
         Caller.SourceIdx += 1;
     }
@@ -3373,7 +3378,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Call ApplyMoveLight((Depth + 2));
         Call SEE((Depth + 2));
         Call RevertMoveLight((Depth + 2));
-        If (((SourcePieceParam > 0) And (Not ((SEE.Result < 0)))) Or ((SourcePieceParam < 0) And (Not ((SEE.Result > 0)))))
+        If (((SourcePieceParam > 0) And (Not ((SEE.Result < -50)))) Or ((SourcePieceParam < 0) And (Not ((SEE.Result > 50)))))
         {
             MoveScoreRes = ((7000000 + MvvLvaScore) * Factor);
             Stop(this script);
@@ -7992,9 +7997,9 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 {
                     Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))));
                     CurrentValue = floor((HistoryMoveScores[Idx] / 16));
-                    If (CurrentValue > 256)
+                    If (CurrentValue > 128)
                     {
-                        CurrentValue = 256;
+                        CurrentValue = 128;
                     }
                     Reduction += (0 - CurrentValue);
                 }
