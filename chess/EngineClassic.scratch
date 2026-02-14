@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (15.02.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248a (15.02.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1260,6 +1260,10 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                     }
                 }
                 Call RevertMove(Depth);
+                If (IsMinMaxTimeout == 1)
+                {
+                    Stop(this script);
+                }
             }
             Else
             {
@@ -1427,14 +1431,6 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             }
         }
     }
-    If (Quiescence[Depth] == 0)
-    {
-        MoveCount += MovesCount[Depth];
-    }
-    Else
-    {
-        MoveCountQ += MovesCount[Depth];
-    }
     Call //("Evaluation alpha-bound, beta-bound or exact?");
     If ((Depth % 2) == 1)
     {
@@ -1472,62 +1468,39 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             }
         }
     }
-    Call //("Fast quiescence search checkmate detection (no check evasion found)");
-    If (Quiescence And ((MovesCount[Depth] == 0) And (CheckedState[Depth] == 1)))
+    Search.Factor = (((Depth % 2) * 2) - 1);
+    If (MovesCount[Depth] == 0)
     {
-        List.ReplaceItem(ScoreTypes, Depth, "E");
-        If ((Depth % 2) == 1)
+        If (Quiescence And (CheckedState[Depth] == 1))
         {
-            List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
+            Call //("Fast quiescence search checkmate detection (no check evasion found)");
+            List.ReplaceItem(ScoreTypes, Depth, "E");
+            List.ReplaceItem(MinMaxResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
         }
         Else
         {
-            List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
-        }
-    }
-    Call //("Fast full search checkmate and stalemate detection");
-    If ((Not (Quiescence)) And ((MovesCount[Depth] == 0) And (ExcludedMove == "")))
-    {
-        List.ReplaceItem(ScoreTypes, Depth, "E");
-        If ((Depth % 2) == 1)
-        {
-            If (CheckedState[Depth] == 1)
+            Call //("Fast full search checkmate and stalemate detection");
+            If ((Not (Quiescence)) And (ExcludedMove == ""))
             {
-                List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
-            }
-            Else
-            {
-                Call CalcBoardAttackedByMoveChecked((Depth + 1));
-                If (IsOwnSideChecked == 1)
+                List.ReplaceItem(ScoreTypes, Depth, "E");
+                If (CheckedState[Depth] == 1)
                 {
-                    List.ReplaceItem(MinMaxResults, Depth, (-100000 + ((Depth + 1) * 1000)));
+                    List.ReplaceItem(MinMaxResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
                 }
                 Else
                 {
-                    List.ReplaceItem(MinMaxResults, Depth, 0);
+                    Call CalcBoardAttackedByMoveChecked((Depth + 1));
+                    If ((((Depth % 2) == 1) And (IsOwnSideChecked == 1)) Or (((Depth % 2) == 0) And (IsOppSideChecked == 1)))
+                    {
+                        List.ReplaceItem(MinMaxResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
+                    }
+                    Else
+                    {
+                        List.ReplaceItem(MinMaxResults, Depth, 0);
+                    }
                 }
             }
         }
-        Else
-        {
-            If (CheckedState[Depth] == 1)
-            {
-                List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
-            }
-            Else
-            {
-                Call CalcBoardAttackedByMoveChecked((Depth + 1));
-                If (IsOppSideChecked == 1)
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, (100000 - ((Depth + 1) * 1000)));
-                }
-                Else
-                {
-                    List.ReplaceItem(MinMaxResults, Depth, 0);
-                }
-            }
-        }
-        Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])("")(ScoreTypes[Depth])("")(99)("")("")("")("")("")(0);
     }
     If (((IsMinMaxTimeout == 0) And (Depth > 1)) And (ExcludedMove == ""))
     {
@@ -1543,6 +1516,14 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         }
     }
     Call //("Collect statistics");
+    If Quiescence
+    {
+        MoveCountQ += MovesCount[Depth];
+    }
+    Else
+    {
+        MoveCount += MovesCount[Depth];
+    }
     If (MovesIdxBestMove[Depth] > 0)
     {
         If Quiescence
@@ -1555,14 +1536,24 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             ProfBestMoveCount += 1;
             ProfBestMoveIdxSum += MovesIdxBestMove[Depth];
         }
-        If (1 == 0)
+        If (1 == 1)
         {
             If (IsBlockProfilerEnabled == 1)
             {
-                If (MovesIdxBestMove[Depth] > (3 - (Quiescence[Depth] * 2)))
+                Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
+                Call GetMoveNotation(BestMoves[Depth]);
+                Call Log("Move ordering indication: ")(Operator.Join("Quiescence = ", Quiescence))(Operator.Join(", Ply = ", Depth))(Operator.Join(", MoveIdx = ", MovesIdxBestMove[Depth]))(Operator.Join(", MoveCount = ", MovesCount[Depth]))(Operator.Join(", Checked = ", CheckedState[Depth]))(Operator.Join(", Move = ", MoveNotationRes))(Operator.Join(", FEN = ", ExportDataFEN));
+                List.ReplaceItem(PickedMoves, Depth, "");
+                Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or (CheckedState[Depth] == 1)));
+                Call Log("Moves: ")(CalcMovesMoveList)("")("")("")("")("")("");
+                Call Log("Scores: ")(CalcMovesScoreList)("")("")("")("")("")("");
+                Call Log("Notation: ")("")("")("")("")("")("")("");
+                Idx = 0;
+                Repeat (List.Length(CalcMovesMoveList))
                 {
-                    Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
-                    Call Log("Move ordering indication")(Operator.Join(Operator.Join(":", Depth), Operator.Join(":", MovesIdxBestMove[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] / 100))]), Operator.Join(":", BestMoves[Depth])))(Operator.Join(Operator.Join(":", Board[floor((BestMoves[Depth] % 100))]), Operator.Join(":", Quiescence[Depth])))(":")(ExportDataFEN)("")("");
+                    Call GetMoveNotation(CalcMovesMoveList[Idx]);
+                    Call Log(MoveNotationRes)("")("")("")("")("")("")("");
+                    Idx += 1;
                 }
             }
         }
@@ -6616,7 +6607,7 @@ Define GetMoveNotation(num Move) (warp=true)
 Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
 {
     MoveScoreRes = 0;
-    GMS.Factor = (((SourcePieceParam > 0) * 2) - 1);
+    GMS.Factor = (((Depth % 2) * 2) - 1);
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
     If ((Not ((Move == ""))) And (Move == HashMove[(Depth + 0)]))
     {
@@ -6626,14 +6617,28 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If (CheckedState[(Depth + 0)] == 1)
     {
         Call //("2: Check evasions");
+        MoveScoreRes = 0;
         If (abs(SourcePieceParam) == GoK_OwnKing)
         {
-            MoveScoreRes = (9000000 * GMS.Factor);
-            Stop(this script);
+            MoveScoreRes = (8100000 * GMS.Factor);
         }
-        If (Operator.LetterOf(CheckedStateAttackLines[(Depth + 0)], ToIdx) == 1)
+        Else
         {
-            MoveScoreRes = (8900000 * GMS.Factor);
+            If (Operator.LetterOf(CheckedStateAttackLines[(Depth + 0)], ToIdx) == 1)
+            {
+                MoveScoreRes = (8000000 * GMS.Factor);
+            }
+        }
+        If (Not ((MoveScoreRes == 0)))
+        {
+            If ((Not ((TargetPieceParam == 0))) And (Not ((TargetPieceParam == ""))))
+            {
+                MoveScoreRes += ((50000 + ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]))) * GMS.Factor);
+            }
+            Else
+            {
+                MoveScoreRes += (HistoryMoveScores[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieceParam)] * 100) + ToIdx))] * GMS.Factor);
+            }
             Stop(this script);
         }
     }
@@ -6646,6 +6651,11 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If ((Not ((TargetPieceParam == 0))) And (Not ((TargetPieceParam == ""))))
     {
         MvvLvaScore = ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]));
+        If (Quiescence[Depth] == 1)
+        {
+            MoveScoreRes = ((7000000 + MvvLvaScore) * GMS.Factor);
+            Stop(this script);
+        }
         Call ClearMoveList((Depth + 2));
         Call AddMoveToList(Move)((Depth + 2));
         List.ReplaceItem(MovesIdx, (Depth + 2), 1);
