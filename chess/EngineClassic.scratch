@@ -948,6 +948,7 @@ Define ABSearch_Init(string MaxDepth)(bool InitialDeepening) (warp=true)
             List.ReplaceItem(HistoryContinuation2Opp, (IdxOuter + 0), 0);
             IdxOuter += 1;
         }
+        MaxHistoryScore = 0;
     }
     Call SetInitialEnPassantTarget(1);
     List.DeleteItem(MinMaxPly1EvalMoves, all);
@@ -1745,12 +1746,7 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
                 If (1 == 1)
                 {
                     Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))));
-                    CurrentValue = floor((HistoryMoveScores[Idx] / 16));
-                    If (CurrentValue > 128)
-                    {
-                        CurrentValue = 128;
-                    }
-                    Reduction += (0 - CurrentValue);
+                    Reduction += (0 - floor(((HistoryMoveScores[Idx] / MaxHistoryScore) * 768)));
                 }
                 If (1 == 0)
                 {
@@ -10222,51 +10218,52 @@ Define StoreKillerMove(string Depth)(string Horizon)(string Move) (warp=true)
         }
         HistoryBonus = (Horizon * Horizon);
         List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + (HistoryBonus - floor((HistoryMoveScores[Idx] * (HistoryBonus / 10000))))));
+        If (HistoryMoveScores[Idx] > MaxHistoryScore)
+        {
+            MaxHistoryScore = HistoryMoveScores[Idx];
+        }
+        List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
+        Idx = -1;
         If (Depth > 1)
         {
-            List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
-            Idx = -1;
-            If (Depth > 1)
+            If (Not ((floor((AppliedMove[(Depth - 1)] / 100)) == 0)))
             {
-                If (Not ((floor((AppliedMove[(Depth - 1)] / 100)) == 0)))
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+            }
+        }
+        Else
+        {
+            If (Not ((PrevPly1Move == "")))
+            {
+                If (Not ((floor((PrevPly1Move / 100)) == 0)))
                 {
-                    Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+                    Idx = ((((PieceIdxLookup[abs(Board[floor((PrevPly1Move % 100))])] * 64) + floor((PrevPly1Move % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
                 }
+            }
+        }
+        If (Not ((Idx == -1)))
+        {
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(HistoryContinuationOwn, Idx, (HistoryContinuationOwn[Idx] + (HistoryBonus - floor((HistoryContinuationOwn[Idx] * (HistoryBonus / 10000))))));
             }
             Else
             {
-                If (Not ((PrevPly1Move == "")))
-                {
-                    If (Not ((floor((PrevPly1Move / 100)) == 0)))
-                    {
-                        Idx = ((((PieceIdxLookup[abs(Board[floor((PrevPly1Move % 100))])] * 64) + floor((PrevPly1Move % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
-                    }
-                }
+                List.ReplaceItem(HistoryContinuationOpp, Idx, (HistoryContinuationOpp[Idx] + (HistoryBonus - floor((HistoryContinuationOpp[Idx] * (HistoryBonus / 10000))))));
             }
-            If (Not ((Idx == -1)))
+        }
+        If (Depth > 2)
+        {
+            If ((Not ((floor((AppliedMove[(Depth - 2)] / 100)) == 0))) And (Not ((floor((Move / 100)) == 0))))
             {
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 64) + floor((AppliedMove[(Depth - 2)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
                 If ((Depth % 2) == 1)
                 {
-                    List.ReplaceItem(HistoryContinuationOwn, Idx, (HistoryContinuationOwn[Idx] + (HistoryBonus - floor((HistoryContinuationOwn[Idx] * (HistoryBonus / 10000))))));
+                    List.ReplaceItem(HistoryContinuation2Own, Idx, (HistoryContinuation2Own[Idx] + (HistoryBonus - floor((HistoryContinuation2Own[Idx] * (HistoryBonus / 10000))))));
                 }
                 Else
                 {
-                    List.ReplaceItem(HistoryContinuationOpp, Idx, (HistoryContinuationOpp[Idx] + (HistoryBonus - floor((HistoryContinuationOpp[Idx] * (HistoryBonus / 10000))))));
-                }
-            }
-            If (Depth > 2)
-            {
-                If ((Not ((floor((AppliedMove[(Depth - 2)] / 100)) == 0))) And (Not ((floor((Move / 100)) == 0))))
-                {
-                    Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 64) + floor((AppliedMove[(Depth - 2)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
-                    If ((Depth % 2) == 1)
-                    {
-                        List.ReplaceItem(HistoryContinuation2Own, Idx, (HistoryContinuation2Own[Idx] + (HistoryBonus - floor((HistoryContinuation2Own[Idx] * (HistoryBonus / 10000))))));
-                    }
-                    Else
-                    {
-                        List.ReplaceItem(HistoryContinuation2Opp, Idx, (HistoryContinuation2Opp[Idx] + (HistoryBonus - floor((HistoryContinuation2Opp[Idx] * (HistoryBonus / 10000))))));
-                    }
+                    List.ReplaceItem(HistoryContinuation2Opp, Idx, (HistoryContinuation2Opp[Idx] + (HistoryBonus - floor((HistoryContinuation2Opp[Idx] * (HistoryBonus / 10000))))));
                 }
             }
         }
