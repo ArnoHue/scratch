@@ -3061,7 +3061,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = AWSize[AWCount];
-        If (((IdxDeepening > 3) And (1 == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 5) And (1 == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -5305,7 +5305,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
-    If (1 == 0)
+    If (1 == 1)
     {
         If (IsScratch3 == 0)
         {
@@ -7226,6 +7226,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                                 Call Search_OnBestRootMoveFound(SearchMoveRes)(SearchEvalRes);
                                                 If (Not ((SearchEvalRes < SearchBeta)))
                                                 {
+                                                    Call //("AW fail high => terminate immediately");
                                                     List.ReplaceItem(SearchEvalResults, Depth, SearchEvalRes);
                                                     Stop(this script);
                                                 }
@@ -7236,14 +7237,11 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                     {
                                         If (Depth > 1)
                                         {
-                                            If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
-                                            {
-                                                Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon);
-                                            }
+                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon);
+                                            Call //("Full search cutoff");
+                                            List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
+                                            List.ReplaceItem(PickPhase, Depth, "*");
                                         }
-                                        Call //("Full search cutoff");
-                                        List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
-                                        List.ReplaceItem(PickPhase, Depth, "*");
                                     }
                                 }
                             }
@@ -7278,10 +7276,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                     List.ReplaceItem(Betas, Depth, ChildEval);
                                     If (Not ((ChildEval > Alphas[Depth])))
                                     {
-                                        If ((floor((BestMoves[Depth] / 100)) == 0) Or (Board[floor((BestMoves[Depth] % 100))] == 0))
-                                        {
-                                            Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon);
-                                        }
+                                        Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon);
                                         List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
                                         List.ReplaceItem(PickPhase, Depth, "*");
                                         Call //("Full search cutoff");
@@ -7331,36 +7326,31 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
         }
     }
-    Search.Factor = (((Depth % 2) * 2) - 1);
     If (MovesCount[Depth] == 0)
     {
-        If (Quiescence And (CheckedState[Depth] == 1))
+        Search.Factor = (((Depth % 2) * 2) - 1);
+        If (CheckedState[Depth] == 1)
         {
-            Call //("Fast quiescence search checkmate detection (no check evasion found)");
-            List.ReplaceItem(NodeTypes, Depth, "E");
-            List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
+            If (((Not (Quiescence)) And (ExcludedMove == "")) Or Quiescence)
+            {
+                Call //("Fast search checkmate detection (no check evasion found)");
+                List.ReplaceItem(NodeTypes, Depth, "E");
+                List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
+            }
         }
         Else
         {
-            Call //("Fast full search checkmate and stalemate detection");
             If ((Not (Quiescence)) And (ExcludedMove == ""))
             {
                 List.ReplaceItem(NodeTypes, Depth, "E");
-                If (CheckedState[Depth] == 1)
+                Call CalcBoardAttackedByMoveChecked((Depth + 1));
+                If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
                 {
                     List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
                 }
                 Else
                 {
-                    Call CalcBoardAttackedByMoveChecked((Depth + 1));
-                    If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
-                    {
-                        List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
-                    }
-                    Else
-                    {
-                        List.ReplaceItem(SearchEvalResults, Depth, 0);
-                    }
+                    List.ReplaceItem(SearchEvalResults, Depth, 0);
                 }
             }
         }
@@ -7955,13 +7945,9 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                 Reduction = floor((128 * (0.83 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.18))));
                 If (1 == 1)
                 {
-                    If ((Betas[Depth] - Alphas[Depth]) == 1)
+                    If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                     {
-                        Reduction += 64;
-                    }
-                    Else
-                    {
-                        Reduction += -64;
+                        Reduction += -128;
                     }
                 }
                 If (1 == 1)
@@ -8695,35 +8681,38 @@ Define StoreAttackInfo(string Depth) (warp=true)
 
 Define StoreKillerMove(string Depth)(string Move)(string Horizon) (warp=true)
 {
-    Idx2 = (((Depth - 1) * 2) + 1);
-    If (Not ((KillerMoves[(Idx2 + 1)] == Move)))
+    If ((floor((Move / 100)) == 0) Or (Board[floor((Move % 100))] == 0))
     {
-        List.ReplaceItem(KillerMoves, Idx2, KillerMoves[(Idx2 + 1)]);
-        List.ReplaceItem(KillerMoves, (Idx2 + 1), Move);
-    }
-    If (floor((Move / 100)) == 0)
-    {
-        Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[GoK_BlackKing] * 100) + floor((Move % 100))));
-    }
-    Else
-    {
-        Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 100) + floor((Move % 100))));
-    }
-    HistoryBonus = (Horizon * Horizon);
-    List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + (HistoryBonus - floor((HistoryMoveScores[(Idx + 0)] * (HistoryBonus / 10000))))));
-    If (Not ((floor((Move / 100)) == 0)))
-    {
-        If (Depth > 1)
+        Idx2 = (((Depth - 1) * 2) + 1);
+        If (Not ((KillerMoves[(Idx2 + 1)] == Move)))
         {
-            List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
-            Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
-            If ((Depth % 2) == 1)
+            List.ReplaceItem(KillerMoves, Idx2, KillerMoves[(Idx2 + 1)]);
+            List.ReplaceItem(KillerMoves, (Idx2 + 1), Move);
+        }
+        If (floor((Move / 100)) == 0)
+        {
+            Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[GoK_BlackKing] * 100) + floor((Move % 100))));
+        }
+        Else
+        {
+            Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 100) + floor((Move % 100))));
+        }
+        HistoryBonus = (Horizon * Horizon);
+        List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + (HistoryBonus - floor((HistoryMoveScores[(Idx + 0)] * (HistoryBonus / 10000))))));
+        If (Not ((floor((Move / 100)) == 0)))
+        {
+            If (Depth > 1)
             {
-                List.ReplaceItem(HistoryContinuationOwn, (Idx + 0), (HistoryContinuationOwn[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuationOwn[(Idx + 0)] * (HistoryBonus / 10000))))));
-            }
-            Else
-            {
-                List.ReplaceItem(HistoryContinuationOpp, (Idx + 0), (HistoryContinuationOpp[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuationOpp[(Idx + 0)] * (HistoryBonus / 10000))))));
+                List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+                If ((Depth % 2) == 1)
+                {
+                    List.ReplaceItem(HistoryContinuationOwn, (Idx + 0), (HistoryContinuationOwn[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuationOwn[(Idx + 0)] * (HistoryBonus / 10000))))));
+                }
+                Else
+                {
+                    List.ReplaceItem(HistoryContinuationOpp, (Idx + 0), (HistoryContinuationOpp[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuationOpp[(Idx + 0)] * (HistoryBonus / 10000))))));
+                }
             }
         }
     }
