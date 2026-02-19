@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (18.02.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (19.02.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -6399,7 +6399,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 Call GetNormalizedMove(AppliedMove[Depth]);
                 List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalizedMoveRes, ":")));
                 List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-                If (TargetPieces[Depth] == 0)
+                If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
                     List.ReplaceItem(PickedMoveCountQuiet, Depth, (PickedMoveCountQuiet[Depth] + 1));
                 }
@@ -6532,7 +6532,7 @@ Define PickMove.Iterate(string Depth)(string NextPhase) (warp=true)
             Call GetNormalizedMove(AppliedMove[Depth]);
             List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalizedMoveRes, ":")));
             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
-            If (TargetPieces[Depth] == 0)
+            If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
             {
                 List.ReplaceItem(PickedMoveCountQuiet, Depth, (PickedMoveCountQuiet[Depth] + 1));
             }
@@ -7614,6 +7614,54 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
     {
         If (Not (Quiescence))
         {
+            If (SearchExtension[Depth] == 0)
+            {
+                Call //("Singular extensions");
+                If (1 == 0)
+                {
+                    If (((Depth > 1) And (Horizon > 6)) And ((AppliedMove[Depth] == HashMove[Depth]) And (ExcludedMove == "")))
+                    {
+                        Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
+                        If ((TTProbeRes == 1) And ((Not ((TTProbeNode.BestMoveRes == ""))) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))))
+                        {
+                            If (Not ((TTProbeNode.HorizonRes < (Horizon - 3))))
+                            {
+                                If ((((Depth % 2) == 1) And (TTProbeNode.NodeTypeRes == "B")) Or (((Depth % 2) == 0) And (TTProbeNode.NodeTypeRes == "A")))
+                                {
+                                    SE.BoundEval = TTProbeNode.EvalRes;
+                                    Call RevertMove(Depth);
+                                    List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
+                                    Call ApplyMove(Depth);
+                                    Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
+                                    If ((Depth % 2) == 1)
+                                    {
+                                        SE.BoundEval += (0 - (Horizon * 2));
+                                        List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
+                                        List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
+                                    }
+                                    Else
+                                    {
+                                        SE.BoundEval += (Horizon * 2);
+                                        List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
+                                        List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
+                                    }
+                                    Reduction = ceiling((Horizon / 2));
+                                    Call SearchNextPly((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
+                                    ChildEval = SearchEvalResults[(Depth + 2)];
+                                    Call SkipSearchFrameExit((Depth + 1));
+                                    Call RevertMove(Depth);
+                                    List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
+                                    Call ApplyMove(Depth);
+                                    If ((((Depth % 2) == 1) And (ChildEval < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (ChildEval > Alphas[(Depth + 2)])))
+                                    {
+                                        List.ReplaceItem(SearchExtension, Depth, 1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Count = 0;
             Idx = (Depth - 1);
             Repeat Until (Idx < 1)
@@ -7695,54 +7743,6 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                     }
                 }
             }
-            If (SearchExtension[Depth] == 0)
-            {
-                Call //("Singular extensions");
-                If (1 == 0)
-                {
-                    If (((Depth > 1) And (Horizon > 6)) And ((AppliedMove[Depth] == HashMove[Depth]) And (ExcludedMove == "")))
-                    {
-                        Call TTProbeNode(PreviousBoardHash[Depth])(Depth);
-                        If ((TTProbeRes == 1) And ((Not ((TTProbeNode.BestMoveRes == ""))) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))))
-                        {
-                            If (Not ((TTProbeNode.HorizonRes < (Horizon - 3))))
-                            {
-                                If ((((Depth % 2) == 1) And (TTProbeNode.NodeTypeRes == "A")) Or (((Depth % 2) == 0) And (TTProbeNode.NodeTypeRes == "B")))
-                                {
-                                    SE.BoundEval = TTProbeNode.EvalRes;
-                                    Call RevertMove(Depth);
-                                    List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
-                                    Call ApplyMove(Depth);
-                                    Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
-                                    If ((Depth % 2) == 1)
-                                    {
-                                        SE.BoundEval += (0 - (Horizon * 2));
-                                        List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
-                                        List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
-                                    }
-                                    Else
-                                    {
-                                        SE.BoundEval += (Horizon * 2);
-                                        List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
-                                        List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
-                                    }
-                                    Reduction = ceiling((Horizon / 2));
-                                    Call SearchNextPly((Depth + 2))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
-                                    ChildEval = SearchEvalResults[(Depth + 2)];
-                                    Call SkipSearchFrameExit((Depth + 1));
-                                    Call RevertMove(Depth);
-                                    List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
-                                    Call ApplyMove(Depth);
-                                    If ((((Depth % 2) == 1) And (ChildEval < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (ChildEval > Alphas[(Depth + 2)])))
-                                    {
-                                        List.ReplaceItem(SearchExtension, Depth, 1);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -7752,11 +7752,11 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
     IsFutile = 0;
     If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And (PromotionPieces[Depth] == 0))
     {
-        If (1 == 0)
+        If (1 == 1)
         {
-            If (((Not (Quiescence)) And (Horizon < 4)) And (((Betas[Depth] - Alphas[Depth]) == 1) And (TargetPieces[Depth] == 0)))
+            If ((Not (Quiescence)) And (((Betas[Depth] - Alphas[Depth]) == 1) And (TargetPieces[Depth] == 0)))
             {
-                If (PickedMoveCountQuiet[Depth] > (10 + (5 * Horizon)))
+                If (PickedMoveCountQuiet[Depth] > (12 + (Horizon * Horizon)))
                 {
                     IsFutile = 1;
                     Stop(this script);
@@ -7937,13 +7937,13 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
     Search.LmrNonPV.IsReSearchRequired = 1;
     If ((Not (Quiescence)) And (IsSearchTimeout == 0))
     {
-        If (((Horizon + SearchExtension[Depth]) > 1) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
+        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
         {
             Call //("LMR search");
             Reduction = 0;
             If (PickedMoveCount[Depth] > 1)
             {
-                Reduction = floor((128 * (0.83 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.18))));
+                Reduction = floor((128 * (1.33 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.18))));
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
@@ -7958,7 +7958,7 @@ Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         Reduction += -111;
                     }
                 }
-                If (1 == 0)
+                If (1 == 1)
                 {
                     If Cutnode
                     {
@@ -8146,7 +8146,7 @@ Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
 
 Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(string ExcludedMove) (warp=true)
 {
-    If (1 == 0)
+    If (1 == 1)
     {
         If ((((Not (Quiescence)) And (Depth > 1)) And (((ExcludedMove == "") And (CheckedState[Depth] == 0)) And ((Horizon + SearchExtension[Depth]) == 1))) And ((Betas[Depth] - Alphas[Depth]) == 1))
         {
@@ -8157,7 +8157,7 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     Call Evaluate((Depth - 1))((1 == 1));
                     List.ReplaceItem(BoardEval, Depth, EvaluationRes);
                 }
-                Margin = (480 + (240 * (Horizon * Horizon)));
+                Margin = (400 + (60 * (Horizon * Horizon)));
                 If ((((Depth % 2) == 1) And ((BoardEval[Depth] + Margin) < Alphas[Depth])) Or (((Depth % 2) == 0) And ((BoardEval[Depth] - Margin) > Betas[Depth])))
                 {
                     Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
@@ -8170,7 +8170,7 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
 
 Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
 {
-    If (1 == 0)
+    If (1 == 1)
     {
         If ((((Depth > 1) And (Horizon < 6)) And (IsInNullMove == 0)) And ((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1)))
         {
@@ -8183,7 +8183,7 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
                 Call Evaluate((Depth - 1))((1 == 1));
                 List.ReplaceItem(BoardEval, Depth, EvaluationRes);
             }
-            Margin = (70 * Horizon);
+            Margin = (200 * Horizon);
             If ((Depth % 2) == 1)
             {
                 If (Not (((BoardEval[Depth] - Margin) < Betas[Depth])))
