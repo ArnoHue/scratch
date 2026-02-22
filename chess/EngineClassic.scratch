@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (20.02.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (22.02.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -906,6 +906,7 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
 Define ABSearch_Init(string MaxDepth)(bool InitialDeepening) (warp=true)
 {
     IsInNullMove = 0;
+    IsInProbeCut = 0;
     IsMinMaxTimeout = 0;
     If InitialDeepening
     {
@@ -1706,6 +1707,72 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                 }
             }
         }
+        Call //("Probcut");
+        If (((IsInProbeCut == 0) And (IsInNullMove == 0)) And ((Horizon > 4) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+        {
+            If ((((Depth % 2) == 1) And (abs(Betas[Depth]) < AbsMinCheckmateEval)) Or (((Depth % 2) == 0) And (abs(Alphas[Depth]) < AbsMinCheckmateEval)))
+            {
+                If (BoardEval[Depth] == "")
+                {
+                    Call Evaluate((Depth - 1))((1 == 1));
+                    List.ReplaceItem(BoardEval, Depth, EvaluateRes);
+                }
+                PC.IsImproving = 0;
+                If ((Depth > 2) And (Not ((BoardEval[(Depth - 2)] == ""))))
+                {
+                    If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
+                    {
+                        IsImproving = 1;
+                    }
+                }
+                If ((Depth % 2) == 1)
+                {
+                    PC.RaisedBeta = (Betas[Depth] + (216 - (PC.IsImproving * 46)));
+                    PC.SEEThreshold = (PC.RaisedBeta - BoardEval[Depth]);
+                }
+                Else
+                {
+                    PC.RaisedBeta = (Alphas[Depth] - (216 - (PC.IsImproving * 46)));
+                    PC.SEEThreshold = (PC.RaisedBeta + BoardEval[Depth]);
+                }
+                PC.Count = 0;
+                List.ReplaceItem(PickPhase, Depth, 1);
+                List.ReplaceItem(PickMoveRes, Depth, 1);
+                List.ReplaceItem(PickedMoveCount, Depth, 0);
+                List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
+                Repeat Until ((PickMoveRes[Depth] == 0) Or (PC.Count > (1 + (2 * Cutnode))))
+                {
+                    Call PickMove(Depth)((1 == 1));
+                    If (PickMoveRes[Depth] == 1)
+                    {
+                        Call SEE(Depth);
+                        If (Not ((SEE.Result < PC.SEEThreshold)))
+                        {
+                            List.ReplaceItem(Alphas, (Depth + 1), (PC.RaisedBeta - ((Depth % 2) == 1)));
+                            List.ReplaceItem(Betas, (Depth + 1), (PC.RaisedBeta + ((Depth % 2) == 0)));
+                            Call ABSearch_Main((Depth + 1))(InitialDeepening)((QuiescenceHorizon - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
+                            PC.Score = MinMaxResults[(Depth + 1)];
+                            If ((((Depth % 2) == 1) And (Not ((PC.Score < PC.RaisedBeta)))) Or (((Depth % 2) == 0) And (Not ((PC.Score > PC.RaisedBeta)))))
+                            {
+                                List.ReplaceItem(Alphas, (Depth + 1), (PC.RaisedBeta - ((Depth % 2) == 1)));
+                                List.ReplaceItem(Betas, (Depth + 1), (PC.RaisedBeta + ((Depth % 2) == 0)));
+                                Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(3)((Not (Cutnode)))("");
+                                PC.Score = MinMaxResults[(Depth + 1)];
+                                If ((((Depth % 2) == 1) And (Not ((PC.Score < PC.RaisedBeta)))) Or (((Depth % 2) == 0) And (Not ((PC.Score > PC.RaisedBeta)))))
+                                {
+                                    List.ReplaceItem(MinMaxResults, Depth, PC.Score);
+                                    Call RevertMove((Depth + 0));
+                                    IsInProbeCut = 0;
+                                    Stop(this script);
+                                }
+                            }
+                        }
+                        Call RevertMove((Depth + 0));
+                    }
+                }
+            }
+            IsInProbeCut = 0;
+        }
     }
 }
 
@@ -1716,7 +1783,7 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
     IsReductionAndDone = 0;
     If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
     {
-        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And (((QueenCountOppLocal + RookMinorCountOppLocal) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) > 0))
+        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And ((1 == 1) Or (((QueenCountOppLocal + RookMinorCountOppLocal) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) > 0)))
         {
             Reduction = 0;
             If (PickedMoveCount[Depth] > 1)
@@ -6345,7 +6412,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         AWCount = 1;
         AWDelta = AWSize[1];
-        If (((IdxDeepening > 7) And (1 == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 5) And (1 == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestMinMaxRes - AWDelta));
             AWBeta = Operator.Round((BestMinMaxRes + AWDelta));
