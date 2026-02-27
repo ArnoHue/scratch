@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (27.02.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (28.02.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -7104,17 +7104,8 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 Call ApplyMove(Depth)((1 == 1));
                 Call Search_DetectExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
-                ChildEval = "";
                 Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
-                Call Search_LMRNonPV(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
-                If ((Search.LmrNonPV.IsReSearchRequired == 1) And (IsSearchTimeout == 0))
-                {
-                    Call //("Move was not pruned upfront, enter full depth + current window search");
-                    List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                    List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
-                    ChildEval = SearchEvalResults[(Depth + 1)];
-                }
+                Call Search_Core(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode);
                 If ((Depth == 1) And (IsSearchTimeout == 0))
                 {
                     List.Add(SearchRootMovesDone, AppliedMove[Depth]);
@@ -7133,15 +7124,15 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                     }
                     Stop(this script);
                 }
-                If (Not ((ChildEval == "")))
+                If (Not ((SearchCore.NodeEval == "")))
                 {
                     Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
                     If ((Depth % 2) == 1)
                     {
-                        If ((ChildEval > SearchEvalResults[Depth]) Or (SearchEvalResults[Depth] == ""))
+                        If ((SearchCore.NodeEval > SearchEvalResults[Depth]) Or (SearchEvalResults[Depth] == ""))
                         {
-                            List.ReplaceItem(SearchEvalResults, Depth, ChildEval);
-                            If (ChildEval > Alphas[Depth])
+                            List.ReplaceItem(SearchEvalResults, Depth, SearchCore.NodeEval);
+                            If (SearchCore.NodeEval > Alphas[Depth])
                             {
                                 Call GetCurrentMove(Depth);
                                 List.ReplaceItem(BestMoves, Depth, CurrentMove);
@@ -7149,9 +7140,9 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                 Call UpdatePV(Depth)(CurrentMove);
                                 If Quiescence
                                 {
-                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (ChildEval < Betas[Depth]))
+                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (SearchCore.NodeEval < Betas[Depth]))
                                     {
-                                        List.ReplaceItem(Alphas, Depth, ChildEval);
+                                        List.ReplaceItem(Alphas, Depth, SearchCore.NodeEval);
                                     }
                                     Else
                                     {
@@ -7162,16 +7153,16 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                 }
                                 Else
                                 {
-                                    List.ReplaceItem(Alphas, Depth, ChildEval);
+                                    List.ReplaceItem(Alphas, Depth, SearchCore.NodeEval);
                                     If ((Depth == 1) And (IsSearchTimeout == 0))
                                     {
-                                        If (Not ((ChildEval < (0 - AbsMaxCheckmateEval))))
+                                        If (Not ((SearchCore.NodeEval < (0 - AbsMaxCheckmateEval))))
                                         {
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
-                                            If (ChildEval > SearchAlpha)
+                                            If (SearchCore.NodeEval > SearchAlpha)
                                             {
                                                 SearchMoveRes = BestMoves[Depth];
-                                                SearchEvalRes = ChildEval;
+                                                SearchEvalRes = SearchCore.NodeEval;
                                                 Call Search_OnBestRootMoveFound(SearchMoveRes)(SearchEvalRes);
                                                 If (Not ((SearchEvalRes < SearchBeta)))
                                                 {
@@ -7182,7 +7173,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                             }
                                         }
                                     }
-                                    If (Not ((ChildEval < Betas[Depth])))
+                                    If (Not ((SearchCore.NodeEval < Betas[Depth])))
                                     {
                                         If (Depth > 1)
                                         {
@@ -7198,10 +7189,10 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                     }
                     Else
                     {
-                        If ((ChildEval < SearchEvalResults[Depth]) Or (SearchEvalResults[Depth] == ""))
+                        If ((SearchCore.NodeEval < SearchEvalResults[Depth]) Or (SearchEvalResults[Depth] == ""))
                         {
-                            List.ReplaceItem(SearchEvalResults, Depth, ChildEval);
-                            If (ChildEval < Betas[Depth])
+                            List.ReplaceItem(SearchEvalResults, Depth, SearchCore.NodeEval);
+                            If (SearchCore.NodeEval < Betas[Depth])
                             {
                                 Call GetCurrentMove(Depth);
                                 List.ReplaceItem(BestMoves, Depth, CurrentMove);
@@ -7209,9 +7200,9 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                 Call UpdatePV(Depth)(CurrentMove);
                                 If Quiescence
                                 {
-                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (ChildEval > Alphas[Depth]))
+                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (SearchCore.NodeEval > Alphas[Depth]))
                                     {
-                                        List.ReplaceItem(Betas, Depth, ChildEval);
+                                        List.ReplaceItem(Betas, Depth, SearchCore.NodeEval);
                                     }
                                     Else
                                     {
@@ -7222,8 +7213,8 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                 }
                                 Else
                                 {
-                                    List.ReplaceItem(Betas, Depth, ChildEval);
-                                    If (Not ((ChildEval > Alphas[Depth])))
+                                    List.ReplaceItem(Betas, Depth, SearchCore.NodeEval);
+                                    If (Not ((SearchCore.NodeEval > Alphas[Depth])))
                                     {
                                         Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon);
                                         List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
@@ -7369,6 +7360,125 @@ Define SearchNextPly(string CurrentDepth)(bool InitialDeepening)(string Quiescen
     Else
     {
         Call SearchImpl((CurrentDepth + 1))(InitialDeepening)(QuiescenceDepth)(CurrentQuiescence)(ShowProgress)((((CurrentHorizon + SearchExtension[CurrentDepth]) - Reduction) - 1))(Cutnode)(ExcludeMove);
+    }
+}
+
+Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
+{
+    SearchCore.NodeEval = "";
+    Search.LmrNonPV.IsReSearchRequired = 1;
+    If ((Not (Quiescence)) And (IsSearchTimeout == 0))
+    {
+        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
+        {
+            Call //("LMR search");
+            Reduction = 0;
+            If (PickedMoveCount[Depth] > 1)
+            {
+                Reduction = floor((128 * (0.83 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.18))));
+                If (1 == 1)
+                {
+                    If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
+                    {
+                        Reduction += -128;
+                    }
+                }
+                If (1 == 1)
+                {
+                    If (PutsInCheck[Depth] == 1)
+                    {
+                        Reduction += -111;
+                    }
+                }
+                If (1 == 0)
+                {
+                    If Cutnode
+                    {
+                        Reduction += 128;
+                    }
+                }
+                If (1 == 1)
+                {
+                    Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))));
+                    Reduction += (0 - floor(((HistoryMoveScores[Idx] / MaxHistoryScore) * 128)));
+                }
+                If (1 == 1)
+                {
+                    If (Depth > 2)
+                    {
+                        If ((Not ((BoardEval[(Depth - 2)] == ""))) And (Not ((BoardEval[Depth] == ""))))
+                        {
+                            If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
+                            {
+                                Reduction += -148;
+                            }
+                        }
+                    }
+                }
+                Reduction = floor((Reduction / 128));
+                If (Reduction < 0)
+                {
+                    Reduction = 0;
+                }
+            }
+            If (Reduction > 0)
+            {
+                If ((Depth % 2) == 1)
+                {
+                    List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                    List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+                }
+                Else
+                {
+                    List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                    List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+                }
+                If (SearchExtension[Depth] == 1)
+                {
+                    List.ReplaceItem(SearchExtension, Depth, 0);
+                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
+                    List.ReplaceItem(SearchExtension, Depth, 1);
+                }
+                Else
+                {
+                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
+                }
+                SearchCore.NodeEval = SearchEvalResults[(Depth + 1)];
+                Search.LmrNonPV.IsReSearchRequired = 0;
+            }
+        }
+        Call //("Non-PV search");
+        If ((((Search.LmrNonPV.IsReSearchRequired == 0) And ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))) Or ((Search.LmrNonPV.IsReSearchRequired == 1) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsSearchTimeout == 0))
+        {
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+            }
+            Else
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+            }
+            Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)))("");
+            SearchCore.NodeEval = SearchEvalResults[(Depth + 1)];
+            If ((SearchCore.NodeEval > Alphas[Depth]) And (SearchCore.NodeEval < Betas[Depth]))
+            {
+                Search.LmrNonPV.IsReSearchRequired = 1;
+            }
+            Else
+            {
+                Search.LmrNonPV.IsReSearchRequired = 0;
+            }
+        }
+    }
+    If ((Search.LmrNonPV.IsReSearchRequired == 1) And (IsSearchTimeout == 0))
+    {
+        Call //("Move was not pruned upfront, enter full depth + current window search");
+        List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+        List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+        Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
+        SearchCore.NodeEval = SearchEvalResults[(Depth + 1)];
     }
 }
 
@@ -7595,12 +7705,11 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                                     }
                                     Reduction = floor((Horizon / 2));
                                     Call SearchNextPly((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
-                                    ChildEval = SearchEvalResults[(Depth + 2)];
                                     Call SkipSearchFrameExit((Depth + 1));
                                     Call RevertMove(Depth);
                                     List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
                                     Call ApplyMove(Depth)((1 == 1));
-                                    If ((((Depth % 2) == 1) And (ChildEval < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (ChildEval > Alphas[(Depth + 2)])))
+                                    If ((((Depth % 2) == 1) And (SearchEvalResults[(Depth + 2)] < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (SearchEvalResults[(Depth + 2)] > Alphas[(Depth + 2)])))
                                     {
                                         List.ReplaceItem(SearchExtension, Depth, 1);
                                     }
@@ -7734,8 +7843,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                     {
                         If ((((Depth % 2) == 1) And (FP.Eval > SearchEvalResults[Depth])) Or (((Depth % 2) == 0) And (FP.Eval < SearchEvalResults[Depth])))
                         {
-                            ChildEval = FP.Eval;
-                            List.ReplaceItem(SearchEvalResults, Depth, ChildEval);
+                            List.ReplaceItem(SearchEvalResults, Depth, FP.Eval);
                         }
                     }
                 }
@@ -7830,117 +7938,6 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
     }
 }
 
-Define Search_LMRNonPV(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
-{
-    Call //("Late move reduction preparation");
-    Search.LmrNonPV.IsReSearchRequired = 1;
-    If ((Not (Quiescence)) And (IsSearchTimeout == 0))
-    {
-        If ((Horizon > 2) And (((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))) And (((BlackQueenCountLocal + BlackRookCountLocal) + (WhiteQueenCountLocal + WhiteRookCountLocal)) > 0)))
-        {
-            Call //("LMR search");
-            Reduction = 0;
-            If (PickedMoveCount[Depth] > 1)
-            {
-                Reduction = floor((128 * (0.83 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.18))));
-                If (1 == 1)
-                {
-                    If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
-                    {
-                        Reduction += -128;
-                    }
-                }
-                If (1 == 1)
-                {
-                    If (PutsInCheck[Depth] == 1)
-                    {
-                        Reduction += -111;
-                    }
-                }
-                If (1 == 0)
-                {
-                    If Cutnode
-                    {
-                        Reduction += 128;
-                    }
-                }
-                If (1 == 1)
-                {
-                    Idx = (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[Depth])] * 100) + floor((AppliedMove[Depth] % 100))));
-                    Reduction += (0 - floor(((HistoryMoveScores[Idx] / MaxHistoryScore) * 128)));
-                }
-                If (1 == 1)
-                {
-                    If (Depth > 2)
-                    {
-                        If ((Not ((BoardEval[(Depth - 2)] == ""))) And (Not ((BoardEval[Depth] == ""))))
-                        {
-                            If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
-                            {
-                                Reduction += -148;
-                            }
-                        }
-                    }
-                }
-                Reduction = floor((Reduction / 128));
-                If (Reduction < 0)
-                {
-                    Reduction = 0;
-                }
-            }
-            If (Reduction > 0)
-            {
-                If ((Depth % 2) == 1)
-                {
-                    List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                    List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-                }
-                Else
-                {
-                    List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                    List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                }
-                If (SearchExtension[Depth] == 1)
-                {
-                    List.ReplaceItem(SearchExtension, Depth, 0);
-                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
-                    List.ReplaceItem(SearchExtension, Depth, 1);
-                }
-                Else
-                {
-                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
-                }
-                ChildEval = SearchEvalResults[(Depth + 1)];
-                Search.LmrNonPV.IsReSearchRequired = 0;
-            }
-        }
-        Call //("Non-PV search");
-        If ((((Search.LmrNonPV.IsReSearchRequired == 0) And ((((Depth % 2) == 1) And (ChildEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (ChildEval < Betas[Depth])))) Or ((Search.LmrNonPV.IsReSearchRequired == 1) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsSearchTimeout == 0))
-        {
-            If ((Depth % 2) == 1)
-            {
-                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-            }
-            Else
-            {
-                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-            }
-            Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)))("");
-            ChildEval = SearchEvalResults[(Depth + 1)];
-            If ((ChildEval > Alphas[Depth]) And (ChildEval < Betas[Depth]))
-            {
-                Search.LmrNonPV.IsReSearchRequired = 1;
-            }
-            Else
-            {
-                Search.LmrNonPV.IsReSearchRequired = 0;
-            }
-        }
-    }
-}
-
 Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode) (warp=true)
 {
     Call //("Null move pruning");
@@ -7991,13 +7988,13 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                                     List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
                                 }
                                 Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)))("");
-                                ChildEval = SearchEvalResults[(Depth + 1)];
+                                SearchCore.NodeEval = SearchEvalResults[(Depth + 1)];
                                 Call RevertMove((Depth + 0));
-                                If (Not ((abs(ChildEval) > AbsMinCheckmateEval)))
+                                If (Not ((abs(SearchCore.NodeEval) > AbsMinCheckmateEval)))
                                 {
-                                    If (((((Depth % 2) == 1) And (Not ((ChildEval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((ChildEval > Alphas[Depth]))))) And (Not ((abs(ChildEval) > AbsMinCheckmateEval))))
+                                    If (((((Depth % 2) == 1) And (Not ((SearchCore.NodeEval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((SearchCore.NodeEval > Alphas[Depth]))))) And (Not ((abs(SearchCore.NodeEval) > AbsMinCheckmateEval))))
                                     {
-                                        List.ReplaceItem(SearchEvalResults, Depth, ChildEval);
+                                        List.ReplaceItem(SearchEvalResults, Depth, SearchCore.NodeEval);
                                     }
                                 }
                             }
@@ -8106,9 +8103,6 @@ Define Search_ProbeCut(string Depth)(bool InitialDeepening)(string QuiescenceDep
                                                 If ((((Depth % 2) == 1) And (Not ((PC.Score < PC.RaisedAlphaBeta)))) Or (((Depth % 2) == 0) And (Not ((PC.Score > PC.RaisedAlphaBeta)))))
                                                 {
                                                     List.ReplaceItem(SearchEvalResults, Depth, PC.Score);
-                                                    Call RevertMove((Depth + 0));
-                                                    IsInProbeCut = 0;
-                                                    Stop(this script);
                                                 }
                                             }
                                         }
