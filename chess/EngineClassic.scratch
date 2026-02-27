@@ -655,12 +655,11 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
                                 }
                                 Reduction = floor((Horizon / 2));
                                 Call ABSearch_NextPly((Depth + 1))(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
-                                Score = MinMaxResults[(Depth + 2)];
                                 Call SkipSearchFrameExit((Depth + 1));
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
                                 Call ApplyMove(Depth);
-                                If ((((Depth % 2) == 1) And (Score < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (Score > Alphas[(Depth + 2)])))
+                                If ((((Depth % 2) == 1) And (MinMaxResults[(Depth + 2)] < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (MinMaxResults[(Depth + 2)] > Alphas[(Depth + 2)])))
                                 {
                                     List.ReplaceItem(PlyExtension, Depth, 1);
                                 }
@@ -760,7 +759,6 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
 
 Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (warp=true)
 {
-    Score = "";
     IsFutile = 0;
     If (1 == 1)
     {
@@ -833,7 +831,6 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
                     {
                         If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
                         {
-                            Score = FP.Eval;
                             List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
                         }
                     }
@@ -859,7 +856,6 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
                                 IsFutile = 1;
                                 If ((((Depth % 2) == 1) And (FP.Eval > MinMaxResults[(Depth + 0)])) Or (((Depth % 2) == 0) And (FP.Eval < MinMaxResults[(Depth + 0)])))
                                 {
-                                    Score = FP.Eval;
                                     List.ReplaceItem(MinMaxResults, Depth, FP.Eval);
                                 }
                             }
@@ -1280,15 +1276,15 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                     }
                     Stop(this script);
                 }
-                If (Not ((Score == "")))
+                If (Not ((SearchCore.NodeEval == "")))
                 {
                     Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
                     If ((Depth % 2) == 1)
                     {
-                        If ((Score > MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
+                        If ((SearchCore.NodeEval > MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
                         {
-                            List.ReplaceItem(MinMaxResults, Depth, Score);
-                            If (Score > Alphas[Depth])
+                            List.ReplaceItem(MinMaxResults, Depth, SearchCore.NodeEval);
+                            If (SearchCore.NodeEval > Alphas[Depth])
                             {
                                 Call GetCurrentMove(Depth);
                                 List.ReplaceItem(BestMoves, Depth, CurrentMove);
@@ -1296,9 +1292,9 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                                 Call UpdatePV(Depth)(CurrentMove);
                                 If Quiescence
                                 {
-                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score < Betas[Depth]))
+                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (SearchCore.NodeEval < Betas[Depth]))
                                     {
-                                        List.ReplaceItem(Alphas, Depth, Score);
+                                        List.ReplaceItem(Alphas, Depth, SearchCore.NodeEval);
                                     }
                                     Else
                                     {
@@ -1309,21 +1305,21 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                                 }
                                 Else
                                 {
-                                    List.ReplaceItem(Alphas, Depth, Score);
+                                    List.ReplaceItem(Alphas, Depth, SearchCore.NodeEval);
                                     If ((Depth == 1) And (IsMinMaxTimeout == 0))
                                     {
-                                        If (Not ((Score < (0 - AbsMaxCheckmateEval))))
+                                        If (Not ((SearchCore.NodeEval < (0 - AbsMaxCheckmateEval))))
                                         {
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
-                                            If (Score > MinMaxAlpha)
+                                            If (SearchCore.NodeEval > MinMaxAlpha)
                                             {
                                                 MinMaxMoveRes = BestMoves[Depth];
-                                                MinMaxEvalRes = Score;
+                                                MinMaxEvalRes = SearchCore.NodeEval;
                                                 If (1 == 1)
                                                 {
                                                     Call Log(((Depth + Horizon) - 1))(" : ")(MinMaxMoveRes)(" : ")(MinMaxEvalRes)("")("")("");
                                                 }
-                                                Call OnEvaluationChanged(Score);
+                                                Call OnEvaluationChanged(SearchCore.NodeEval);
                                             }
                                             If (MinMaxMoveRes == GoK_OwnKingsideCastling)
                                             {
@@ -1344,19 +1340,19 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                                                 }
                                             }
                                             Event.Broadcast("showbestmove");
-                                            If (Score > (AbsMaxCheckmateEval - (((Depth + Horizon) - 1) * 1000)))
+                                            If (SearchCore.NodeEval > (AbsMaxCheckmateEval - (((Depth + Horizon) - 1) * 1000)))
                                             {
                                                 IsMinMaxTimeout = 1;
                                                 PrevPly1Move = "";
                                             }
-                                            If (Not ((Score < MinMaxBeta)))
+                                            If (Not ((SearchCore.NodeEval < MinMaxBeta)))
                                             {
-                                                List.ReplaceItem(MinMaxResults, Depth, Score);
+                                                List.ReplaceItem(MinMaxResults, Depth, SearchCore.NodeEval);
                                                 Stop(this script);
                                             }
                                         }
                                     }
-                                    If (Not ((Score < Betas[Depth])))
+                                    If (Not ((SearchCore.NodeEval < Betas[Depth])))
                                     {
                                         Call StoreKillerMove(Depth)(Horizon)(BestMoves[Depth]);
                                         If (Depth > 1)
@@ -1372,10 +1368,10 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                     }
                     Else
                     {
-                        If ((Score < MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
+                        If ((SearchCore.NodeEval < MinMaxResults[Depth]) Or (MinMaxResults[Depth] == ""))
                         {
-                            List.ReplaceItem(MinMaxResults, Depth, Score);
-                            If (Score < Betas[Depth])
+                            List.ReplaceItem(MinMaxResults, Depth, SearchCore.NodeEval);
+                            If (SearchCore.NodeEval < Betas[Depth])
                             {
                                 Call GetCurrentMove(Depth);
                                 List.ReplaceItem(BestMoves, Depth, CurrentMove);
@@ -1383,9 +1379,9 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                                 Call UpdatePV(Depth)(CurrentMove);
                                 If Quiescence
                                 {
-                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (Score > Alphas[Depth]))
+                                    If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (SearchCore.NodeEval > Alphas[Depth]))
                                     {
-                                        List.ReplaceItem(Betas, Depth, Score);
+                                        List.ReplaceItem(Betas, Depth, SearchCore.NodeEval);
                                     }
                                     Else
                                     {
@@ -1396,8 +1392,8 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                                 }
                                 Else
                                 {
-                                    List.ReplaceItem(Betas, Depth, Score);
-                                    If (Not ((Score > Alphas[Depth])))
+                                    List.ReplaceItem(Betas, Depth, SearchCore.NodeEval);
+                                    If (Not ((SearchCore.NodeEval > Alphas[Depth])))
                                     {
                                         Call StoreKillerMove(Depth)(Horizon)(BestMoves[Depth]);
                                         List.ReplaceItem(MovesIdx, Depth, (MovesCount[Depth] + 1));
@@ -1673,13 +1669,12 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                                     List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
                                 }
                                 Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)))("");
-                                Score = MinMaxResults[(Depth + 1)];
                                 Call RevertMove((Depth + 0));
-                                If (Not ((abs(Score) > AbsMinCheckmateEval)))
+                                If (Not ((abs(MinMaxResults[(Depth + 1)]) > AbsMinCheckmateEval)))
                                 {
-                                    If (((((Depth % 2) == 1) And (Not ((Score < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((Score > Alphas[Depth]))))) And (Not ((abs(Score) > AbsMinCheckmateEval))))
+                                    If ((((Depth % 2) == 1) And (Not ((MinMaxResults[(Depth + 1)] < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((MinMaxResults[(Depth + 1)] > Alphas[Depth])))))
                                     {
-                                        List.ReplaceItem(MinMaxResults, Depth, Score);
+                                        List.ReplaceItem(MinMaxResults, Depth, MinMaxResults[(Depth + 1)]);
                                         IsInNullMove += -1;
                                         Stop(this script);
                                     }
@@ -1746,9 +1741,6 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                                         If ((((Depth % 2) == 1) And (Not ((PC.Score < PC.RaisedAlphaBeta)))) Or (((Depth % 2) == 0) And (Not ((PC.Score > PC.RaisedAlphaBeta)))))
                                         {
                                             List.ReplaceItem(MinMaxResults, Depth, PC.Score);
-                                            Call RevertMove((Depth + 0));
-                                            IsInProbeCut = 0;
-                                            Stop(this script);
                                         }
                                     }
                                 }
@@ -1765,7 +1757,7 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
 
 Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludeMove) (warp=true)
 {
-    Score = "";
+    SearchCore.NodeEval = "";
     Call //("Late move reduction preparation");
     IsReductionAndDone = 0;
     If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
@@ -1850,13 +1842,13 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
                     {
                         Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
                     }
-                    Score = MinMaxResults[(Depth + 1)];
+                    SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
                     IsReductionAndDone = 1;
                 }
             }
         }
         Call //("Non-PV search");
-        If ((((IsReductionAndDone == 1) And ((((Depth % 2) == 1) And (Score > Alphas[Depth])) Or (((Depth % 2) == 0) And (Score < Betas[Depth])))) Or ((IsReductionAndDone == 0) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsMinMaxTimeout == 0))
+        If ((((IsReductionAndDone == 1) And ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))) Or ((IsReductionAndDone == 0) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsMinMaxTimeout == 0))
         {
             If ((Depth % 2) == 1)
             {
@@ -1869,8 +1861,8 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
                 List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
             }
             Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)))("");
-            Score = MinMaxResults[(Depth + 1)];
-            If ((Score > Alphas[Depth]) And (Score < Betas[Depth]))
+            SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
+            If ((SearchCore.NodeEval > Alphas[Depth]) And (SearchCore.NodeEval < Betas[Depth]))
             {
                 IsReductionAndDone = 0;
             }
@@ -1886,7 +1878,7 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
         List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
         List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
         Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
-        Score = MinMaxResults[(Depth + 1)];
+        SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
     }
 }
 
