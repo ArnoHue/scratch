@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (05.03.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338a (07.03.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3066,7 +3066,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         AWCount = 1;
         AWDelta = AWSize[AWCount];
-        If (((IdxDeepening > 7) And (1 == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 10) And (1 == 1)) And ((Not ((BestSearchEvalRes == ""))) And (abs(BestSearchEvalRes) < AbsMinCheckmateEval)))
         {
             AWAlpha = Operator.Round((BestSearchEvalRes - AWDelta));
             AWBeta = Operator.Round((BestSearchEvalRes + AWDelta));
@@ -3167,6 +3167,21 @@ Define GetBoardString (warp=true)
 Define GetCurrentMove(num Depth) (warp=true)
 {
     CurrentMove = Moves[(((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth])];
+}
+
+Define GetImproving(string Depth) (warp=true)
+{
+    IsImproving = 0;
+    If (Not ((BoardEval[Depth] == "")))
+    {
+        If ((Depth > 2) And (Not ((BoardEval[(Depth - 2)] == ""))))
+        {
+            If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
+            {
+                IsImproving = 1;
+            }
+        }
+    }
 }
 
 Define GetKingProtection(string KingIdx)(bool IsBlack) (warp=true)
@@ -6989,6 +7004,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 If (Not ((BoardEval[Depth] < Betas[Depth])))
                 {
                     Call //("Failing high => cutoff");
+                    Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])("")("B")("")(-1)("")("")("")("")("")(0);
                     Stop(this script);
                 }
                 If (BoardEval[Depth] > Alphas[Depth])
@@ -7000,7 +7016,8 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 If (Not ((BoardEval[Depth] > Alphas[Depth])))
                 {
-                    Call //("Failing high => cutoff");
+                    Call //("Failing low => cutoff");
+                    Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])("")("A")("")(-1)("")("")("")("")("")(0);
                     Stop(this script);
                 }
                 If (BoardEval[Depth] < Betas[Depth])
@@ -7372,7 +7389,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
         {
             Call //("LMR search");
             Reduction = 0;
-            If (PickedMoveCount[Depth] > 1)
+            If (PickedMoveCount[Depth] > (1 + (Depth == 1)))
             {
                 Reduction = floor((128 * (0.83 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2.18))));
                 If (1 == 1)
@@ -7669,7 +7686,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
 {
     If (IsScratch3 == 0)
     {
-        If (Not (Quiescence))
+        If ((Not (Quiescence)) And (1 == 0))
         {
             If (SearchExtension[Depth] == 0)
             {
@@ -7718,20 +7735,6 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                     }
                 }
             }
-            Count = 0;
-            Idx = (Depth - 1);
-            Repeat Until (Idx < 1)
-            {
-                If (SearchExtension[Idx] == 1)
-                {
-                    Count += 1;
-                }
-                Idx += -1;
-            }
-            If (Count > 3)
-            {
-                Stop(this script);
-            }
             If ((Depth > 1) And (CheckedState[Depth] == 1))
             {
                 If (1 == 1)
@@ -7741,6 +7744,23 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                     {
                         List.ReplaceItem(SearchExtension, Depth, 1);
                     }
+                }
+            }
+            If (1 == 0)
+            {
+                Count = 0;
+                Idx = (Depth - 1);
+                Repeat Until (Idx < 1)
+                {
+                    If (SearchExtension[Idx] == 1)
+                    {
+                        Count += 1;
+                    }
+                    Idx += -1;
+                }
+                If (Count > 3)
+                {
+                    Stop(this script);
                 }
             }
         }
@@ -7756,18 +7776,8 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
         {
             If ((Not (Quiescence)) And (((Betas[Depth] - Alphas[Depth]) == 1) And (TargetPieces[Depth] == 0)))
             {
-                IsIimproving = 1;
-                If (Not ((BoardEval[Depth] == "")))
-                {
-                    If ((Depth > 2) And (Not ((BoardEval[(Depth - 2)] == ""))))
-                    {
-                        If (Not (((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))))
-                        {
-                            IsIimproving = 0;
-                        }
-                    }
-                }
-                If (PickedMoveCountQuiet[Depth] > floor((((6 + (Horizon * Horizon)) * (1 + IsIimproving)) / 2)))
+                Call GetImproving(Depth);
+                If (PickedMoveCountQuiet[Depth] > floor((((6 + (Horizon * Horizon)) * (1 + IsImproving)) / 2)))
                 {
                     IsFutile = 1;
                     Stop(this script);
@@ -7989,11 +7999,14 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                                 Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((Not (Cutnode)))("");
                                 SearchCore.NodeEval = SearchEvalResults[(Depth + 1)];
                                 Call RevertMove((Depth + 0));
-                                If (Not ((abs(SearchCore.NodeEval) > AbsMinCheckmateEval)))
+                                If ((Not ((abs(SearchCore.NodeEval) > AbsMinCheckmateEval))) And (Not ((SearchCore.NodeEval == DrawByRepetitionEval))))
                                 {
-                                    If (((((Depth % 2) == 1) And (Not ((SearchCore.NodeEval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((SearchCore.NodeEval > Alphas[Depth]))))) And (Not ((abs(SearchCore.NodeEval) > AbsMinCheckmateEval))))
+                                    If (Not ((SearchCore.NodeEval == DrawByRepetitionEval)))
                                     {
-                                        List.ReplaceItem(SearchEvalResults, Depth, SearchCore.NodeEval);
+                                        If (((((Depth % 2) == 1) And (Not ((SearchCore.NodeEval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((SearchCore.NodeEval > Alphas[Depth]))))) And (Not ((abs(SearchCore.NodeEval) > AbsMinCheckmateEval))))
+                                        {
+                                            List.ReplaceItem(SearchEvalResults, Depth, SearchCore.NodeEval);
+                                        }
                                     }
                                 }
                             }
@@ -8052,22 +8065,16 @@ Define Search_ProbeCut(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     {
                         If (Not ((BoardEval[Depth] == "")))
                         {
-                            IsIimproving = 0;
-                            If ((Depth > 2) And (Not ((BoardEval[(Depth - 2)] == ""))))
-                            {
-                                If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
-                                {
-                                    IsIimproving = 1;
-                                }
-                            }
+                            Call GetImproving(Depth);
+                            Margin = (90 - (IsImproving * 23));
                             If ((Depth % 2) == 1)
                             {
-                                PC.RaisedAlphaBeta = (Betas[Depth] + (108 - (IsIimproving * 24)));
+                                PC.RaisedAlphaBeta = (Betas[Depth] + Margin);
                                 PC.SEEThreshold = (PC.RaisedAlphaBeta - BoardEval[Depth]);
                             }
                             Else
                             {
-                                PC.RaisedAlphaBeta = (Alphas[Depth] - (108 - (IsIimproving * 24)));
+                                PC.RaisedAlphaBeta = (Alphas[Depth] - Margin);
                                 PC.SEEThreshold = (BoardEval[Depth] - PC.RaisedAlphaBeta);
                             }
                             Call TTProbeNode(CurrentBoardHash)(Depth);
@@ -8096,15 +8103,24 @@ Define Search_ProbeCut(string Depth)(bool InitialDeepening)(string QuiescenceDep
                                                 List.ReplaceItem(Betas, (Depth + 1), (PC.RaisedAlphaBeta + ((Depth % 2) == 0)));
                                                 Call SearchImpl((Depth + 1))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
                                                 PC.Score = SearchEvalResults[(Depth + 1)];
-                                                If ((((Depth % 2) == 1) And (Not ((PC.Score < PC.RaisedAlphaBeta)))) Or (((Depth % 2) == 0) And (Not ((PC.Score > PC.RaisedAlphaBeta)))))
+                                                If (Not ((PC.Score == DrawByRepetitionEval)))
                                                 {
-                                                    List.ReplaceItem(Alphas, (Depth + 1), (PC.RaisedAlphaBeta - ((Depth % 2) == 1)));
-                                                    List.ReplaceItem(Betas, (Depth + 1), (PC.RaisedAlphaBeta + ((Depth % 2) == 0)));
-                                                    Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(3)((Not (Cutnode)))("");
-                                                    PC.Score = SearchEvalResults[(Depth + 1)];
                                                     If ((((Depth % 2) == 1) And (Not ((PC.Score < PC.RaisedAlphaBeta)))) Or (((Depth % 2) == 0) And (Not ((PC.Score > PC.RaisedAlphaBeta)))))
                                                     {
-                                                        List.ReplaceItem(SearchEvalResults, Depth, PC.Score);
+                                                        List.ReplaceItem(Alphas, (Depth + 1), (PC.RaisedAlphaBeta - ((Depth % 2) == 1)));
+                                                        List.ReplaceItem(Betas, (Depth + 1), (PC.RaisedAlphaBeta + ((Depth % 2) == 0)));
+                                                        Call SearchNextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(3)((Not (Cutnode)))("");
+                                                        PC.Score = SearchEvalResults[(Depth + 1)];
+                                                        If (Not ((PC.Score == DrawByRepetitionEval)))
+                                                        {
+                                                            If ((((Depth % 2) == 1) And (Not ((PC.Score < PC.RaisedAlphaBeta)))) Or (((Depth % 2) == 0) And (Not ((PC.Score > PC.RaisedAlphaBeta)))))
+                                                            {
+                                                                List.ReplaceItem(SearchEvalResults, Depth, PC.Score);
+                                                                Call RevertMove((Depth + 0));
+                                                                Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(AppliedMove[Depth])(NodeTypes[Depth])("")((Horizon - 3))("")("")("")("")("")("");
+                                                                Stop(this script);
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -8126,13 +8142,13 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
 {
     If (1 == 0)
     {
-        If ((((Not (Quiescence)) And (Depth > 1)) And (((ExcludedMove == "") And (CheckedState[Depth] == 0)) And (Horizon == 1))) And ((Betas[Depth] - Alphas[Depth]) == 1))
+        If (((Not (Quiescence)) And ((CheckedState[Depth] == 0) And (Horizon < 7))) And ((Betas[Depth] - Alphas[Depth]) == 1))
         {
             If ((QuiescenceDepth > 0) And (IsInNullMove == 0))
             {
                 If (Not ((BoardEval[Depth] == "")))
                 {
-                    Margin = (250 + (250 * (Horizon * Horizon)));
+                    Margin = (175 + (125 * (Horizon * Horizon)));
                     If ((((Depth % 2) == 1) And ((BoardEval[Depth] + Margin) < Alphas[Depth])) Or (((Depth % 2) == 0) And ((BoardEval[Depth] - Margin) > Betas[Depth])))
                     {
                         Call ClearMoveList(Depth);
@@ -8143,9 +8159,15 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
                         List.ReplaceItem(Alphas, (Depth + 2), Alphas[Depth]);
                         List.ReplaceItem(Betas, (Depth + 2), Betas[Depth]);
                         Call SearchImpl((Depth + 2))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
-                        List.ReplaceItem(SearchEvalResults, Depth, SearchEvalResults[(Depth + 2)]);
                         Call SkipSearchFrameExit((Depth + 1));
                         Call RevertMove(Depth);
+                        If (Not ((SearchEvalResults[(Depth + 2)] == DrawByRepetitionEval)))
+                        {
+                            If ((((Depth % 2) == 1) And (SearchEvalResults[(Depth + 2)] < Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchEvalResults[(Depth + 2)] > Betas[Depth])))
+                            {
+                                List.ReplaceItem(SearchEvalResults, Depth, SearchEvalResults[(Depth + 2)]);
+                            }
+                        }
                     }
                 }
             }
@@ -8155,7 +8177,7 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
 
 Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
 {
-    If (1 == 1)
+    If (1 == 0)
     {
         If (((Depth > 1) And (Horizon < 6)) And ((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1)))
         {
@@ -8165,15 +8187,8 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
             }
             If (Not ((BoardEval[Depth] == "")))
             {
-                IsIimproving = 0;
-                If ((Depth > 2) And (Not ((BoardEval[(Depth - 2)] == ""))))
-                {
-                    If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
-                    {
-                        IsIimproving = 1;
-                    }
-                }
-                Margin = (80 + (160 * ((Horizon + 0) - IsIimproving)));
+                Call GetImproving(Depth);
+                Margin = (80 + (160 * (Horizon - IsImproving)));
                 If ((Depth % 2) == 1)
                 {
                     If (Not (((BoardEval[Depth] - Margin) < Betas[Depth])))
@@ -8210,7 +8225,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
                 If ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))
                 {
                     Call IsQuiescentCheckCond(Depth);
-                    If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < (Horizon + (1 - (TTProbeBoard.AgeRes == TT.CurrentAge))))))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
+                    If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
                     {
                         If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)]))))))
                         {
