@@ -69,8 +69,8 @@ WhenKeyPressed(d)
     {
         DebugMode = 1;
         Variable.Show(IdxDeepening);
-        Variable.Show(BestMinMaxRes);
-        Variable.Show(BestMove);
+        Variable.Show(GBM.Evaluation);
+        Variable.Show(GBM.BestMove);
         Variable.Show(NPS);
         Variable.Show(MPS);
         Variable.Show(PV);
@@ -79,8 +79,8 @@ WhenKeyPressed(d)
     {
         DebugMode = 0;
         Variable.Hide(IdxDeepening);
-        Variable.Hide(BestMinMaxRes);
-        Variable.Hide(BestMove);
+        Variable.Hide(GBM.Evaluation);
+        Variable.Hide(GBM.BestMove);
         Variable.Hide(NPS);
         Variable.Hide(MPS);
         Variable.Hide(PV);
@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248a (07.03.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (08.03.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -385,8 +385,8 @@ Define ABSearch(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(boo
 {
     MinMaxAlpha = Alpha;
     MinMaxBeta = Beta;
-    MinMaxEvalRes = "";
-    MinMaxMoveRes = "";
+    Search.EvalRes = "";
+    Search.MoveRes = "";
     Call ABSearch_Init((MaxDepth - 1))(InitialDeepening);
     Call Evaluate(0)((1 == 0));
     List.ReplaceItem(Alphas, MinDepth, Alpha);
@@ -423,7 +423,7 @@ Define ABSearch(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(boo
     }
     MPS = Operator.Round(((MoveCount + MoveCountQ) / MinMaxTimer));
     NPS = Operator.Round(((NodeCount + NodeCountQ) / MinMaxTimer));
-    If (Not ((MinMaxMoveRes == "")))
+    If (Not ((Search.MoveRes == "")))
     {
         List.DeleteAll(PVStablePrev);
         Idx = 1;
@@ -432,9 +432,9 @@ Define ABSearch(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(boo
             List.Add(PVStablePrev, PVStable[Idx]);
             Idx += 1;
         }
-        If ((floor((MinMaxMoveRes / 100)) == 0) Or (Board[floor((MinMaxMoveRes % 100))] == 0))
+        If ((floor((Search.MoveRes / 100)) == 0) Or (Board[floor((Search.MoveRes % 100))] == 0))
         {
-            Call StoreKillerMove(1)((MaxDepth - 1))(MinMaxMoveRes);
+            Call StoreKillerMove(1)((MaxDepth - 1))(Search.MoveRes);
         }
         If ((ProfilerMode % 10) > 0)
         {
@@ -684,7 +684,7 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
             }
             Idx += -1;
         }
-        If (Count1 > 3)
+        If (Count1 > 1)
         {
             Stop(this script);
         }
@@ -1044,7 +1044,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
                 Call IsQuiescentCheckCond(Depth);
-                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < (Horizon + (1 - (TTProbeNodeAgeRes == TTCurrentAge))))))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
+                If (((Not (Quiescence)) And (Not ((TTProbeHorizonRes < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                     {
@@ -1146,7 +1146,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
     {
         If ((Not (Quiescence)) And ((Depth == 1) Or (Horizon > 2)))
         {
-            If ((IsMinMaxTimeout == 0) And ((Not (InitialDeepening)) Or (Not ((MinMaxMoveRes == "")))))
+            If ((IsMinMaxTimeout == 0) And ((Not (InitialDeepening)) Or (Not ((Search.MoveRes == "")))))
             {
                 If (((Sensing.DaysSince2000() * 86400) - ThinkTimeStart) > ThinkTimeLimitMinMax)
                 {
@@ -1311,43 +1311,22 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                                         If (Not ((SearchCore.NodeEval < (0 - AbsMaxCheckmateEval))))
                                         {
                                             Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
-                                            If (SearchCore.NodeEval > MinMaxAlpha)
+                                            Search.MoveRes = BestMoves[Depth];
+                                            Search.EvalRes = SearchCore.NodeEval;
+                                            If (1 == 1)
                                             {
-                                                MinMaxMoveRes = BestMoves[Depth];
-                                                MinMaxEvalRes = SearchCore.NodeEval;
-                                                If (1 == 1)
-                                                {
-                                                    Call Log(((Depth + Horizon) - 1))(" : ")(MinMaxMoveRes)(" : ")(MinMaxEvalRes)("")("")("");
-                                                }
-                                                Call OnEvaluationChanged(SearchCore.NodeEval);
+                                                Call Log(((Depth + Horizon) - 1))(" : ")(Search.MoveRes)(" : ")(Search.EvalRes)("")("")("");
                                             }
-                                            If (MinMaxMoveRes == GoK_OwnKingsideCastling)
-                                            {
-                                                Stg_BestMoveFromIdx = VirtualBoard[5];
-                                                Stg_BestMoveToIdx = VirtualBoard[7];
-                                            }
-                                            Else
-                                            {
-                                                If (MinMaxMoveRes == GoK_OwnQueensideCastling)
-                                                {
-                                                    Stg_BestMoveFromIdx = VirtualBoard[5];
-                                                    Stg_BestMoveToIdx = VirtualBoard[3];
-                                                }
-                                                Else
-                                                {
-                                                    Stg_BestMoveFromIdx = floor((MinMaxMoveRes / 100));
-                                                    Stg_BestMoveToIdx = floor((MinMaxMoveRes % 100));
-                                                }
-                                            }
-                                            Event.Broadcast("showbestmove");
+                                            Call OnEvaluationChanged(SearchCore.NodeEval);
+                                            Call OnBestMoveChanged(Search.MoveRes);
                                             If (SearchCore.NodeEval > (AbsMaxCheckmateEval - (((Depth + Horizon) - 1) * 1000)))
                                             {
                                                 IsMinMaxTimeout = 1;
                                                 PrevPly1Move = "";
+                                                Stop(this script);
                                             }
                                             If (Not ((SearchCore.NodeEval < MinMaxBeta)))
                                             {
-                                                List.ReplaceItem(MinMaxResults, Depth, SearchCore.NodeEval);
                                                 Stop(this script);
                                             }
                                         }
@@ -1601,12 +1580,12 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                     If (Not ((BoardEval[Depth] == "")))
                     {
                         Call GetImproving(Depth);
-                        Margin = (80 + (160 * (Horizon - IsImproving)));
+                        Margin = (80 + (80 * (Horizon - IsImproving)));
                         If ((Depth % 2) == 1)
                         {
                             If (Not (((BoardEval[Depth] - Margin) < Betas[Depth])))
                             {
-                                List.ReplaceItem(MinMaxResults, Depth, Betas[Depth]);
+                                List.ReplaceItem(MinMaxResults, Depth, BoardEval[Depth]);
                                 Stop(this script);
                             }
                         }
@@ -1614,7 +1593,7 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                         {
                             If (Not (((BoardEval[Depth] + Margin) > Alphas[Depth])))
                             {
-                                List.ReplaceItem(MinMaxResults, Depth, Alphas[Depth]);
+                                List.ReplaceItem(MinMaxResults, Depth, BoardEval[Depth]);
                                 Stop(this script);
                             }
                         }
@@ -1751,7 +1730,10 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                                                 {
                                                     CurrentValue = "A";
                                                 }
-                                                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(AppliedMove[Depth])(CurrentValue)("")((Horizon - 3))("")("")("")("")("")("");
+                                                If (1 == 1)
+                                                {
+                                                    Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(AppliedMove[Depth])(CurrentValue)("")((Horizon - 3))("")("")("")("")("")("");
+                                                }
                                                 IsInProbeCut = 0;
                                                 Stop(this script);
                                             }
@@ -5361,17 +5343,17 @@ Define ExecuteEngineMoveImpl (warp=false)
         Stop(this script);
     }
     Event.Broadcast("OpeningBookHide");
-    BestMove = "";
+    GBM.BestMove = "";
     If (Level > 2)
     {
         Call GetOpeningMoves;
         If (List.Length(OpeningMovesRes) > 0)
         {
             Event.Broadcast("OpeningBookShow");
-            BestMove = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
+            GBM.BestMove = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
         }
     }
-    Call IsEngineValidMove(BestMove);
+    Call IsEngineValidMove(GBM.BestMove);
     If (ValidMoveRes == 0)
     {
         Looks.Think("Thinking...");
@@ -5395,19 +5377,19 @@ Define ExecuteEngineMoveImpl (warp=false)
     Event.BroadcastAndWait("hidebestmove");
     Call OnProgressChanged(100);
     Control.Wait(0);
-    Call IsEngineValidMove(BestMove);
+    Call IsEngineValidMove(GBM.BestMove);
     If (ValidMoveRes == 0)
     {
-        Looks.Say(Operator.Join("Internal Error: No valid move found. Sorry, this should not happen. Maybe you cleared lookup lists in the editor? If you are running a normal game, please export board data and report bug via project comment", Operator.Join(" Move: ", BestMove)), 10);
+        Looks.Say(Operator.Join("Internal Error: No valid move found. Sorry, this should not happen. Maybe you cleared lookup lists in the editor? If you are running a normal game, please export board data and report bug via project comment", Operator.Join(" Move: ", GBM.BestMove)), 10);
         GoK_IsGameSuspended = 1;
         Stop(this script);
     }
     Looks.Think("");
-    Pieces_MovePieceFromIdx = floor((BestMove / 100));
-    Pieces_MovePieceToIdx = floor((BestMove % 100));
-    If (((BestMove == GoK_OwnQueensideCastling) Or (BestMove == GoK_OwnKingsideCastling)) Or ((BestMove == GoK_OppQueensideCastling) Or (BestMove == GoK_OppKingsideCastling)))
+    Pieces_MovePieceFromIdx = floor((GBM.BestMove / 100));
+    Pieces_MovePieceToIdx = floor((GBM.BestMove % 100));
+    If (((GBM.BestMove == GoK_OwnQueensideCastling) Or (GBM.BestMove == GoK_OwnKingsideCastling)) Or ((GBM.BestMove == GoK_OppQueensideCastling) Or (GBM.BestMove == GoK_OppKingsideCastling)))
     {
-        Pieces_MovePieceSpecial = BestMove;
+        Pieces_MovePieceSpecial = GBM.BestMove;
     }
     Else
     {
@@ -5415,30 +5397,30 @@ Define ExecuteEngineMoveImpl (warp=false)
     }
     Event.BroadcastAndWait("movepiece");
     Event.Broadcast("SoundMove");
-    GameMoves = Operator.Join(GameMoves, MoveToZeroPadStr[floor((BestMove + 1))]);
-    Call GetMoveNotation(BestMove);
+    GameMoves = Operator.Join(GameMoves, MoveToZeroPadStr[floor((GBM.BestMove + 1))]);
+    Call GetMoveNotation(GBM.BestMove);
     List.Add(GameMovesAN, MoveNotationRes);
     Call ClearMoveList(1);
-    Call AddMoveToList(BestMove)(1);
+    Call AddMoveToList(GBM.BestMove)(1);
     List.ReplaceItem(MovesIdx, 1, 1);
     Call ApplyMove(1);
     Call DrawBoardAndWait;
-    If (Board[(BestMove % 100)] == GoK_OwnKing)
+    If (Board[(GBM.BestMove % 100)] == GoK_OwnKing)
     {
         HasOwnKingMoved = 1;
     }
-    If (Board[(BestMove % 100)] == GoK_OwnRook)
+    If (Board[(GBM.BestMove % 100)] == GoK_OwnRook)
     {
-        If (floor((BestMove / 100)) == VirtualBoard[1])
+        If (floor((GBM.BestMove / 100)) == VirtualBoard[1])
         {
             HasOwnRookQSMoved = 1;
         }
-        If (floor((BestMove / 100)) == VirtualBoard[8])
+        If (floor((GBM.BestMove / 100)) == VirtualBoard[8])
         {
             HasOwnRookKSMoved = 1;
         }
     }
-    If ((BestMove == GoK_OwnQueensideCastling) Or (BestMove == GoK_OwnKingsideCastling))
+    If ((GBM.BestMove == GoK_OwnQueensideCastling) Or (GBM.BestMove == GoK_OwnKingsideCastling))
     {
         HasOwnKingMoved = 1;
         HasOwnCastled = 1;
@@ -6282,20 +6264,20 @@ Define GetBestMoveBlitz (warp=false)
     IsMinMaxTimeout = 0;
     IsDeepeningDone = 0;
     IdxDeepening = 1;
-    BestMove = "";
-    BestMinMaxRes = "";
+    GBM.BestMove = "";
+    GBM.Evaluation = "";
     ThinkTimeLimitMinMax = ThinkTimeLimit;
     Repeat ((((Level - 2) * 2) * (2 - IsScratch3)))
     {
-        If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If ((IsMinMaxTimeout == 0) And ((IdxDeepening == 1) Or (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
             Call ABSearch(-100000)(100000)(1)((IdxDeepening + 1))((IdxDeepening == 1))(8)((1 == 1));
-            If (Not ((MinMaxMoveRes == "")))
+            If (Not ((Search.MoveRes == "")))
             {
-                If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
+                If ((GBM.BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, GBM.BestMove))
                 {
-                    BestMove = MinMaxMoveRes;
-                    BestMinMaxRes = MinMaxEvalRes;
+                    GBM.BestMove = Search.MoveRes;
+                    GBM.Evaluation = Search.EvalRes;
                 }
             }
         }
@@ -6307,7 +6289,7 @@ Define GetBestMoveEasy (warp=false)
 {
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     ThinkTimeLimitMinMax = 10;
-    BestMove = "";
+    GBM.BestMove = "";
     If (Level == 1)
     {
         JuniorDistQuota = 100;
@@ -6322,9 +6304,9 @@ Define GetBestMoveEasy (warp=false)
         }
     }
     Call ABSearch(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
-    BestMove = MinMaxMoveRes;
+    GBM.BestMove = Search.MoveRes;
     CurrentValue = Operator.Random(1 , 100);
-    If ((CurrentValue > ((JuniorSearchQuota + 100) / 2)) Or (((BoardAttackedByOpp[floor((BestMove / 100))] == 0) And (Board[floor((BestMove % 100))] == 0)) And (CurrentValue > JuniorSearchQuota)))
+    If ((CurrentValue > ((JuniorSearchQuota + 100) / 2)) Or (((BoardAttackedByOpp[floor((GBM.BestMove / 100))] == 0) And (Board[floor((GBM.BestMove % 100))] == 0)) And (CurrentValue > JuniorSearchQuota)))
     {
         Call GenerateMovesPublic(1);
         List.ReplaceItem(MovesIdx, 1, Operator.Random(1 , ceiling((List.Length(Moves1) * (JuniorDistQuota / 100)))));
@@ -6338,7 +6320,7 @@ Define GetBestMoveEasy (warp=false)
             Call CalcBoardAttackedByMove(2);
             Call RevertMove(1);
         }
-        BestMove = Moves1[MovesIdx[1]];
+        GBM.BestMove = Moves1[MovesIdx[1]];
     }
 }
 
@@ -6381,12 +6363,13 @@ Define GetBestMoveMedDiff (warp=false)
     }
     List.DeleteAll(AWSize);
     List.Add(AWSize, 35);
+    List.Add(AWSize, 50);
     ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     IsMinMaxTimeout = 0;
     IsDeepeningDone = 0;
     IdxDeepening = 1;
-    BestMove = "";
-    BestMinMaxRes = "";
+    GBM.BestMove = "";
+    GBM.Evaluation = "";
     Repeat Until (IsDeepeningDone == 1)
     {
         If (IsScratch3 == 1)
@@ -6399,10 +6382,10 @@ Define GetBestMoveMedDiff (warp=false)
         }
         AWCount = 1;
         AWDelta = AWSize[1];
-        If (((IdxDeepening > 7) And (1 == 1)) And ((Not ((BestMinMaxRes == ""))) And (abs(BestMinMaxRes) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 7) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
-            AWAlpha = Operator.Round((BestMinMaxRes - AWDelta));
-            AWBeta = Operator.Round((BestMinMaxRes + AWDelta));
+            AWAlpha = Operator.Round((GBM.Evaluation - AWDelta));
+            AWBeta = Operator.Round((GBM.Evaluation + AWDelta));
         }
         Else
         {
@@ -6414,38 +6397,29 @@ Define GetBestMoveMedDiff (warp=false)
         {
             ThinkTimeLimitMinMax = ThinkTimeLimit;
             Call ABSearch(AWAlpha)(AWBeta)(1)((IdxDeepening + 1))((IdxDeepening == 1))(QuiescenceDepth)((1 == 1));
-            If (Not ((MinMaxMoveRes == "")))
-            {
-                If ((BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, BestMove))
-                {
-                    BestMove = MinMaxMoveRes;
-                    BestMinMaxRes = MinMaxEvalRes;
-                }
-                Call OnEvaluationChanged(BestMinMaxRes);
-            }
-            Call Log(IdxDeepening)(" : AW : ")(AWAlpha)(" : ")(AWBeta)(" : ")(MinMaxResults[1])(Operator.Join(" : ", ((Not ((MinMaxResults[1] == ""))) And ((Not ((MinMaxResults[1] > AWAlpha))) Or (Not ((MinMaxResults[1] < AWBeta)))))));
-            If ((IsMinMaxTimeout == 0) And ((Not ((MinMaxResults[1] == ""))) And ((Not ((MinMaxResults[1] > AWAlpha))) Or (Not ((MinMaxResults[1] < AWBeta))))))
+            Call Log(IdxDeepening)(" : AW : ")(AWAlpha)(" : ")(AWBeta)(" : ")(Search.EvalRes)(Operator.Join(" : ", ((Not ((Search.EvalRes == ""))) And ((Not ((Search.EvalRes > AWAlpha))) Or (Not ((Search.EvalRes < AWBeta)))))));
+            If ((IsMinMaxTimeout == 0) And ((Not ((Search.EvalRes == ""))) And ((Not ((Search.EvalRes > AWAlpha))) Or (Not ((Search.EvalRes < AWBeta))))))
             {
                 IsEvalStable = 0;
                 IsMinMaxTimeout = 0;
                 AWCount += 1;
-                If ((Not ((AWCount > List.Length(AWSize)))) And (abs(MinMaxResults[1]) < AbsMinCheckmateEval))
+                If ((Not ((AWCount > List.Length(AWSize)))) And (abs(Search.EvalRes) < AbsMinCheckmateEval))
                 {
                     AWDelta = Operator.Round((AWDelta + AWSize[AWCount]));
-                    If (Not ((MinMaxResults[1] > AWAlpha)))
+                    If (Not ((Search.EvalRes > AWAlpha)))
                     {
                         AWAlpha += (0 - AWDelta);
-                        If (Not ((MinMaxResults[1] > AWAlpha)))
+                        If (Not ((Search.EvalRes > AWAlpha)))
                         {
-                            AWAlpha = (MinMaxResults[1] - AWDelta);
+                            AWAlpha = (Search.EvalRes - AWDelta);
                         }
                     }
                     Else
                     {
                         AWBeta += AWDelta;
-                        If (Not ((MinMaxResults[1] < AWBeta)))
+                        If (Not ((Search.EvalRes < AWBeta)))
                         {
-                            AWBeta = (MinMaxResults[1] + AWDelta);
+                            AWBeta = (Search.EvalRes + AWDelta);
                         }
                     }
                 }
@@ -6457,11 +6431,20 @@ Define GetBestMoveMedDiff (warp=false)
             }
             Else
             {
+                If (Not ((Search.MoveRes == "")))
+                {
+                    If ((GBM.BestMove == "") Or List.ContainsItem(MinMaxPly1EvalMoves, GBM.BestMove))
+                    {
+                        GBM.BestMove = Search.MoveRes;
+                        GBM.Evaluation = Search.EvalRes;
+                    }
+                    Call OnEvaluationChanged(GBM.Evaluation);
+                }
                 IsAWDone = 1;
                 IsEvalStable = 1;
             }
         }
-        If (((IsMinMaxTimeout == 1) Or (IdxDeepening == MaxSearchDepth)) Or (abs(BestMinMaxRes) > (AbsMaxCheckmateEval - (IdxDeepening * 1000))))
+        If (((IsMinMaxTimeout == 1) Or (IdxDeepening == MaxSearchDepth)) Or (abs(GBM.Evaluation) > (AbsMaxCheckmateEval - (IdxDeepening * 1000))))
         {
             IsDeepeningDone = 1;
         }
@@ -9049,6 +9032,29 @@ Define LogPVEvalLine(string Key)(string Val1)(string Val2)(string SquareIdx)(str
     }
 }
 
+Define OnBestMoveChanged(string Move) (warp=true)
+{
+    If (Move == GoK_OwnKingsideCastling)
+    {
+        Stg_BestMoveFromIdx = VirtualBoard[5];
+        Stg_BestMoveToIdx = VirtualBoard[7];
+    }
+    Else
+    {
+        If (Move == GoK_OwnQueensideCastling)
+        {
+            Stg_BestMoveFromIdx = VirtualBoard[5];
+            Stg_BestMoveToIdx = VirtualBoard[3];
+        }
+        Else
+        {
+            Stg_BestMoveFromIdx = floor((Move / 100));
+            Stg_BestMoveToIdx = floor((Move % 100));
+        }
+    }
+    Event.Broadcast("showbestmove");
+}
+
 Define OnEvaluationChanged(string Eval) (warp=false)
 {
     If (Level > 2)
@@ -9102,8 +9108,8 @@ Define OnRestart (warp=true)
     List.Hide(Logfile);
     List.Hide(Profile_Data);
     Variable.Hide(IdxDeepening);
-    Variable.Hide(BestMinMaxRes);
-    Variable.Hide(BestMove);
+    Variable.Hide(GBM.Evaluation);
+    Variable.Hide(GBM.BestMove);
     Variable.Hide(NPS);
     Variable.Hide(MPS);
     Variable.Hide(PV);
@@ -9112,8 +9118,8 @@ Define OnRestart (warp=true)
     DebugMode = -1;
     TimeControl = -1;
     IdxDeepening = "";
-    BestMinMaxRes = "";
-    BestMove = "";
+    GBM.Evaluation = "";
+    GBM.BestMove = "";
     NPS = "";
     MPS = "";
     CustomThinkTime = 0;
