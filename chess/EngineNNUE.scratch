@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (09.03.2025) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (12.03.2025) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3161,6 +3161,10 @@ Define GetImproving(string Depth) (warp=true)
             If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
             {
                 IsImproving = 1;
+            }
+            Else
+            {
+                IsImproving = 0;
             }
         }
     }
@@ -7643,32 +7647,37 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
     If ((Depth > 1) And (IsInNullMove == 0))
     {
         Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures. When repetition is possible, history tables are searched for same board hash, when found we verify if the occurred for the same side.");
-        Search.Count = 1;
+        Count = 1;
+        Count2 = 0;
         If List.ContainsItem(PreviousBoardHash, (CurrentBoardHash + 0))
         {
-            Idx = (Depth - 2);
-            Repeat Until ((Idx < 2) Or (Search.Count > 2))
+            Idx = (Depth - 1);
+            Repeat Until ((Idx < 1) Or (Search.Count > 2))
             {
+                If (AppliedMove[(Idx + 0)] == 0)
+                {
+                    Count2 += 1;
+                }
                 If ((CurrentBoardHash + 0) == PreviousBoardHash[(Idx + 0)])
                 {
-                    Search.Count += 1;
+                    Count += 1;
                 }
-                Idx += -2;
+                Idx += -1;
             }
         }
         If List.ContainsItem(BoardHistoryHash, (CurrentBoardHash + 0))
         {
-            Idx = ((List.Length(BoardHistoryHash) - 1) + (Depth % 2));
+            Idx = (List.Length(BoardHistoryHash) - 1);
             Repeat Until ((Idx < 1) Or (Search.Count > 2))
             {
                 If ((CurrentBoardHash + 0) == BoardHistoryHash[(Idx + 0)])
                 {
-                    Search.Count += 1;
+                    Count += 1;
                 }
-                Idx += -2;
+                Idx += -1;
             }
         }
-        If (Search.Count > 1)
+        If ((Count > 1) And (Count2 == 0))
         {
             List.ReplaceItem(SearchEvalResults, (Depth + 0), DrawByRepetitionEval);
             Stop(this script);
@@ -7766,7 +7775,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
     IsFutile = 0;
     If (((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0)) And (PromotionPieces[Depth] == 0))
     {
-        If (1 == 1)
+        If ((Not (Quiescence)) And (((Betas[Depth] - Alphas[Depth]) == 1) And (TargetPieces[Depth] == 0)))
         {
             If ((Depth > 2) And ((Not ((BoardEval[Depth] == ""))) And (Not ((BoardEval[(Depth - 2)] == "")))))
             {
@@ -7776,7 +7785,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
             {
                 IsImproving = 1;
             }
-            If (PickedMoveCountQuiet[Depth] > floor((((6 + (Horizon * Horizon)) * (2 + IsImproving)) / 2)))
+            If (PickedMoveCountQuiet[Depth] > floor((((12 + (Horizon * Horizon)) * (1 + IsImproving)) / 2)))
             {
                 IsFutile = 1;
                 Stop(this script);
@@ -7788,7 +7797,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
         {
             If ((Not ((TargetPieces[Depth] == 0))) And ((((Depth % 2) == 1) And ((BlackQueenCountLocal + BlackRookCountLocal) > 0)) Or (((Depth % 2) == 0) And ((WhiteQueenCountLocal + WhiteRookCountLocal) > 0))))
             {
-                FutilityMargin = 175;
+                FutilityMargin = 120;
             }
         }
         Else
@@ -7869,7 +7878,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                             Call SEE(Depth);
                             FP.SEE = SEE.Result;
                         }
-                        If ((((Depth % 2) == 1) And (FP.SEE < 0)) Or (((Depth % 2) == 0) And (FP.SEE > 0)))
+                        If ((((Depth % 2) == 1) And (FP.SEE < -50)) Or (((Depth % 2) == 0) And (FP.SEE > 50)))
                         {
                             IsFutile = 1;
                         }
@@ -7978,7 +7987,13 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                         }
                         If (Reduction > 0)
                         {
-                            If ((((Depth % 2) == 1) And (Not ((BoardEval[Depth] < (Betas[Depth] + 0))))) Or (((Depth % 2) == 0) And (Not ((BoardEval[Depth] > (Alphas[Depth] - 0))))))
+                            Call GetImproving(Depth);
+                            If (IsImproving == "")
+                            {
+                                IsImproving = 1;
+                            }
+                            Margin = (100 + ((8 * Horizon) - (24 * IsImproving)));
+                            If ((((Depth % 2) == 1) And (Not ((BoardEval[Depth] < (Betas[Depth] + Margin))))) Or (((Depth % 2) == 0) And (Not ((BoardEval[Depth] > (Alphas[Depth] - Margin))))))
                             {
                                 Call ClearMoveList((Depth + 0));
                                 Call AddMoveToList(0)((Depth + 0));
@@ -8195,6 +8210,10 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
             If (Not ((BoardEval[Depth] == "")))
             {
                 Call GetImproving(Depth);
+                If (IsImproving == "")
+                {
+                    IsImproving = 0;
+                }
                 Margin = (120 + (120 * (Horizon - IsImproving)));
                 If ((Depth % 2) == 1)
                 {
