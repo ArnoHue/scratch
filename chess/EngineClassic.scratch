@@ -689,7 +689,7 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
             }
             Idx += -1;
         }
-        If (Count1 > 3)
+        If (Count1 > 1)
         {
             Stop(this script);
         }
@@ -963,6 +963,7 @@ Define ABSearch_InitStack(string Depth)(bool Quiescence) (warp=true)
     List.ReplaceItem(AlphasOld, Depth, Alphas[Depth]);
     List.ReplaceItem(BetasOld, Depth, Betas[Depth]);
     List.ReplaceItem(PutsInCheck, Depth, 0);
+    List.ReplaceItem(LMRState, Depth, 0);
     If Quiescence
     {
         List.ReplaceItem(Quiescence, (Depth + 0), 1);
@@ -1381,12 +1382,20 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                             }
                         }
                     }
-                    If ((Not (Quiescence)) And (Not ((PickPhase[Depth] == "*"))))
+                    If (Not (Quiescence))
                     {
-                        If (1 == 1)
+                        If (Not ((PickPhase[Depth] == "*")))
+                        {
+                            If (1 == 1)
+                            {
+                                Call GetCurrentMove(Depth);
+                                Call StoreKillerMove(Depth)(Horizon)(CurrentMove)((1 == 1));
+                            }
+                        }
+                        If ((LMRState[Depth] == "B") Or (LMRState[Depth] == "M"))
                         {
                             Call GetCurrentMove(Depth);
-                            Call StoreKillerMove(Depth)(Horizon)(CurrentMove)((1 == 1));
+                            Call StoreKillerMove(Depth)(Horizon)(CurrentMove)((LMRState[Depth] == "M"));
                         }
                     }
                 }
@@ -1580,10 +1589,10 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                 }
             }
         }
-        If (1 == 1)
+        If (1 == 0)
         {
             Call //("Reverse futility pruning");
-            If (((Horizon < 6) And (CheckedState[Depth] == 0)) And ((Betas[Depth] - Alphas[Depth]) == 1))
+            If (((Horizon < 6) And ((CheckedState[Depth] == 0) And (PutsInCheck[Depth] == 0))) And ((Betas[Depth] - Alphas[Depth]) == 1))
             {
                 If ((((Depth % 2) == 1) And (abs(Betas[Depth]) < AbsMinCheckmateEval)) Or (((Depth % 2) == 0) And (abs(Alphas[Depth]) < AbsMinCheckmateEval)))
                 {
@@ -1594,7 +1603,7 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                         {
                             IsImproving = 0;
                         }
-                        Margin = (120 * Horizon);
+                        Margin = (90 * Horizon);
                         If ((Depth % 2) == 1)
                         {
                             If (Not (((BoardEval[Depth] - Margin) < Betas[Depth])))
@@ -1783,7 +1792,7 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
     IsReductionAndDone = 0;
     If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
     {
-        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And ((1 == 0) Or (((QueenCountOppLocal + RookMinorCountOppLocal) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) > 0)))
+        If (((Horizon > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And ((1 == 1) Or (((QueenCountOppLocal + RookMinorCountOppLocal) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) > 0)))
         {
             Reduction = 0;
             If (PickedMoveCount[Depth] > 1)
@@ -1863,6 +1872,7 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
                     }
                     SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
                     IsReductionAndDone = 1;
+                    List.ReplaceItem(LMRState, Depth, 1);
                 }
             }
         }
@@ -1898,6 +1908,17 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
         List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
         Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(0)((1 == 0))("");
         SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
+        If (LMRState[Depth] == 1)
+        {
+            If ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))
+            {
+                List.ReplaceItem(LMRState, Depth, 2);
+            }
+            Else
+            {
+                List.ReplaceItem(LMRState, Depth, 3);
+            }
+        }
     }
 }
 
@@ -7594,6 +7615,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardEval, all);
     List.DeleteItem(HashMoveMetaData, all);
     List.DeleteItem(HashMove, all);
+    List.DeleteItem(LMRState, all);
     Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(Alphas, "");
@@ -7644,6 +7666,7 @@ Define InitBoard (warp=true)
         List.Add(BoardEval, "");
         List.Add(HashMoveMetaData, "");
         List.Add(HashMove, "");
+        List.Add(LMRState, "");
     }
     List.DeleteItem(PersistedBoardAttackedSnapshot, all);
     List.DeleteItem(PersistedBoardAttackedSnapshot, all);
@@ -9221,6 +9244,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         List.ReplaceItem(MovesCount, Depth, 0);
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(MovesIdxBestMove, Depth, 0);
+        List.ReplaceItem(LMRState, Depth, 0);
         Call ClearMoveList(Depth);
         If ((Depth > 1) Or (1 == 1))
         {
