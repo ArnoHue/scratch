@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (27.03.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338a (28.03.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1643,6 +1643,28 @@ Define CalcBoardStats (warp=true)
     List.ReplaceItem(CastlingState, 2, CastlingState[1]);
 }
 
+Define CalibrateBoardEval(string Depth) (warp=true)
+{
+    If (Not ((BoardEval[Depth] == "")))
+    {
+        Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 0));
+        If (TTProbeRes == 0)
+        {
+            Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 1));
+        }
+        If ((TTProbeRes == 1) And (Not ((TTProbeNode.EvalRes == ""))))
+        {
+            If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (TTProbeNode.EvalRes < BoardEval[(Depth + 0)])) Or ((TTProbeNode.NodeTypeRes == "B") And (TTProbeNode.EvalRes > BoardEval[(Depth + 0)]))))
+            {
+                If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                {
+                    List.ReplaceItem(BoardEval, Depth, TTProbeNode.EvalRes);
+                }
+            }
+        }
+    }
+}
+
 Define ClearBoardAttackedByMove(num Depth) (warp=true)
 {
     If ((Depth % 2) == 1)
@@ -3120,6 +3142,16 @@ Define GetBestMoveMedDiff (warp=false)
         {
             IdxDeepening += 1;
         }
+    }
+}
+
+Define GetBoardEval(string Depth) (warp=true)
+{
+    If (BoardEval[Depth] == "")
+    {
+        Call Evaluate((Depth - 1))((1 == 1));
+        List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+        Call CalibrateBoardEval(Depth);
     }
 }
 
@@ -6826,19 +6858,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         Stop(this script);
     }
-    Call TTProbeBoard(CurrentBoardHash)((Depth - 1));
-    If ((TTProbeRes == 1) And (Not ((TTProbeBoard.EvalSumRes == ""))))
-    {
-        If ((Horizon == 0) Or (Depth > (MaxSearchDepthStackFrames - 10)))
-        {
-            List.ReplaceItem(SearchEvalResults, Depth, TTProbeBoard.EvalSumRes);
-            Stop(this script);
-        }
-        Else
-        {
-            List.ReplaceItem(BoardEval, Depth, TTProbeBoard.EvalSumRes);
-        }
-    }
     If ((Depth > 1) And (NNUE_AccDirty[(Depth - 1)] == 1))
     {
         Call UpdateNNUEPostApplyMove((Depth - 1));
@@ -6856,11 +6875,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         If ((Depth > 1) And ((ExcludedMove == "") And ((CheckedState[Depth] == 0) And (CheckedState[(Depth - 1)] == 0))))
         {
-            If (BoardEval[Depth] == "")
-            {
-                Call Evaluate((Depth - 1))((1 == 1));
-                List.ReplaceItem(BoardEval, Depth, EvaluationRes);
-            }
+            Call GetBoardEval(Depth);
             Call Search_Razoring(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)("");
             If (Not ((SearchEvalResults[Depth] == "")))
             {
@@ -6902,11 +6917,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         }
         Else
         {
-            If (BoardEval[Depth] == "")
-            {
-                Call Evaluate((Depth - 1))((1 == 1));
-                List.ReplaceItem(BoardEval, Depth, EvaluationRes);
-            }
+            Call GetBoardEval(Depth);
             List.ReplaceItem(SearchEvalResults, Depth, BoardEval[Depth]);
             If ((Depth % 2) == 1)
             {
