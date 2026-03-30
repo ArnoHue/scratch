@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (30.03.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (01.04.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -2769,23 +2769,6 @@ Define GenerateMovesForSource(string Depth)(string SourceIdx)(bool AttackTableOn
         Call AddSlidingMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 1));
         Call AddSlidingMove(SourceIdx)(Depth)(AttackTableOnly)(Quiescence)((1 == 0));
         Stop(this script);
-    }
-}
-
-Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool AttackTableOnly)(bool Quiescence) (warp=true)
-{
-    IsPotentialNonCapQuiescMove = 0;
-    If Quiescence
-    {
-        Call IsQuiescentCheckCond(Depth);
-        IsPotentialNonCapQuiescMove = IsQuiescentCheckRes;
-    }
-    List.DeleteAll(CalcMovesMoveList);
-    List.DeleteAll(CalcMovesScoreList);
-    If ((((Depth % 2) == 1) And (Board[SourceIdx] > 0)) Or (((Depth % 2) == 0) And (Board[SourceIdx] < 0)))
-    {
-        Call GenerateMovesForSource(Depth)(SourceIdx)(AttackTableOnly)(Quiescence);
-        Call SortMoveList(Depth);
     }
 }
 
@@ -6333,10 +6316,7 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
     }
     If (PickPhase[Depth] == 2)
     {
-        Call //("Phase 6: Full move generator for all moves not found yet");
-        Call //("Create attack tables in case not found in TT");
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
-        Call //("Invoke full move generator. When in check, only create evasions");
         Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((CheckedState[Depth] == 1) And (BoardAttackedCalculated[Depth] == 1))));
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 3);
@@ -6791,9 +6771,8 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     {
         Stop(this script);
     }
-    Call //("Required for TT access and drawe detection");
+    Call //("Required for TT access and draw detection");
     Call Search_InitStack(Depth)(Quiescence);
-    Call //("Fast checkmate/draw detection + TT evaluation probing");
     Call Search_DetectCheckmate(Depth);
     If (Not ((SearchEvalResults[(Depth + 0)] == "")))
     {
@@ -7290,9 +7269,14 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
         {
             Call //("LMR search");
             Reduction = 0;
-            If (PickedMoveCount[Depth] > 1)
+            CurrentValue = (((Depth == 1) + ((Betas[Depth] - Alphas[Depth]) == 1)) + (hasmo[Depth] == ""));
+            If (CurrentValue == 0)
             {
-                Reduction = floor((128 * (1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 1.75))));
+                CurrentValue = 1;
+            }
+            If (PickedMoveCount[Depth] > CurrentValue)
+            {
+                Reduction = floor((128 * (1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2))));
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
@@ -7307,7 +7291,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
                         Reduction += -111;
                     }
                 }
-                If (1 == 1)
+                If (1 == 0)
                 {
                     If Cutnode
                     {
@@ -8150,24 +8134,27 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
 {
     If ((Depth > 1) And (ExcludedMove == ""))
     {
-        Call //("Probe transposition table for cached node evaluations");
-        Call TTProbeNode(CurrentBoardHash)(Depth)(Quiescence);
-        If (TTProbeRes == 1)
+        If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
         {
-            If ((TTProbeNode.CheckedRes == 1) And (Not ((CheckedState[Depth] == 1))))
+            Call //("Probe transposition table for cached node evaluations");
+            Call TTProbeNode(CurrentBoardHash)(Depth)(Quiescence);
+            If (TTProbeRes == 1)
             {
-                List.ReplaceItem(CheckedState, Depth, 1);
-            }
-            If ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))
-            {
-                Call IsQuiescentCheckCond(Depth);
-                If (((Not (Quiescence)) And (Not ((TTProbeNode.HorizonRes < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
+                If ((TTProbeNode.CheckedRes == 1) And (Not ((CheckedState[Depth] == 1))))
                 {
-                    If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
+                    List.ReplaceItem(CheckedState, Depth, 1);
+                }
+                If ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))
+                {
+                    Call IsQuiescentCheckCond(Depth);
+                    If (((Not (Quiescence)) And (Not (((TTProbeNode.HorizonRes - 0) < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
                     {
-                        If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                        If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
                         {
-                            List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
+                            If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                            {
+                                List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
+                            }
                         }
                     }
                 }
@@ -8992,8 +8979,4 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
             }
         }
     }
-}
-
-Define _ClearLists (warp=true)
-{
 }
