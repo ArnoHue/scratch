@@ -1974,6 +1974,12 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             List.ReplaceItem(PieceMobilityPrep, (AMI.Idx + 0), AMI.Count);
             List.ReplaceItem(PieceMobilityPrep, (AMI.Idx + AMI.Count), TargetIdx);
         }
+        Found = 0;
+        CurrentPieceAbs = abs(AMI.SourcePiece);
+        If ((CurrentPieceAbs > GoK_OwnPawn) And (CurrentPieceAbs < GoK_OwnKing))
+        {
+            Found = AttackTypeMaskWeights[PieceIdxLookup[CurrentPieceAbs]];
+        }
         If (AMI.SourcePiece > 0)
         {
             AMI.Attacked = (BoardAttackedByOwn[(TargetIdx + 0)] + 0);
@@ -1984,6 +1990,14 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             If (AMI.Attacked < 9)
             {
                 List.ReplaceItem(BoardAttackedByOwn, (TargetIdx + 0), (AMI.Attacked + 1));
+            }
+            If (Found > 0)
+            {
+                CurrentValue = BoardAttackedByOwnTypeMask[(TargetIdx + 0)];
+                If (floor(((CurrentValue / Found) % 10)) == 0)
+                {
+                    List.ReplaceItem(BoardAttackedByOwnTypeMask, (TargetIdx + 0), (CurrentValue + Found));
+                }
             }
             If (AMI.TargetPiece == GoK_OppKing)
             {
@@ -2003,6 +2017,14 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
                 If (AMI.Attacked < 9)
                 {
                     List.ReplaceItem(BoardAttackedByOpp, (TargetIdx + 0), (AMI.Attacked + 1));
+                }
+                If (Found > 0)
+                {
+                    CurrentValue = BoardAttackedByOppTypeMask[(TargetIdx + 0)];
+                    If (floor(((CurrentValue / Found) % 10)) == 0)
+                    {
+                        List.ReplaceItem(BoardAttackedByOppTypeMask, (TargetIdx + 0), (CurrentValue + Found));
+                    }
                 }
                 If (AMI.TargetPiece == GoK_OwnKing)
                 {
@@ -3242,10 +3264,12 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
     {
         List.DeleteAll(BoardAttackedByOwn);
         List.DeleteAll(BoardAttackedByOwnPiece);
+        List.DeleteAll(BoardAttackedByOwnTypeMask);
         Repeat (64)
         {
             List.Add(BoardAttackedByOwn, 0);
             List.Add(BoardAttackedByOwnPiece, 0);
+            List.Add(BoardAttackedByOwnTypeMask, 0);
         }
         IsOppSideChecked = 0;
     }
@@ -3253,10 +3277,12 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
     {
         List.DeleteAll(BoardAttackedByOpp);
         List.DeleteAll(BoardAttackedByOppPiece);
+        List.DeleteAll(BoardAttackedByOppTypeMask);
         Repeat (64)
         {
             List.Add(BoardAttackedByOpp, 0);
             List.Add(BoardAttackedByOppPiece, 0);
+            List.Add(BoardAttackedByOppTypeMask, 0);
         }
         IsOwnSideChecked = 0;
     }
@@ -5027,38 +5053,20 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             CurrentValue2 = KingShelterStorm;
             If ((Operator.LetterOf(CastlingStateLocal, 1) == 0) And (Operator.LetterOf(CastlingStateLocal, 2) == 0))
             {
-                If (BoardAttackedByOpp[VirtualBoard[5]] == 0)
+                If (Operator.LetterOf(CastlingStateLocal, 3) == 0)
                 {
-                    If (Operator.LetterOf(CastlingStateLocal, 3) == 0)
+                    Call GetKingShelterStorm(VirtualBoard[7])((1 == 1))(1);
+                    If (KingShelterStorm > CurrentValue2)
                     {
-                        If (BoardAttackedByOpp[VirtualBoard[6]] == 0)
-                        {
-                            If (BoardAttackedByOpp[VirtualBoard[7]] == 0)
-                            {
-                                Call GetKingShelterStorm(VirtualBoard[7])((1 == 1))(0.9);
-                                If (KingShelterStorm > CurrentValue2)
-                                {
-                                    CurrentValue2 = KingShelterStorm;
-                                }
-                            }
-                        }
+                        CurrentValue2 = KingShelterStorm;
                     }
-                    If (Operator.LetterOf(CastlingStateLocal, 4) == 0)
+                }
+                If (Operator.LetterOf(CastlingStateLocal, 4) == 0)
+                {
+                    Call GetKingShelterStorm(VirtualBoard[2])((1 == 1))(1);
+                    If (KingShelterStorm > CurrentValue2)
                     {
-                        If (BoardAttackedByOpp[VirtualBoard[4]] == 0)
-                        {
-                            If (BoardAttackedByOpp[VirtualBoard[3]] == 0)
-                            {
-                                If (BoardAttackedByOpp[VirtualBoard[2]] == 0)
-                                {
-                                    Call GetKingShelterStorm(VirtualBoard[2])((1 == 1))(0.9);
-                                    If (KingShelterStorm > CurrentValue2)
-                                    {
-                                        CurrentValue2 = KingShelterStorm;
-                                    }
-                                }
-                            }
-                        }
+                        CurrentValue2 = KingShelterStorm;
                     }
                 }
             }
@@ -5263,53 +5271,83 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                             }
                         }
                     }
-                    If ((AttackerPieceAbs > GoK_OwnPawn) And (Not ((AttackerPieceAbs == GoK_OwnKing))))
+                    If (Side == 1)
                     {
-                        CurrentMove = ((TE.Idx * 100) + KingIdx);
-                        IdxSub = ((PieceIdxLookup[(AttackerPieceAbs + 0)] * 10000) + CurrentMove);
-                        If (((Side == 1) And (MovePosLookupOppLegal[(IdxSub + 0)] == 1)) Or ((Side == 2) And (MovePosLookupOwnLegal[(IdxSub + 0)] == 1)))
+                        TE.Mask = BoardAttackedByOppTypeMask[(TE.Idx + 0)];
+                    }
+                    Else
+                    {
+                        TE.Mask = BoardAttackedByOwnTypeMask[(TE.Idx + 0)];
+                    }
+                    TE.Idx2 = 1;
+                    Repeat (4)
+                    {
+                        AttackerPieceAbs = 0;
+                        AttackerPieceAbs = 0;
+                        If ((TE.Idx2 == 1) And ((TE.Mask % 10) > 0))
                         {
-                            TargetPiece = Board[(TE.Idx + 0)];
-                            If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
+                            AttackerPieceAbs = GoK_OwnKnight;
+                        }
+                        If ((TE.Idx2 == 2) And (((TE.Mask / 10) % 10) > 0))
+                        {
+                            AttackerPieceAbs = GoK_OwnBishop;
+                        }
+                        If ((TE.Idx2 == 3) And (((TE.Mask / 100) % 10) > 0))
+                        {
+                            AttackerPieceAbs = GoK_OwnRook;
+                        }
+                        If ((TE.Idx2 == 4) And (((TE.Mask / 1000) % 10) > 0))
+                        {
+                            AttackerPieceAbs = GoK_OwnQueen;
+                        }
+                        If ((AttackerPieceAbs > GoK_OwnPawn) And (Not ((AttackerPieceAbs == GoK_OwnKing))))
+                        {
+                            CurrentMove = ((TE.Idx * 100) + KingIdx);
+                            IdxSub = ((PieceIdxLookup[(AttackerPieceAbs + 0)] * 10000) + CurrentMove);
+                            If (((Side == 1) And (MovePosLookupOppLegal[(IdxSub + 0)] == 1)) Or ((Side == 2) And (MovePosLookupOwnLegal[(IdxSub + 0)] == 1)))
                             {
-                                Found = 1;
-                                If (Not ((AttackerPieceAbs == GoK_OwnKnight)))
+                                TargetPiece = Board[(TE.Idx + 0)];
+                                If (((Side == 1) And (Not ((TargetPiece < 0)))) Or ((Side == 2) And (Not ((TargetPiece > 0)))))
                                 {
-                                    SourceIdx = (TE.Idx + 0);
-                                    IdxInc = (MovePathStepInc[(CurrentMove + 0)] + 0);
-                                    Repeat Until ((Found == 0) Or ((SourceIdx + IdxInc) == KingIdx))
+                                    Found = 1;
+                                    If (Not ((AttackerPieceAbs == GoK_OwnKnight)))
                                     {
-                                        SourceIdx += IdxInc;
-                                        If (Not ((Board[(SourceIdx + 0)] == 0)))
+                                        SourceIdx = (TE.Idx + 0);
+                                        IdxInc = (MovePathStepInc[(CurrentMove + 0)] + 0);
+                                        Repeat Until ((Found == 0) Or ((SourceIdx + IdxInc) == KingIdx))
                                         {
-                                            If (Not ((((Side == 1) And (Board[(SourceIdx + 0)] == GoK_OwnQueen)) Or ((Side == 2) And (Board[(SourceIdx + 0)] == GoK_OppQueen)))))
+                                            SourceIdx += IdxInc;
+                                            If (Not ((Board[(SourceIdx + 0)] == 0)))
                                             {
-                                                Found = 0;
+                                                If (Not ((((Side == 1) And (Board[(SourceIdx + 0)] == GoK_OwnQueen)) Or ((Side == 2) And (Board[(SourceIdx + 0)] == GoK_OppQueen)))))
+                                                {
+                                                    Found = 0;
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                If (Found == 1)
-                                {
-                                    IsWeak = ((Defended == 0) Or ((Defended < 2) And (abs(DefenderPiece) > GoK_OwnRook)));
-                                    If ((Defended == 0) Or ((IsWeak == 1) And (Attacked > 1)))
+                                    If (Found == 1)
                                     {
-                                        List.ReplaceItem(KingRingAttackSafeChecks, (Side + 0), (KingRingAttackSafeChecks[(Side + 0)] + TmpList2[(PieceIdxLookup[(AttackerPieceAbs + 0)] - 1)]));
-                                        If (Eval.DebugLog == 1)
+                                        IsWeak = ((Defended == 0) Or ((Defended < 2) And (abs(DefenderPiece) > GoK_OwnRook)));
+                                        If ((Defended == 0) Or ((IsWeak == 1) And (Attacked > 1)))
                                         {
-                                            Call LogPVEvalLine("Eval.Threats.SafeCheck")("")("")("")(Side)(CurrentMove);
-                                        }
-                                    }
-                                    Else
-                                    {
-                                        If (Not ((AttackerPieceAbs == GoK_OwnQueen)))
-                                        {
-                                            If ((Defended == 0) Or (abs(DefenderPiece) > GoK_OwnPawn))
+                                            List.ReplaceItem(KingRingAttackSafeChecks, (Side + 0), (KingRingAttackSafeChecks[(Side + 0)] + TmpList2[(PieceIdxLookup[(AttackerPieceAbs + 0)] - 1)]));
+                                            If (Eval.DebugLog == 1)
                                             {
-                                                List.ReplaceItem(KingRingAttackUnsafeChecks, (Side + 0), (KingRingAttackUnsafeChecks[(Side + 0)] + 1));
-                                                If (Eval.DebugLog == 1)
+                                                Call LogPVEvalLine("Eval.Threats.SafeCheck")("")("")("")(Side)(CurrentMove);
+                                            }
+                                        }
+                                        Else
+                                        {
+                                            If (Not ((AttackerPieceAbs == GoK_OwnQueen)))
+                                            {
+                                                If ((Defended == 0) Or (abs(DefenderPiece) > GoK_OwnPawn))
                                                 {
-                                                    Call LogPVEvalLine("Eval.Threats.UnsafeCheck")("")("")("")(Side)(CurrentMove);
+                                                    List.ReplaceItem(KingRingAttackUnsafeChecks, (Side + 0), (KingRingAttackUnsafeChecks[(Side + 0)] + 1));
+                                                    If (Eval.DebugLog == 1)
+                                                    {
+                                                        Call LogPVEvalLine("Eval.Threats.UnsafeCheck")("")("")("")(Side)(CurrentMove);
+                                                    }
                                                 }
                                             }
                                         }
@@ -5317,6 +5355,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                                 }
                             }
                         }
+                        TE.Idx2 += 1;
                     }
                 }
                 TE.Idx += 1;
@@ -5377,12 +5416,15 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
             KingDanger = 19;
             KingDanger += floor(((3 * (KingFlankAttacks * KingFlankAttacks)) / 16));
             Call TaperedEval.GetScalarResult(KingRingPawnProtection[(Side + 0)])(0)(TaperedEval.ScaleFactor)(TaperedEval.Phase);
-            KingDanger += Operator.Round((-0.66 * TaperedEval.ScalarResult));
+            KingDanger += Operator.Round((-0.75 * TaperedEval.ScalarResult));
             KingDanger += (KingRingAttacksWeight[(Side + 0)] * KingRingAttackersCount[(Side + 0)]);
             KingDanger += (32 * KingRingAttacksCount[(Side + 0)]);
             KingDanger += (86 * KingRingAttacksOnWeakCount[(Side + 0)]);
             KingDanger += (-47 * (KingRingAttacksKnightDefenders[(Side + 0)] > 0));
-            KingDanger += (-18 * KingRingAttacksBishopDefenders[(Side + 0)]);
+            If (1 == 1)
+            {
+                KingDanger += (-18 * KingRingAttacksBishopDefenders[(Side + 0)]);
+            }
             KingDanger += (74 * KingRingAttackUnsafeChecks[(Side + 0)]);
             KingDanger += (49 * KingRingSliderBlockers[(Side + 0)]);
             KingDanger += (-2 * KingFlankDefense);
@@ -7567,6 +7609,13 @@ Define InitBoard (warp=true)
     List.ReplaceItem(PieceIdxLookup, GoK_OwnRook, 4);
     List.ReplaceItem(PieceIdxLookup, GoK_OwnQueen, 5);
     List.ReplaceItem(PieceIdxLookup, GoK_OwnKing, 6);
+    List.DeleteItem(AttackTypeMaskWeights, all);
+    List.Add(AttackTypeMaskWeights, 0);
+    List.Add(AttackTypeMaskWeights, 1);
+    List.Add(AttackTypeMaskWeights, 10);
+    List.Add(AttackTypeMaskWeights, 100);
+    List.Add(AttackTypeMaskWeights, 1000);
+    List.Add(AttackTypeMaskWeights, 0);
     CharsUpperCase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     List.DeleteItem(CharsUpperCaseList, all);
     Idx = 1;
@@ -7615,6 +7664,8 @@ Define InitBoard (warp=true)
     List.DeleteItem(PieceMobility, all);
     List.DeleteItem(BoardAttackedByOppPiece, all);
     List.DeleteItem(BoardAttackedByOwnPiece, all);
+    List.DeleteItem(BoardAttackedByOppTypeMask, all);
+    List.DeleteItem(BoardAttackedByOwnTypeMask, all);
     Repeat (64)
     {
         List.Add(BoardAttackedByOpp, 0);
@@ -7622,6 +7673,8 @@ Define InitBoard (warp=true)
         List.Add(PieceMobility, 0);
         List.Add(BoardAttackedByOppPiece, 0);
         List.Add(BoardAttackedByOwnPiece, 0);
+        List.Add(BoardAttackedByOppTypeMask, 0);
+        List.Add(BoardAttackedByOwnTypeMask, 0);
     }
     Call //("Due to the lack of local variables in Scratch, we emulate a method stack for recursive Minimax using lists");
     List.DeleteItem(Alphas, all);
@@ -7911,24 +7964,40 @@ Define InitKingSafety (warp=true)
         Idx = (((KingIdx - 1) * 10) + 1);
         KingRank = IdxToRank[KingIdx];
         KingFile = IdxToFile[KingIdx];
+        If (KingFile < 2)
+        {
+            KingFile = 2;
+        }
+        Else
+        {
+            If (KingFile > 7)
+            {
+                KingFile = 7;
+            }
+        }
+        If (KingRank < 2)
+        {
+            KingRank = 2;
+        }
+        Else
+        {
+            If (KingRank > 7)
+            {
+                KingRank = 7;
+            }
+        }
         Rank = (KingRank - 1);
         Repeat (3)
         {
-            If ((Rank > 0) And (Rank < 9))
+            File = (KingFile - 1);
+            Repeat (3)
             {
-                File = (KingFile - 1);
-                Repeat (3)
+                If ((Not ((File == KingFile))) Or (Not ((Rank == KingRank))))
                 {
-                    If ((File > 0) And (File < 9))
-                    {
-                        If ((Not ((File == KingFile))) Or (Not ((Rank == KingRank))))
-                        {
-                            List.ReplaceItem(KingRings, Idx, (((Rank - 1) * 8) + File));
-                            Idx += 1;
-                        }
-                    }
-                    File += 1;
+                    List.ReplaceItem(KingRings, Idx, (((Rank - 1) * 8) + File));
+                    Idx += 1;
                 }
+                File += 1;
             }
             Rank += 1;
         }
