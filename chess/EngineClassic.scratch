@@ -1976,7 +1976,7 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
         }
         Found = 0;
         CurrentPieceAbs = abs(AMI.SourcePiece);
-        If ((CurrentPieceAbs > GoK_OwnPawn) And (CurrentPieceAbs < GoK_OwnKing))
+        If ((CurrentPieceAbs > 0) And (CurrentPieceAbs < GoK_OwnKing))
         {
             Found = AttackTypeMaskWeights[PieceIdxLookup[CurrentPieceAbs]];
         }
@@ -4241,16 +4241,44 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                     If (PE.Passed == 1)
                     {
                         Call //("Passed pawn");
-                        PassedFactor = floor((((PE.OwnForwardRankNormalized - 3) * (PE.OwnForwardRankNormalized - 2)) / 2));
+                        PassedFactor = (PawnPassedW[(PE.OwnForwardRankNormalized + 0)] + 0);
                         If (PassedFactor < 1)
                         {
                             PassedFactor = 1;
                         }
                         Call TaperedEval.Add(0)(((((-2 * PE.Factor) * ChebyshevDistance[((BlockerIdx * 100) + PE.OwnKingIdx)]) + ((5 * PE.Factor) * ChebyshevDistance[((BlockerIdx * 100) + PE.OppKingIdx)])) * PassedFactor))("Eval.Pawns.Passed.KingTropism")(PE.OwnForwardIdx)(Side)("");
+                        If ((PE.OwnForwardRankNormalized > 3) And (PE.OwnForwardRankNormalized < 7))
+                        {
+                            PE.SecondPushIdx = (BlockerIdx + PE.Forward);
+                            Call TaperedEval.Add(0)((((-1 * PE.Factor) * (ChebyshevDistance[((PE.SecondPushIdx * 100) + PE.OwnKingIdx)] + 0)) * PassedFactor))("Eval.Pawns.Passed.KingTropismSecondPush")(PE.OwnForwardIdx)(Side)("");
+                        }
                         IdxSub = ((PE.OwnForwardRankNormalized * 2) - 1);
                         IdxSub2 = ((PE.File * 2) - 1);
                         CurrentValue = (PawnPassedRankBonus[(IdxSub + 0)] - PawnPassedFilePenalty[(IdxSub2 + 0)]);
                         CurrentValue2 = (PawnPassedRankBonus[(IdxSub + 1)] - PawnPassedFilePenalty[(IdxSub2 + 1)]);
+                        Call //("SF12 blocked passer filtering: devalue passer blocked by pawn-supported enemy pawn with no helper");
+                        If (Board[(BlockerIdx + 0)] == (GoK_OppPawn * PE.Factor))
+                        {
+                            PE.BlockerPawnSupported = 0;
+                            If (((Side == 1) And (((BoardAttackedByOppTypeMask[(BlockerIdx + 0)] + 0) % 10) > 0)) Or ((Side == 2) And (((BoardAttackedByOwnTypeMask[(BlockerIdx + 0)] + 0) % 10) > 0)))
+                            {
+                                PE.BlockerPawnSupported = 1;
+                            }
+                            PE.HasHelper = 0;
+                            If ((PE.LeftOwnPawnRank > 0) And (Not ((PE.NormalizedRank[(PE.LeftOwnPawnRank + 0)] < (PE.OwnForwardRankNormalized - 1)))))
+                            {
+                                PE.HasHelper = 1;
+                            }
+                            If ((PE.RightOwnPawnRank > 0) And (Not ((PE.NormalizedRank[(PE.RightOwnPawnRank + 0)] < (PE.OwnForwardRankNormalized - 1)))))
+                            {
+                                PE.HasHelper = 1;
+                            }
+                            If ((PE.BlockerPawnSupported == 1) And (PE.HasHelper == 0))
+                            {
+                                CurrentValue = 0;
+                                CurrentValue2 = 0;
+                            }
+                        }
                         If ((PE.OwnForwardRankNormalized == 7) And (((Side == 1) And (BoardAttackedByOwn[(BlockerIdx + 0)] == 0)) Or ((Side == 2) And (BoardAttackedByOpp[(BlockerIdx + 0)] == 0))))
                         {
                             If (1 == 0)
@@ -4287,6 +4315,7 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                                 FrontFileAttacked = 0;
                                 FrontAreaAttacked = 0;
+                                FrontUnsafe = 0;
                                 OwnMajorsBehind = 0;
                                 OppMajorsBehind = 0;
                                 Repeat ((PE.OwnForwardRankNormalized - 1))
@@ -4310,18 +4339,30 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                         If (((Side == 1) And (BoardAttackedByOpp[(PE.Idx - 1)] > 0)) Or ((Side == 2) And (BoardAttackedByOwn[(PE.Idx - 1)] > 0)))
                                         {
                                             FrontAreaAttacked = 1;
+                                            If (Not ((((Side == 1) And (((BoardAttackedByOwnTypeMask[((PE.Idx - 1) + 0)] + 0) % 10) > 0)) Or ((Side == 2) And (((BoardAttackedByOppTypeMask[((PE.Idx - 1) + 0)] + 0) % 10) > 0)))))
+                                            {
+                                                FrontUnsafe = 1;
+                                            }
                                         }
                                     }
                                     If (((Side == 1) And (BoardAttackedByOpp[PE.Idx] > 0)) Or ((Side == 2) And (BoardAttackedByOwn[PE.Idx] > 0)))
                                     {
                                         FrontAreaAttacked = 1;
                                         FrontFileAttacked = 1;
+                                        If (Not ((((Side == 1) And (((BoardAttackedByOwnTypeMask[(PE.Idx + 0)] + 0) % 10) > 0)) Or ((Side == 2) And (((BoardAttackedByOppTypeMask[(PE.Idx + 0)] + 0) % 10) > 0)))))
+                                        {
+                                            FrontUnsafe = 1;
+                                        }
                                     }
                                     If (PE.File < 8)
                                     {
                                         If (((Side == 1) And (BoardAttackedByOpp[(PE.Idx + 1)] > 0)) Or ((Side == 2) And (BoardAttackedByOwn[(PE.Idx + 1)] > 0)))
                                         {
                                             FrontAreaAttacked = 1;
+                                            If (Not ((((Side == 1) And (((BoardAttackedByOwnTypeMask[((PE.Idx + 1) + 0)] + 0) % 10) > 0)) Or ((Side == 2) And (((BoardAttackedByOppTypeMask[((PE.Idx + 1) + 0)] + 0) % 10) > 0)))))
+                                            {
+                                                FrontUnsafe = 1;
+                                            }
                                         }
                                     }
                                     PE.Idx += PE.Forward;
@@ -4332,19 +4373,27 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                                 }
                                 If ((OppMajorsBehind == 0) And (FrontAreaAttacked == 0))
                                 {
-                                    Call TaperedEval.Add(((16 * PE.Factor) * PassedFactor))(((18 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NoOpponents")(PE.OwnForwardIdx)(Side)("");
+                                    Call TaperedEval.Add(((36 * PE.Factor) * PassedFactor))(((36 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NoOpponents")(PE.OwnForwardIdx)(Side)("");
                                 }
                                 Else
                                 {
-                                    If (FrontFileAttacked == 0)
+                                    If ((FrontAreaAttacked == 1) And (FrontUnsafe == 0))
                                     {
-                                        Call TaperedEval.Add(((9 * PE.Factor) * PassedFactor))(((11 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.FreeFrontFile")(PE.OwnForwardIdx)(Side)("");
+                                        Call //("SF12 k=30: all enemy-attacked squares on path are own-pawn-defended");
+                                        Call TaperedEval.Add(((30 * PE.Factor) * PassedFactor))(((30 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.PawnDefendedPath")(PE.OwnForwardIdx)(Side)("");
                                     }
                                     Else
                                     {
-                                        If (((Side == 1) And (BoardAttackedByOpp[(BlockerIdx + 0)] == 0)) Or ((Side == 2) And (BoardAttackedByOwn[(BlockerIdx + 0)] == 0)))
+                                        If (FrontFileAttacked == 0)
                                         {
-                                            Call TaperedEval.Add(((4 * PE.Factor) * PassedFactor))(((6 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NonAttackedNext")(PE.OwnForwardIdx)(Side)("");
+                                            Call TaperedEval.Add(((17 * PE.Factor) * PassedFactor))(((17 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.FreeFrontFile")(PE.OwnForwardIdx)(Side)("");
+                                        }
+                                        Else
+                                        {
+                                            If (((Side == 1) And (BoardAttackedByOpp[(BlockerIdx + 0)] == 0)) Or ((Side == 2) And (BoardAttackedByOwn[(BlockerIdx + 0)] == 0)))
+                                            {
+                                                Call TaperedEval.Add(((7 * PE.Factor) * PassedFactor))(((7 * PE.Factor) * PassedFactor))("Eval.Pawns.Passed.NonAttackedNext")(PE.OwnForwardIdx)(Side)("");
+                                            }
                                         }
                                     }
                                 }
