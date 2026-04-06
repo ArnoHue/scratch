@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (05.04.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (06.04.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -994,7 +994,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
                 Call IsQuiescentCheckCond(Depth);
-                If (((Not (Quiescence)) And (Not (((TTProbeHorizonRes - (Not ((TTProbeNodeAgeRes == TTCurrentAge)))) < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
+                If (((Not (Quiescence)) And (Not (((TTProbeHorizonRes - 1) < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
                 {
                     If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                     {
@@ -3230,20 +3230,23 @@ Define CalculateMaterialImbalance(string Depth) (warp=true)
 
 Define CalibrateBoardEval(string Depth) (warp=true)
 {
-    If (Not ((BoardEval[(Depth + 0)] == "")))
+    If (1 == 1)
     {
-        Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 0));
-        If (TTProbeRes == 0)
+        If (Not ((BoardEval[(Depth + 0)] == "")))
         {
-            Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 1));
-        }
-        If ((TTProbeRes == 1) And (Not ((TTProbeNodeScoreRes == ""))))
-        {
-            If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (TTProbeNodeScoreRes < BoardEval[(Depth + 0)])) Or ((TTProbeNodeTypeRes == "B") And (TTProbeNodeScoreRes > BoardEval[(Depth + 0)]))))
+            Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 0));
+            If (TTProbeRes == 0)
             {
-                If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 1));
+            }
+            If ((TTProbeRes == 1) And (Not ((TTProbeNodeScoreRes == ""))))
+            {
+                If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (TTProbeNodeScoreRes < BoardEval[(Depth + 0)])) Or ((TTProbeNodeTypeRes == "B") And (TTProbeNodeScoreRes > BoardEval[(Depth + 0)]))))
                 {
-                    List.ReplaceItem(BoardEval, Depth, TTProbeNodeScoreRes);
+                    If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                    {
+                        List.ReplaceItem(BoardEval, Depth, TTProbeNodeScoreRes);
+                    }
                 }
             }
         }
@@ -3495,6 +3498,11 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
             Call Log("Eval.MajorsMinors = ")(EvalMajorsMinorsResult)("")("")("")("")("")("");
             Call Log("Eval.Threats = ")(EvalThreatsResult)("")("")("")("")("")("");
             Call Log("Eval.Imbalance = ")(Operator.Round(((CountOuter1 - CountOuter2) / 1)))("")("")("")("")("")("");
+            Call Log("Eval.Total (pre-DrawScale)= ")(EvaluateRes)("")("")("")("")("")("");
+        }
+        Call EvaluateDrawScaling(Depth);
+        If (Eval.DebugLog == 1)
+        {
             Call Log("Eval.Total= ")(EvaluateRes)("")("")("")("")("")("");
             Call Log("----------------------------------------")("")("")("")("")("")("")("");
         }
@@ -3521,6 +3529,163 @@ Define EvaluateBoard (warp=true)
             Eval += TaperedEval.PiecePosResult;
         }
         Idx += 1;
+    }
+}
+
+Define EvaluateDrawScaling(string Depth) (warp=true)
+{
+    PT.NonPawnMat = ((QueenCounttOwnLocal * 1000) + ((RookCountOwnLocal * 525) + (((RookMinorCounttOwnLocal - RookCountOwnLocal) * 350) + ((QueenCountOppLocal * 1000) + ((RookCountOppLocal * 525) + ((RookMinorCountOppLocal - RookCountOppLocal) * 350))))));
+    PT.TotalNonPawnPieces = ((RookMinorCounttOwnLocal + QueenCounttOwnLocal) + (RookMinorCountOppLocal + QueenCountOppLocal));
+    If ((PT.NonPawnMat > 4350) And (PT.TotalNonPawnPieces > 6))
+    {
+        Stop(this script);
+    }
+    PT.PreDrawScaleEval = EvaluateRes;
+    PT.DrawDelta = 0;
+    PT.MinorCountOwn = (RookMinorCounttOwnLocal - RookCountOwnLocal);
+    PT.MinorCountOpp = (RookMinorCountOppLocal - RookCountOppLocal);
+    PT.PawnDiff = abs((PawnCounttOwnLocal - PawnCountOppLocal));
+    PT.PiecesNPOwn = (QueenCounttOwnLocal + (RookCountOwnLocal + PT.MinorCountOwn));
+    PT.PiecesNPOpp = (QueenCountOppLocal + (RookCountOppLocal + PT.MinorCountOpp));
+    PT.FiftyMoveCount = BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)];
+    If (PT.FiftyMoveCount > 40)
+    {
+        EvaluateRes = Operator.Round(((EvaluateRes * (100 - PT.FiftyMoveCount)) / 100));
+    }
+    If (((PT.PiecesNPOwn + PawnCounttOwnLocal) == 0) And (PT.NonPawnMat > 450))
+    {
+        EvaluateRes += -9000;
+        Stop(this script);
+    }
+    If (((PT.PiecesNPOpp + PawnCountOppLocal) == 0) And (PT.NonPawnMat > 450))
+    {
+        EvaluateRes += 9000;
+        Stop(this script);
+    }
+    If (EvaluateRes > 0)
+    {
+        If (((QueenCounttOwnLocal == 0) And (RookCountOwnLocal == 0)) And ((PT.MinorCountOwn < 2) And (PawnCounttOwnLocal == 0)))
+        {
+            PT.DrawDelta = -999;
+        }
+    }
+    Else
+    {
+        If (EvaluateRes < 0)
+        {
+            If (((QueenCountOppLocal == 0) And (RookCountOppLocal == 0)) And ((PT.MinorCountOpp < 2) And (PawnCountOppLocal == 0)))
+            {
+                PT.DrawDelta = 999;
+            }
+        }
+    }
+    If ((PT.DrawDelta == 0) And (PT.TotalNonPawnPieces > 0))
+    {
+        PT.OwnMat = ((QueenCounttOwnLocal * 1000) + ((RookCountOwnLocal * 525) + (PT.MinorCountOwn * 350)));
+        PT.OppMat = ((QueenCountOppLocal * 1000) + ((RookCountOppLocal * 525) + (PT.MinorCountOpp * 350)));
+        PT.MatDiff = (PT.OwnMat - PT.OppMat);
+        If (EvaluateRes > 0)
+        {
+            If ((PT.MatDiff > 50) And (PT.MatDiff < 525))
+            {
+                If (PawnCounttOwnLocal == 0)
+                {
+                    PT.DrawDelta = -350;
+                }
+            }
+        }
+        If (EvaluateRes < 0)
+        {
+            If ((PT.MatDiff < -50) And (PT.MatDiff > -525))
+            {
+                If (PawnCountOppLocal == 0)
+                {
+                    PT.DrawDelta = 350;
+                }
+            }
+        }
+    }
+    If ((PT.DrawDelta == 0) And ((QueenCounttOwnLocal + QueenCountOppLocal) == 0))
+    {
+        If (((RookCountOwnLocal > 0) And (RookCountOppLocal > 0)) And ((PT.MinorCountOwn + PT.MinorCountOpp) == 0))
+        {
+            If (PT.PawnDiff < 2)
+            {
+                If (EvaluateRes > 0)
+                {
+                    PT.DrawDelta = -100;
+                }
+                Else
+                {
+                    If (EvaluateRes < 0)
+                    {
+                        PT.DrawDelta = 100;
+                    }
+                }
+            }
+        }
+    }
+    If ((PT.DrawDelta == 0) And ((QueenCounttOwnLocal + QueenCountOppLocal) == 0))
+    {
+        If (((RookCountOwnLocal + RookCountOppLocal) == 0) And ((PawnCounttOwnLocal + PawnCountOppLocal) < 7))
+        {
+            If ((PT.MinorCountOwn == 1) And (PT.MinorCountOpp == 1))
+            {
+                If (PT.PawnDiff < 2)
+                {
+                    If (EvaluateRes > 0)
+                    {
+                        PT.DrawDelta = -50;
+                    }
+                    Else
+                    {
+                        If (EvaluateRes < 0)
+                        {
+                            PT.DrawDelta = 50;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    If ((PT.DrawDelta == 0) And ((PawnCounttOwnLocal + PawnCountOppLocal) < 8))
+    {
+        If (PT.NonPawnMat < 4351)
+        {
+            If (abs(EvaluateRes) < 60)
+            {
+                If (EvaluateRes > 0)
+                {
+                    PT.DrawDelta = -45;
+                }
+                Else
+                {
+                    If (EvaluateRes < 0)
+                    {
+                        PT.DrawDelta = 45;
+                    }
+                }
+            }
+        }
+    }
+    If (Not ((PT.DrawDelta == 0)))
+    {
+        If (((EvaluateRes > 0) And (PT.DrawDelta < 0)) Or ((EvaluateRes < 0) And (PT.DrawDelta > 0)))
+        {
+            EvaluateRes += PT.DrawDelta;
+            If (((PT.PreDrawScaleEval > 0) And (EvaluateRes < 0)) Or ((PT.PreDrawScaleEval < 0) And (EvaluateRes > 0)))
+            {
+                EvaluateRes = 0;
+            }
+        }
+    }
+    If (Eval.DebugLog == 1)
+    {
+        Call Log("Eval.DrawScale.NonPawnMat = ")(PT.NonPawnMat)("")("")("")("")("")("");
+        Call Log("Eval.DrawScale.50MR = ")(PT.FiftyMoveCount)("")("")("")("")("")("");
+        Call Log("Eval.DrawScale.DrawDelta = ")(PT.DrawDelta)("")("")("")("")("")("");
+        Call Log("Eval.DrawScale.PreScaleEval = ")(PT.PreDrawScaleEval)("")("")("")("")("")("");
+        Call Log("Eval.DrawScale.PostScaleEval = ")(EvaluateRes)("")("")("")("")("")("");
     }
 }
 
@@ -3635,11 +3800,11 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                             }
                             If (CurrentPieceAbs == GoK_OwnKnight)
                             {
-                                Call TaperedEval.Add((25 * (OutpostFactor * Factor)))((15 * (OutpostFactor * Factor)))("Eval.MajorsMinors.KnightOutpost")(TE.Idx)("")("");
+                                Call TaperedEval.Add((14 * (OutpostFactor * Factor)))((9 * (OutpostFactor * Factor)))("Eval.MajorsMinors.KnightOutpost")(TE.Idx)("")("");
                             }
                             Else
                             {
-                                Call TaperedEval.Add((14 * (OutpostFactor * Factor)))((11 * (OutpostFactor * Factor)))("Eval.MajorsMinors.BishopOutpost")(TE.Idx)("")("");
+                                Call TaperedEval.Add((8 * (OutpostFactor * Factor)))((7 * (OutpostFactor * Factor)))("Eval.MajorsMinors.BishopOutpost")(TE.Idx)("")("");
                             }
                         }
                     }
@@ -6630,7 +6795,7 @@ Define GetBestMoveMedDiff (warp=false)
         }
         If (((IdxDeepening > 4) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
-            AWDelta = Operator.Round((35 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 4800)));
+            AWDelta = Operator.Round((20 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 4800)));
             AWAlpha = Operator.Round((GBM.Evaluation - AWDelta));
             AWBeta = Operator.Round((GBM.Evaluation + AWDelta));
         }
