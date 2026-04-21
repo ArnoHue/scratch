@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.339 (19.04.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.339 (21.04.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3348,44 +3348,40 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     }
     Call GetHistoryStatScore(SourcePieceParam)(FromIdx)(ToIdx)(Move)(Depth);
     MoveScoreRes = (HistoryStatScore * Factor);
-    MoveScoreRes += (1000000 * Factor);
-    If (Not ((floor((Move / 100)) == 0)))
+    If (BoardAttackedCalculated[Depth] == 1)
     {
-        If (BoardAttackedCalculated[Depth] == 1)
+        CurrentPieceAbs = abs(SourcePieceParam);
+        If ((CurrentPieceAbs > GoK_BlackPawn) And (CurrentPieceAbs < GoK_BlackKing))
         {
-            CurrentPieceAbs = abs(SourcePieceParam);
-            If ((CurrentPieceAbs > GoK_BlackPawn) And (CurrentPieceAbs < GoK_BlackKing))
+            Idx = (((Depth - 1) * 100) + FromIdx);
+            If (BoardAttackedByOpponentSnapshot[Idx] > 0)
             {
-                Idx = (((Depth - 1) * 100) + FromIdx);
-                If (BoardAttackedByOpponentSnapshot[Idx] > 0)
+                ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[Idx]]);
+                If (((CurrentPieceAbs == GoK_BlackQueen) And (ThreatenedByPieceAbs < GoK_BlackQueen)) Or (((CurrentPieceAbs == GoK_BlackRook) And (ThreatenedByPieceAbs < GoK_BlackRook)) Or (ThreatenedByPieceAbs == GoK_BlackPawn)))
                 {
-                    ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[Idx]]);
-                    If (((CurrentPieceAbs == GoK_BlackQueen) And (ThreatenedByPieceAbs < GoK_BlackQueen)) Or (((CurrentPieceAbs == GoK_BlackRook) And (ThreatenedByPieceAbs < GoK_BlackRook)) Or (ThreatenedByPieceAbs == GoK_BlackPawn)))
+                    ThreatenedByPieceAbs = 0;
+                    Idx = (((Depth - 1) * 100) + ToIdx);
+                    If (BoardAttackedByOpponentSnapshot[Idx] > 0)
                     {
-                        ThreatenedByPieceAbs = 0;
-                        Idx = (((Depth - 1) * 100) + ToIdx);
-                        If (BoardAttackedByOpponentSnapshot[Idx] > 0)
+                        ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[Idx]]);
+                    }
+                    If (ThreatenedByPieceAbs < GoK_BlackKing)
+                    {
+                        If ((CurrentPieceAbs == GoK_BlackQueen) And ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs == GoK_BlackQueen)))
                         {
-                            ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[Idx]]);
+                            MoveScoreRes += (50000 * Factor);
                         }
-                        If (ThreatenedByPieceAbs < GoK_BlackKing)
+                        Else
                         {
-                            If ((CurrentPieceAbs == GoK_BlackQueen) And ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs == GoK_BlackQueen)))
+                            If ((CurrentPieceAbs == GoK_BlackRook) And ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs > GoK_BlackBishop)))
                             {
-                                MoveScoreRes += (50000 * Factor);
+                                MoveScoreRes += (25000 * Factor);
                             }
                             Else
                             {
-                                If ((CurrentPieceAbs == GoK_BlackRook) And ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs > GoK_BlackBishop)))
+                                If ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs > GoK_BlackPawn))
                                 {
-                                    MoveScoreRes += (25000 * Factor);
-                                }
-                                Else
-                                {
-                                    If ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs > GoK_BlackPawn))
-                                    {
-                                        MoveScoreRes += (15000 * Factor);
-                                    }
+                                    MoveScoreRes += (15000 * Factor);
                                 }
                             }
                         }
@@ -4973,6 +4969,12 @@ Define InitSearch(string MaxDepth)(bool InitialDeepening) (warp=true)
             List.ReplaceItem(HistoryContinuationOpp, (Idx + 0), 0);
             List.ReplaceItem(HistoryContinuation2Own, (Idx + 0), 0);
             List.ReplaceItem(HistoryContinuation2Opp, (Idx + 0), 0);
+            Idx += 1;
+        }
+        Idx = 1;
+        Repeat (List.Length(KillerMoves))
+        {
+            List.ReplaceItem(KillerMoves, (Idx + 0), "");
             Idx += 1;
         }
     }
@@ -7192,7 +7194,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     If ((Not (Quiescence)) And (Not ((BestMoves[Depth] == ""))))
     {
         Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon)((1 == 0))((1 == 0));
-        Call StoreKillerMoveMalusAllExcept(Depth)(Horizon)(BestMoveListIdx[Depth]);
+        Call StoreKillerMoveMalus(Depth)(Horizon)(BestMoveListIdx[Depth]);
     }
     If (((IsSearchTimeout == 0) And (Depth > 1)) And (ExcludedMove == ""))
     {
@@ -7266,7 +7268,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
             {
                 CurrentValue = 1;
             }
-            If (PickedMoveCount[Depth] > CurrentValue)
+            If (PickedMoveCount[Depth] > 1)
             {
                 Reduction = floor((128 * (1 + ((ln(Horizon) * ln(PickedMoveCount[Depth])) / 2))));
                 If (1 == 1)
@@ -8003,7 +8005,7 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
             If (Not ((BoardEval[Depth] == "")))
             {
                 Call GetImproving(Depth);
-                Margin = (120 * Horizon);
+                Margin = ((80 * Horizon) - (20 * (IsImproving == 1)));
                 If ((Depth % 2) == 1)
                 {
                     If (Not (((BoardEval[Depth] - Margin) < Betas[Depth])))
@@ -8040,7 +8042,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
                 If ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))
                 {
                     Call IsQuiescentCheckCond(Depth);
-                    If (((Not (Quiescence)) And (Not (((TTProbeNode.HorizonRes - 1) < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
+                    If (((Not (Quiescence)) And (Not (((TTProbeNode.HorizonRes - 0) < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
                     {
                         If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
                         {
