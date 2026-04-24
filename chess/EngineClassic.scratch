@@ -628,7 +628,7 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
     If (Not (Quiescence))
     {
         Call //("Singular extensions");
-        If (1 == 1)
+        If (1 == 0)
         {
             If (((Not (Quiescence)) And ((Depth > 1) And (Horizon > 3))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedMove == "")))
             {
@@ -966,15 +966,18 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             Call TTProbeNode(CurrentBoardHash)(Depth)(Quiescence);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                Call IsQuiescentCheckCond(Depth);
-                If (((Not (Quiescence)) And (Not (((TTProbeHorizonRes - 1) < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
+                If (floor((TTProbeNodeAgeRes / 100)) == floor((TTCurrentAge / 100)))
                 {
-                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
+                    Call IsQuiescentCheckCond(Depth);
+                    If (((Not (Quiescence)) And (Not (((TTProbeHorizonRes - 1) < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
                     {
-                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                        If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                         {
-                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                            Stop(this script);
+                            If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                            {
+                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                                Stop(this script);
+                            }
                         }
                     }
                 }
@@ -2850,58 +2853,56 @@ Define CalcBoardAttackedByMove(string Depth) (warp=true)
     Call GenerateMovesImplWrapper(Depth)((1 == 1))((1 == 0));
 }
 
-Define CalcBoardAttackedByMoveChecked(string Depth) (warp=true)
+Define CalcBoardAttackedByMoveChecked(string CheckingDepth) (warp=true)
 {
-    Call TTProbeNode(CurrentBoardHash)((Depth + 1))((1 == 0));
-    If ((TTProbeRes == 1) And (Not ((TTProbeCheckedRes == ""))))
+    If (CheckingDepth > 1)
     {
-        If ((Depth % 2) == 1)
+        List.ReplaceItem(CastlingState, (CheckingDepth + 1), CastlingState[(CheckingDepth - 1)]);
+        List.ReplaceItem(EnPassantTarget, (CheckingDepth + 1), EnPassantTarget[(CheckingDepth - 1)]);
+        Call TTProbeNode(CurrentBoardHash)((CheckingDepth + 1))((1 == 1));
+        If ((TTProbeRes == 0) Or (TTProbeCheckedRes == ""))
         {
-            IsOppSideChecked = TTProbeCheckedRes;
+            Call TTProbeNode(CurrentBoardHash)((CheckingDepth + 1))((1 == 0));
         }
-        Else
+        If ((TTProbeRes == 1) And (Not ((TTProbeCheckedRes == ""))))
         {
-            IsOwnSideChecked = TTProbeCheckedRes;
-        }
-        Stop(this script);
-    }
-    List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
-    List.ReplaceItem(EnPassantTarget, (Depth + 1), EnPassantTarget[Depth]);
-    If ((Depth % 2) == 1)
-    {
-        IsOppSideChecked = 0;
-        IdxOuter2 = 1;
-        Repeat (64)
-        {
-            If (Board[(IdxOuter2 + 0)] > 0)
+            If ((CheckingDepth % 2) == 1)
             {
-                Call IsCheckingPiece(IdxOuter2);
-                If (IsCheckingPieceRes == 1)
-                {
-                    IsOppSideChecked = 1;
-                }
+                IsOppSideChecked = TTProbeCheckedRes;
             }
-            IdxOuter2 += 1;
+            Else
+            {
+                IsOwnSideChecked = TTProbeCheckedRes;
+            }
+            Stop(this script);
         }
-        Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(IsOppSideChecked)(1)("")("")("")("")("")("");
+    }
+    IsChecked = 0;
+    Factor = (1 - (2 * ((CheckingDepth % 2) == 0)));
+    IdxOuter2 = 1;
+    Repeat (64)
+    {
+        If ((Board[(IdxOuter2 + 0)] * Factor) > 0)
+        {
+            Call IsCheckingPiece(IdxOuter2);
+            If (IsCheckingPieceRes == 1)
+            {
+                IsChecked = 1;
+            }
+        }
+        IdxOuter2 += 1;
+    }
+    If (CheckingDepth > 1)
+    {
+        Call TTStoreNode(CurrentBoardHash)((CheckingDepth + 1))("")("")("")(IsChecked)(1)("")("")("")("")("")("");
+    }
+    If ((CheckingDepth % 2) == 1)
+    {
+        IsOppSideChecked = IsChecked;
     }
     Else
     {
-        IsOwnSideChecked = 0;
-        IdxOuter2 = 1;
-        Repeat (64)
-        {
-            If (Board[(IdxOuter2 + 0)] < 0)
-            {
-                Call IsCheckingPiece(IdxOuter2);
-                If (IsCheckingPieceRes == 1)
-                {
-                    IsOwnSideChecked = 1;
-                }
-            }
-            IdxOuter2 += 1;
-        }
-        Call TTStoreNode(CurrentBoardHash)((Depth + 1))("")("")("")(IsOwnSideChecked)(1)("")("")("")("")("")("");
+        IsOwnSideChecked = IsChecked;
     }
 }
 
@@ -3192,11 +3193,14 @@ Define CalibrateBoardEval(string Depth) (warp=true)
             }
             If ((TTProbeRes == 1) And (Not ((TTProbeNodeScoreRes == ""))))
             {
-                If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (TTProbeNodeScoreRes < BoardEval[(Depth + 0)])) Or ((TTProbeNodeTypeRes == "B") And (TTProbeNodeScoreRes > BoardEval[(Depth + 0)]))))
+                If (floor((TTProbeNodeAgeRes / 100)) == floor((TTCurrentAge / 100)))
                 {
-                    If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                    If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (TTProbeNodeScoreRes < BoardEval[(Depth + 0)])) Or ((TTProbeNodeTypeRes == "B") And (TTProbeNodeScoreRes > BoardEval[(Depth + 0)]))))
                     {
-                        List.ReplaceItem(BoardEval, Depth, TTProbeNodeScoreRes);
+                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
+                        {
+                            List.ReplaceItem(BoardEval, Depth, TTProbeNodeScoreRes);
+                        }
                     }
                 }
             }
