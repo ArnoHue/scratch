@@ -1685,14 +1685,11 @@ Define CalibrateBoardEval(string Depth) (warp=true)
             }
             If ((TTProbeRes == 1) And (Not ((TTProbeNode.EvalRes == ""))))
             {
-                If (floor((TTProbeNode.AgeRes / 100)) == floor((TT.CurrentAge / 100)))
+                If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (TTProbeNode.EvalRes < BoardEval[(Depth + 0)])) Or ((TTProbeNode.NodeTypeRes == "B") And (TTProbeNode.EvalRes > BoardEval[(Depth + 0)]))))
                 {
-                    If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (TTProbeNode.EvalRes < BoardEval[(Depth + 0)])) Or ((TTProbeNode.NodeTypeRes == "B") And (TTProbeNode.EvalRes > BoardEval[(Depth + 0)]))))
+                    If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
                     {
-                        If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
-                        {
-                            List.ReplaceItem(BoardEval, Depth, TTProbeNode.EvalRes);
-                        }
+                        List.ReplaceItem(BoardEval, Depth, TTProbeNode.EvalRes);
                     }
                 }
             }
@@ -3050,9 +3047,9 @@ Define GetBestMoveMedDiff (warp=false)
             QuiescenceDepth = ((MaxSearchDepthStackFrames - MaxSearchDepth) - 10);
         }
         ThinkTimeLimitSearch = ThinkTimeLimit;
-        If (((IdxDeepening > 6) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 7) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
-            AWDelta = Operator.Round((25 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 2400)));
+            AWDelta = Operator.Round((35 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 2400)));
             AWAlpha = Operator.Round((GBM.Evaluation - AWDelta));
             AWBeta = Operator.Round((GBM.Evaluation + AWDelta));
         }
@@ -3082,7 +3079,7 @@ Define GetBestMoveMedDiff (warp=false)
                 {
                     If (Not ((Search.EvalRes > AWAlpha)))
                     {
-                        If (1 == 0)
+                        If (1 == 1)
                         {
                             AWBeta = Operator.Round(((AWAlpha + AWBeta) / 2));
                         }
@@ -6852,12 +6849,21 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
         Stop(this script);
     }
+    If (1 == 1)
+    {
+        Call TTProbeBoard(CurrentBoardHash)((Depth - 1));
+        If ((TTProbeRes == 1) And (Not ((TTProbeBoard.EvalSumRes == ""))))
+        {
+            List.ReplaceItem(BoardEval, Depth, TTProbeBoard.EvalSumRes);
+            Call CalibrateBoardEval(Depth);
+        }
+    }
     If (Not (Quiescence))
     {
-        If ((Depth > 1) And ((ExcludedMove == "") And (CheckedState[Depth] == 0)))
+        If ((Depth > 1) And (((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1)) And (ExcludedMove == "")))
         {
             Call GetBoardEval(Depth);
-            Call Search_Razoring(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)("");
+            Call Search_Razoring(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(ExcludedMove);
             If (Not ((SearchEvalResults[Depth] == "")))
             {
                 Stop(this script);
@@ -7636,7 +7642,7 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
         Call //("Singular extensions");
         If ((Depth > 1) And ((ExcludedMove == "") And (1 == 1)))
         {
-            If (((TargetPieces[Depth] == 0) And (Horizon > (3 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))) And ((AppliedMove[Depth] == HashMove[Depth]) And (ExcludedMove == "")))
+            If ((((TargetPieces[Depth] == 0) And (CheckedState[Depth] == 0)) And (Horizon > (3 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))) And ((AppliedMove[Depth] == HashMove[Depth]) And (ExcludedMove == "")))
             {
                 Call TTProbeNode(PreviousBoardHash[Depth])(Depth)(Quiescence);
                 If ((TTProbeRes == 1) And ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == "")))))
@@ -7723,7 +7729,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                 {
                     IsImproving = 1;
                 }
-                If (PickedMoveCountQuiet[Depth] > floor(((5 + (Horizon * Horizon)) / (2 - IsImproving))))
+                If (PickedMoveCountQuiet[Depth] > floor(((6 + (Horizon * Horizon)) / (2 - IsImproving))))
                 {
                     IsFutile = 1;
                     Stop(this script);
@@ -8092,17 +8098,14 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
                 }
                 If ((Not ((TTProbeNode.EvalRes == ""))) And (Not ((TTProbeNode.HorizonRes == ""))))
                 {
-                    If (floor((TTProbeNode.AgeRes / 100)) == floor((TT.CurrentAge / 100)))
+                    Call IsQuiescentCheckCond(Depth);
+                    If (((Not (Quiescence)) And (Not (((TTProbeNode.HorizonRes - 0) < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
                     {
-                        Call IsQuiescentCheckCond(Depth);
-                        If (((Not (Quiescence)) And (Not (((TTProbeNode.HorizonRes - 0) < Horizon)))) Or (Quiescence And ((TTProbeNode.HorizonRes == -1) And (Not ((IsQuiescentCheckRes < TTProbeNode.QSMeta))))))
+                        If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
                         {
-                            If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
+                            If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
                             {
-                                If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
-                                {
-                                    List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
-                                }
+                                List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
                             }
                         }
                     }
