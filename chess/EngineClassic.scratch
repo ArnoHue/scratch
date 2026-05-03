@@ -137,6 +137,145 @@ WhenKeyPressed(e)
 
 //----- Broadcast received events -------------------------------------------------------------------------------------
 
+WhenBroadcastReceived($gok_classic)
+{
+    Call ​​log​​("$gok1");
+    Call $gok_prepare;
+    Call IsOwnKingCheckMate;
+    If (IsOwnKingCheckMateRes == 1)
+    {
+        List.Add(_dci, "resign");
+        Event.Broadcast("dci message");
+        Call ​​warn​​("$gok: invoked on own mate");
+        Stop(this script);
+    }
+    Else
+    {
+        Call IsOppKingCheckMate;
+        If (IsOppKingCheckMateRes == 1)
+        {
+            List.Add(_dci, "ma1a1");
+            Event.Broadcast("dci message");
+            Call ​​warn​​("$gok: invoked on opp mate");
+            Stop(this script);
+        }
+        Else
+        {
+            Call GetRepetitionCount;
+            If (RepetitionCountRes > 2)
+            {
+                List.Add(_dci, "draw?");
+                Event.Broadcast("dci message");
+                Call ​​warn​​("$gok: invoked on draw-by-rep");
+                Stop(this script);
+            }
+            Else
+            {
+                Call IsDrawByMaterial;
+                If (IsDrawRes == 1)
+                {
+                    List.Add(_dci, "draw?");
+                    Event.Broadcast("dci message");
+                    Call ​​warn​​("$gok: invoked on draw-by-material");
+                    Stop(this script);
+                }
+                Else
+                {
+                    Call IsDrawByStalemate(1);
+                    If (IsDrawRes == 1)
+                    {
+                        List.Add(_dci, "draw?");
+                        Event.Broadcast("dci message");
+                        Call ​​warn​​("$gok: invoked on draw-by-stalemate");
+                        Stop(this script);
+                    }
+                }
+            }
+        }
+    }
+    Call ​​log​​("$gok2");
+    Call AddBoardToHistory(0);
+    GBM.BestMove = "";
+    Call GetOpeningMoves;
+    If (List.Length(OpeningMovesRes) > 0)
+    {
+        GBM.BestMove = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
+    }
+    Else
+    {
+        Call GetBestMoveMedDiff;
+    }
+    Call ​​log​​("$gok3");
+    If (GBM.BestMove == "")
+    {
+        List.Add(_dci, "resign");
+        Event.Broadcast("dci message");
+        Call ​​warn​​("$gok: search system error => resigning");
+        Stop(this script);
+    }
+    Call ​​log​​("$gok4");
+    Call ClearMoveList(1);
+    Call AddMoveToList(GBM.BestMove)(1);
+    List.ReplaceItem(MovesIdx, 1, 1);
+    Call ApplyMove(1);
+    Call AddBoardToHistory(1);
+    Call RevertMove(1);
+    Call GetMoveNotation(GBM.BestMove);
+    If (MoveNotationRes == "O-O")
+    {
+        If (IsPlayerBlack == 0)
+        {
+            List.Add(_dci, "me8g8");
+        }
+        Else
+        {
+            List.Add(_dci, "me1g1");
+        }
+    }
+    Else
+    {
+        If (MoveNotationRes == "O-O-O")
+        {
+            If (IsPlayerBlack == 0)
+            {
+                List.Add(_dci, "me8c8");
+            }
+            Else
+            {
+                List.Add(_dci, "me1c1");
+            }
+        }
+        Else
+        {
+            List.Add(_dci, Operator.Join("m", Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((VirtualMove / 100))]), Operator.Join((9 - IdxToRank[floor((VirtualMove / 100))]), Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((VirtualMove % 100))]), (9 - IdxToRank[floor((VirtualMove % 100))]))))));
+        }
+    }
+    Call ​​log​​("$gok5");
+    Event.Broadcast("dci message");
+    Call ​​log​​("$gok6");
+}
+
+WhenBroadcastReceived($gok_classic draw?)
+{
+    Call $gok_prepare;
+    GBM.Evaluation = 0;
+    Call GetBestMoveMedDiff;
+    If (GBM.Evaluation < 0)
+    {
+        List.Add(_dci, "accept");
+    }
+    Else
+    {
+        List.Add(_dci, "decline");
+    }
+    Event.Broadcast("dci message");
+}
+
+WhenBroadcastReceived($gok_classic stop)
+{
+    IsMinMaxTimeout = 1;
+}
+
 WhenBroadcastReceived(advisor)
 {
     If (IsExecutionRunning == 0)
@@ -155,6 +294,23 @@ WhenBroadcastReceived(advisor)
             }
         }
     }
+}
+
+WhenBroadcastReceived(dci new game)
+{
+    GoK_IsGameSuspended = 0;
+    List.DeleteAll(BoardHistory);
+    List.DeleteAll(BoardHistoryFiftyMoves);
+    List.DeleteAll(BoardHistoryHash);
+    List.DeleteAll(BoardHistoryMetaState);
+    List.DeleteAll(BoardHistoryWasEngineMove);
+    List.DeleteAll(GameMovesAN);
+    GameMoves = "";
+}
+
+WhenBroadcastReceived(dci register)
+{
+    List.Add(_dci engines, "gok_classic");
 }
 
 WhenBroadcastReceived(export)
@@ -376,6 +532,157 @@ WhenBroadcastReceived(undo)
 
 
 //----- Custom blocks -------------------------------------------------------------------------------------------------
+
+Define $gok_prepare (warp=false)
+{
+    DCI.target_ipb = 0;
+    If Operator.Contains(_dci fen, " w")
+    {
+        DCI.target_ipb = 1;
+    }
+    If (Not ((DCI.target_ipb == IsPlayerBlack)))
+    {
+        IsPlayerBlack = DCI.target_ipb;
+        GoK_IsPlayerBlack = DCI.target_ipb;
+        ExecutionDepth = 0;
+        IsExecutionRunning = 0;
+        Level = 5;
+        GoK_Level = 5;
+        Call EnterExecution;
+        Call InitBoard;
+        Call InitBoardPhase2;
+        Call ExitExecution;
+        Call ExecuteInit;
+        Call ​​warn​​("$gok_reinit");
+    }
+    Call ImportBoardFEN(_dci fen);
+    DCI.cas_own_ks = 0;
+    DCI.cas_own_qs = 0;
+    DCI.cas_opp_ks = 0;
+    DCI.cas_opp_qs = 0;
+    DCI.cas_i = 1;
+    Repeat Until ((Operator.LetterOf(_dci fen, DCI.cas_i) == " ") Or (DCI.cas_i > Variable.Length(_dci fen)))
+    {
+        DCI.cas_i += 1;
+    }
+    DCI.cas_i += 3;
+    Repeat Until ((DCI.cas_i > Variable.Length(_dci fen)) Or (Operator.LetterOf(_dci fen, DCI.cas_i) == " "))
+    {
+        If (Operator.LetterOf(_dci fen, DCI.cas_i) == "K")
+        {
+            Call IsLowerCase(Operator.LetterOf(_dci fen, DCI.cas_i));
+            If (IsLowerCaseRes == 0)
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_own_ks = 1;
+                }
+                Else
+                {
+                    DCI.cas_opp_ks = 1;
+                }
+            }
+            Else
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_opp_ks = 1;
+                }
+                Else
+                {
+                    DCI.cas_own_ks = 1;
+                }
+            }
+        }
+        If (Operator.LetterOf(_dci fen, DCI.cas_i) == "Q")
+        {
+            Call IsLowerCase(Operator.LetterOf(_dci fen, DCI.cas_i));
+            If (IsLowerCaseRes == 0)
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_own_qs = 1;
+                }
+                Else
+                {
+                    DCI.cas_opp_qs = 1;
+                }
+            }
+            Else
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_opp_qs = 1;
+                }
+                Else
+                {
+                    DCI.cas_own_qs = 1;
+                }
+            }
+        }
+        DCI.cas_i += 1;
+    }
+    List.ReplaceItem(EnPassantTarget, 1, "");
+    If (DCI.cas_i < Variable.Length(_dci fen))
+    {
+        DCI.ep_pos = (DCI.cas_i + 1);
+        If ((Not ((Operator.LetterOf(_dci fen, DCI.ep_pos) == "-"))) And (Not ((Operator.LetterOf(_dci fen, DCI.ep_pos) == ""))))
+        {
+            DCI.ep_file = List.IndexOf(DCI.files, Operator.LetterOf(_dci fen, DCI.ep_pos));
+            If (Operator.LetterOf(_dci fen, (DCI.ep_pos + 1)) == 3)
+            {
+                List.ReplaceItem(EnPassantTarget, 1, (32 + DCI.ep_file));
+            }
+            Else
+            {
+                List.ReplaceItem(EnPassantTarget, 1, (41 - DCI.ep_file));
+            }
+        }
+    }
+    HasOwnRookQSMoved = 0;
+    HasOwnKingMoved = 0;
+    HasOwnCastled = 0;
+    HasOwnRookKSMoved = 0;
+    HasOppRookQSMoved = 0;
+    HasOppKingMoved = 0;
+    HasOppCastled = 0;
+    HasOppRookKSMoved = 0;
+    If (Not ((DCI.cas_own_qs == 1)))
+    {
+        HasOwnRookQSMoved = 1;
+    }
+    If (Not (((DCI.cas_own_qs == 1) Or (DCI.cas_own_ks == 1))))
+    {
+        HasOwnKingMoved = 1;
+        HasOwnCastled = 1;
+    }
+    If (Not ((DCI.cas_own_ks == 1)))
+    {
+        HasOwnRookKSMoved = 1;
+    }
+    If (Not ((DCI.cas_opp_qs == 1)))
+    {
+        HasOppRookQSMoved = 1;
+    }
+    If (Not (((DCI.cas_opp_qs == 1) Or (DCI.cas_opp_ks == 1))))
+    {
+        HasOppKingMoved = 1;
+        HasOppCastled = 1;
+    }
+    If (Not ((DCI.cas_opp_ks == 1)))
+    {
+        HasOppRookKSMoved = 1;
+    }
+    Call CalcBoardStats;
+    If (_dci think time > 0)
+    {
+        CustomThinkTime = _dci think time;
+    }
+    Else
+    {
+        CustomThinkTime = 1;
+    }
+}
 
 Define //(string Comment) (warp=true)
 {
@@ -630,7 +937,7 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
         Call //("Singular extensions");
         If (1 == 1)
         {
-            If ((((Not (Quiescence)) And ((Depth > 1) And (TargetPieces[Depth] == 0))) And (Horizon > (3 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedMove == "")))
+            If ((((Not (Quiescence)) And ((Depth > 1) And ((TargetPieces[Depth] == 0) And (CheckedState[Depth] == 0)))) And (Horizon > (3 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1))))))) And ((HashMove[Depth] == AppliedMove[Depth]) And (ExcludedMove == "")))
             {
                 Call TTProbeNode(PreviousBoardHash[Depth])(Depth)(Quiescence);
                 If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
@@ -696,9 +1003,12 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
                 }
             }
         }
-        If ((Depth > 1) And (CheckedState[Depth] == 1))
+        If (PlyExtension[Depth] == 0)
         {
-            List.ReplaceItem(PlyExtension, Depth, 1);
+            If ((Depth > 1) And (CheckedState[Depth] == 1))
+            {
+                List.ReplaceItem(PlyExtension, Depth, 1);
+            }
         }
     }
 }
@@ -993,18 +1303,15 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             Call TTProbeNode(CurrentBoardHash)(Depth)(Quiescence);
             If ((TTProbeRes == 1) And ((Not ((TTProbeNodeScoreRes == ""))) And (Not ((TTProbeHorizonRes == "")))))
             {
-                If (floor((TTProbeNodeAgeRes / 100)) == floor((TTCurrentAge / 100)))
+                Call IsQuiescentCheckCond(Depth);
+                If (((Not (Quiescence)) And (Not (((TTProbeHorizonRes - 0) < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
                 {
-                    Call IsQuiescentCheckCond(Depth);
-                    If (((Not (Quiescence)) And (Not (((TTProbeHorizonRes - 0) < Horizon)))) Or ((Quiescence And (TTProbeHorizonRes == -1)) And (Not ((TTProbeNodeQSMetaRes < IsQuiescentCheckRes)))))
+                    If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
                     {
-                        If ((TTProbeNodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNodeTypeRes == "A") And (Not ((TTProbeNodeScoreRes > Alphas[(Depth + 0)])))) Or ((TTProbeNodeTypeRes == "B") And (Not ((TTProbeNodeScoreRes < Betas[(Depth + 0)])))))))
+                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
                         {
-                            If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
-                            {
-                                List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
-                                Stop(this script);
-                            }
+                            List.ReplaceItem(MinMaxResults, Depth, TTProbeNodeScoreRes);
+                            Stop(this script);
                         }
                     }
                 }
@@ -1019,7 +1326,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         Stop(this script);
     }
     Call //("Invoke board evaluation to calculate incremental results");
-    If (1 == 0)
+    If (1 == 1)
     {
         Call //("Re-use static eval from TT");
         Call TTProbeBoard(CurrentBoardHash)((Depth - 1));
@@ -1083,7 +1390,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
     }
     If (Not (Quiescence))
     {
-        If ((Depth > 1) And (CheckedState[Depth] == 0))
+        If ((Depth > 1) And ((CheckedState[Depth] == 0) And ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)))
         {
             Call GetBoardEval(Depth);
             Call ABSearch_Pruning(Depth)(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
@@ -3224,14 +3531,11 @@ Define CalibrateBoardEval(string Depth) (warp=true)
             }
             If ((TTProbeRes == 1) And (Not ((TTProbeNodeScoreRes == ""))))
             {
-                If (floor((TTProbeNodeAgeRes / 100)) == floor((TTCurrentAge / 100)))
+                If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (TTProbeNodeScoreRes < BoardEval[(Depth + 0)])) Or ((TTProbeNodeTypeRes == "B") And (TTProbeNodeScoreRes > BoardEval[(Depth + 0)]))))
                 {
-                    If ((TTProbeNodeTypeRes == "E") Or (((TTProbeNodeTypeRes == "A") And (TTProbeNodeScoreRes < BoardEval[(Depth + 0)])) Or ((TTProbeNodeTypeRes == "B") And (TTProbeNodeScoreRes > BoardEval[(Depth + 0)]))))
+                    If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
                     {
-                        If (Not ((abs(TTProbeNodeScoreRes) > AbsMinCheckmateEval)))
-                        {
-                            List.ReplaceItem(BoardEval, Depth, TTProbeNodeScoreRes);
-                        }
+                        List.ReplaceItem(BoardEval, Depth, TTProbeNodeScoreRes);
                     }
                 }
             }
@@ -3243,37 +3547,37 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
 {
     If ((Depth % 2) == 1)
     {
-        List.DeleteAll(BoardAttackedByOwn);
-        List.DeleteAll(BoardAttackedByOwnPiece);
-        List.DeleteAll(BoardAttackedByOwnTypeMask);
-        List.DeleteAll(BoardAttackerByOwnType);
+        Idx = 1;
         Repeat (64)
         {
-            List.Add(BoardAttackedByOwn, 0);
-            List.Add(BoardAttackedByOwnPiece, 0);
-            List.Add(BoardAttackedByOwnTypeMask, 0);
-            Repeat (6)
-            {
-                List.Add(BoardAttackerByOwnType, 0);
-            }
+            List.ReplaceItem(BoardAttackedByOwn, Idx, 0);
+            List.ReplaceItem(BoardAttackedByOwnPiece, Idx, 0);
+            List.ReplaceItem(BoardAttackedByOwnTypeMask, Idx, 0);
+            Idx += 1;
+        }
+        Idx = 1;
+        Repeat (384)
+        {
+            List.ReplaceItem(BoardAttackerByOwnType, Idx, 0);
+            Idx += 1;
         }
         IsOppSideChecked = 0;
     }
     Else
     {
-        List.DeleteAll(BoardAttackedByOpp);
-        List.DeleteAll(BoardAttackedByOppPiece);
-        List.DeleteAll(BoardAttackedByOppTypeMask);
-        List.DeleteAll(BoardAttackerByOppType);
+        Idx = 1;
         Repeat (64)
         {
-            List.Add(BoardAttackedByOpp, 0);
-            List.Add(BoardAttackedByOppPiece, 0);
-            List.Add(BoardAttackedByOppTypeMask, 0);
-            Repeat (6)
-            {
-                List.Add(BoardAttackerByOppType, 0);
-            }
+            List.ReplaceItem(BoardAttackedByOpp, Idx, 0);
+            List.ReplaceItem(BoardAttackedByOppPiece, Idx, 0);
+            List.ReplaceItem(BoardAttackedByOppTypeMask, Idx, 0);
+            Idx += 1;
+        }
+        Idx = 1;
+        Repeat (384)
+        {
+            List.ReplaceItem(BoardAttackerByOppType, Idx, 0);
+            Idx += 1;
         }
         IsOwnSideChecked = 0;
     }
@@ -7017,7 +7321,7 @@ Define GetBestMoveMedDiff (warp=false)
         {
             QuiescenceDepth = ((MaxSearchDepthStackFrames - MaxSearchDepth) - 10);
         }
-        If (((IdxDeepening > 4) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 7) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
             AWDelta = Operator.Round((25 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 4800)));
             AWAlpha = Operator.Round((GBM.Evaluation - AWDelta));
@@ -8134,6 +8438,8 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardAttackedByOwnPiece, all);
     List.DeleteItem(BoardAttackedByOppTypeMask, all);
     List.DeleteItem(BoardAttackedByOwnTypeMask, all);
+    List.DeleteItem(BoardAttackerByOwnType, all);
+    List.DeleteItem(BoardAttackerByOppType, all);
     Repeat (64)
     {
         List.Add(BoardAttackedByOpp, 0);
@@ -8143,6 +8449,11 @@ Define InitBoard (warp=true)
         List.Add(BoardAttackedByOwnPiece, 0);
         List.Add(BoardAttackedByOppTypeMask, 0);
         List.Add(BoardAttackedByOwnTypeMask, 0);
+        Repeat (6)
+        {
+            List.Add(BoardAttackerByOppType, 0);
+            List.Add(BoardAttackerByOwnType, 0);
+        }
     }
     Call //("Due to the lack of local variables in Scratch, we emulate a method stack for recursive Minimax using lists");
     List.DeleteItem(Alphas, all);
