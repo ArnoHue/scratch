@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (16.05.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (17.05.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1111,7 +1111,7 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
                         }
                         If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[(Depth + 0)])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[(Depth + 0)])))))
                         {
-                            Call SEE(Depth);
+                            Call SEE(Depth)((IsScratch3 == 0));
                             FP.SEE = SEE.Result;
                             If ((((Depth % 2) == 1) And (Not ((FP.SEE > 0)))) Or (((Depth % 2) == 0) And (Not ((FP.SEE < 0)))))
                             {
@@ -1142,7 +1142,7 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
                     {
                         If (FP.SEE == "")
                         {
-                            Call SEE(Depth);
+                            Call SEE(Depth)((IsScratch3 == 0));
                             FP.SEE = SEE.Result;
                         }
                         If ((((Depth % 2) == 1) And (FP.SEE < (Horizon * -125))) Or (((Depth % 2) == 0) And (FP.SEE > (Horizon * 125))))
@@ -1998,7 +1998,7 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                                 {
                                     If (Not ((AppliedMove[Depth] == ExcludedMove)))
                                     {
-                                        Call SEE(Depth);
+                                        Call SEE(Depth)((1 == 0));
                                         If ((((Depth % 2) == 1) And (Not ((SEE.Result < PC.SEEThreshold)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > PC.SEEThreshold)))))
                                         {
                                             PC.Count += 1;
@@ -7718,7 +7718,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Call AddMoveToList(Move)((Depth + 2));
         List.ReplaceItem(MovesIdx, (Depth + 2), 1);
         Call ApplyMoveLight((Depth + 2));
-        Call SEE((Depth + 2));
+        Call SEE((Depth + 2))((1 == 0));
         Call RevertMoveLight((Depth + 2));
         Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((PieceIdxLookup[abs(TargetPieceParam)] - 1) * 64) + ToIdx));
         If ((((Depth % 2) == 1) And (Not ((SEE.Result < -50)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 50)))))
@@ -10882,7 +10882,7 @@ Define SayAsync(string Text)(num Duration) (warp=false)
     Event.Broadcast("sayasyncmsg");
 }
 
-Define SEE(string MoveDepth) (warp=true)
+Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
 {
     SEE.Depth = MoveDepth;
     SEE.TargetIdx = floor((AppliedMove[SEE.Depth] % 100));
@@ -10915,6 +10915,10 @@ Define SEE(string MoveDepth) (warp=true)
         List.DeleteAll(CalcMovesMoveList);
         List.DeleteAll(CalcMovesScoreList);
         SEE.SourceIdx = 1;
+        If WithPinFilter
+        {
+            SEE.Pin.QIdx = PieceIdxLookup[GoK_OwnQueen];
+        }
         Repeat (64)
         {
             SEE.SourcePiece = (Board[(SEE.SourceIdx + 0)] + 0);
@@ -10928,8 +10932,61 @@ Define SEE(string MoveDepth) (warp=true)
                         Call SEE.IsCounterCaptureReachable(abs(Board[(SEE.SourceIdx + 0)]))(SEE.SourceIdx)(SEE.TargetIdx);
                         If (IsReachableRes == 1)
                         {
-                            List.Add(CalcMovesMoveList, SEE.SourceIdx);
-                            List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
+                            SEE.Pin.Result = 0;
+                            If WithPinFilter
+                            {
+                                SEE.Pin.AttackerPiece = Board[SEE.SourceIdx];
+                                If (SEE.Pin.AttackerPiece > 0)
+                                {
+                                    SEE.Pin.King = KingIdxtOwn;
+                                }
+                                Else
+                                {
+                                    SEE.Pin.King = KingIdxOpp;
+                                }
+                                SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.SourceIdx * 100)) + SEE.Pin.King);
+                                If (((SEE.Pin.AttackerPiece > 0) And (MovePosLookupOwnLegal[SEE.Pin.Idx] == 1)) Or ((SEE.Pin.AttackerPiece < 0) And (MovePosLookupOppLegal[SEE.Pin.Idx] == 1)))
+                                {
+                                    SEE.Pin.Move = ((SEE.Pin.King * 100) + SEE.SourceIdx);
+                                    SEE.Pin.Inc = MovePathStepInc[SEE.Pin.Move];
+                                    SEE.Pin.Walk = SEE.Pin.King;
+                                    SEE.Pin.PathClear = 1;
+                                    Repeat ((MovePathDelta[SEE.Pin.Move] - 1))
+                                    {
+                                        SEE.Pin.Walk += SEE.Pin.Inc;
+                                        SEE.Pin.PathClear = (SEE.Pin.PathClear * (Board[SEE.Pin.Walk] == 0));
+                                    }
+                                    If (SEE.Pin.PathClear == 1)
+                                    {
+                                        List.ReplaceItem(Board, SEE.SourceIdx, 0);
+                                        SEE.Pin.Walk = (SEE.SourceIdx + SEE.Pin.Inc);
+                                        SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
+                                        SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (MovePosLookupOwnLegal[SEE.Pin.Idx] == 1)) Or ((SEE.Pin.AttackerPiece < 0) And (MovePosLookupOppLegal[SEE.Pin.Idx] == 1))));
+                                        SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
+                                        Repeat Until ((Not ((SEE.Pin.OnLine == 1))) Or (Not ((SEE.Pin.BlockerPiece == 0))))
+                                        {
+                                            SEE.Pin.Walk += SEE.Pin.Inc;
+                                            SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
+                                            SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (MovePosLookupOwnLegal[SEE.Pin.Idx] == 1)) Or ((SEE.Pin.AttackerPiece < 0) And (MovePosLookupOppLegal[SEE.Pin.Idx] == 1))));
+                                            SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
+                                        }
+                                        If ((SEE.Pin.OnLine == 1) And ((SEE.Pin.AttackerPiece * SEE.Pin.BlockerPiece) < 0))
+                                        {
+                                            Call IsCheckingPiece(SEE.Pin.Walk);
+                                            If (IsCheckingPieceRes == 1)
+                                            {
+                                                SEE.Pin.Result = 1;
+                                            }
+                                        }
+                                        List.ReplaceItem(Board, SEE.SourceIdx, SEE.Pin.AttackerPiece);
+                                    }
+                                }
+                            }
+                            If (SEE.Pin.Result == 0)
+                            {
+                                List.Add(CalcMovesMoveList, SEE.SourceIdx);
+                                List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
+                            }
                         }
                     }
                 }
