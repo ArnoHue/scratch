@@ -3140,7 +3140,7 @@ Define GetCalibratedEval(string Depth) (warp=true)
             {
                 If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (TTProbeNode.EvalRes < BoardEval[(Depth + 0)])) Or ((TTProbeNode.NodeTypeRes == "B") And (TTProbeNode.EvalRes > BoardEval[(Depth + 0)]))))
                 {
-                    If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                    If (1 == 1)
                     {
                         CalibratedEvalResult = TTProbeNode.EvalRes;
                     }
@@ -3330,7 +3330,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Call AddMoveToList(Move)((Depth + 2));
         List.ReplaceItem(MovesIdx, (Depth + 2), 1);
         Call ApplyMoveLight((Depth + 2));
-        Call SEE((Depth + 2));
+        Call SEE((Depth + 2))((1 == 0));
         Call RevertMoveLight((Depth + 2));
         Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((PieceIdxLookup[abs(TargetPieceParam)] - 1) * 64) + ToIdx));
         If (((SourcePieceParam > 0) And (Not ((SEE.Result < 0)))) Or ((SourcePieceParam < 0) And (Not ((SEE.Result > 0)))))
@@ -7821,7 +7821,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                         }
                         If ((((Depth % 2) == 1) And (Not ((FP.Eval > Alphas[Depth])))) Or (((Depth % 2) == 0) And (Not ((FP.Eval < Betas[Depth])))))
                         {
-                            Call SEE(Depth);
+                            Call SEE(Depth)((1 == 0));
                             FP.SEE = SEE.Result;
                             If ((((Depth % 2) == 1) And (Not ((FP.SEE > 0)))) Or (((Depth % 2) == 0) And (Not ((FP.SEE < 0)))))
                             {
@@ -7852,7 +7852,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                     {
                         If (FP.SEE == "")
                         {
-                            Call SEE(Depth);
+                            Call SEE(Depth)((1 == 0));
                             FP.SEE = SEE.Result;
                         }
                         If ((((Depth % 2) == 1) And (FP.SEE < (-125 * Horizon))) Or (((Depth % 2) == 0) And (FP.SEE > (125 * Horizon))))
@@ -8139,7 +8139,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
                     {
                         If ((TTProbeNode.NodeTypeRes == "E") Or (((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1) And (((TTProbeNode.NodeTypeRes == "A") And (Not ((TTProbeNode.EvalRes > Alphas[(Depth + 0)])))) Or ((TTProbeNode.NodeTypeRes == "B") And (Not ((TTProbeNode.EvalRes < Betas[(Depth + 0)])))))))
                         {
-                            If (Not ((abs(TTProbeNode.EvalRes) > AbsMinCheckmateEval)))
+                            If (1 == 1)
                             {
                                 List.ReplaceItem(SearchEvalResults, Depth, TTProbeNode.EvalRes);
                             }
@@ -8151,7 +8151,7 @@ Define Search_TTProbeEval(string Depth)(bool InitialDeepening)(bool Quiescence)(
     }
 }
 
-Define SEE(string MoveDepth) (warp=true)
+Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
 {
     SEE.Result = 0;
     If (floor((AppliedMove[MoveDepth] / 100)) == 0)
@@ -8191,6 +8191,10 @@ Define SEE(string MoveDepth) (warp=true)
         List.DeleteAll(CalcMovesMoveList);
         List.DeleteAll(CalcMovesScoreList);
         SEE.SourceIdx = 1;
+        If WithPinFilter
+        {
+            SEE.Pin.QIdx = PieceIdxLookup[GoK_BlackQueen];
+        }
         Repeat (64)
         {
             SEE.SourcePiece = Board[(SEE.SourceIdx + 0)];
@@ -8204,8 +8208,61 @@ Define SEE(string MoveDepth) (warp=true)
                         Call SEE.IsCounterCaptureReachable(abs(Board[(SEE.SourceIdx + 0)]))(SEE.SourceIdx)(SEE.TargetIdx);
                         If (IsReachableRes == 1)
                         {
-                            List.Add(CalcMovesMoveList, SEE.SourceIdx);
-                            List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
+                            SEE.Pin.Result = 0;
+                            If WithPinFilter
+                            {
+                                SEE.Pin.AttackerPiece = Board[SEE.SourceIdx];
+                                If (SEE.Pin.AttackerPiece > 0)
+                                {
+                                    SEE.Pin.King = BlackKingIdx;
+                                }
+                                Else
+                                {
+                                    SEE.Pin.King = WhiteKingIdx;
+                                }
+                                SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.SourceIdx * 100)) + SEE.Pin.King);
+                                If (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0)))))
+                                {
+                                    SEE.Pin.Move = ((SEE.Pin.King * 100) + SEE.SourceIdx);
+                                    SEE.Pin.Inc = MoveToPathStepInc[SEE.Pin.Move];
+                                    SEE.Pin.Walk = SEE.Pin.King;
+                                    SEE.Pin.PathClear = 1;
+                                    Repeat ((MoveToPathDelta[SEE.Pin.Move] - 1))
+                                    {
+                                        SEE.Pin.Walk += SEE.Pin.Inc;
+                                        SEE.Pin.PathClear = (SEE.Pin.PathClear * (Board[SEE.Pin.Walk] == 0));
+                                    }
+                                    If (SEE.Pin.PathClear == 1)
+                                    {
+                                        List.ReplaceItem(Board, SEE.SourceIdx, 0);
+                                        SEE.Pin.Walk = (SEE.SourceIdx + SEE.Pin.Inc);
+                                        SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
+                                        SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0))))));
+                                        SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
+                                        Repeat Until ((Not ((SEE.Pin.OnLine == 1))) Or (Not ((SEE.Pin.BlockerPiece == 0))))
+                                        {
+                                            SEE.Pin.Walk += SEE.Pin.Inc;
+                                            SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
+                                            SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0))))));
+                                            SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
+                                        }
+                                        If ((SEE.Pin.OnLine == 1) And ((SEE.Pin.AttackerPiece * SEE.Pin.BlockerPiece) < 0))
+                                        {
+                                            Call IsCheckingPiece(SEE.Pin.Walk);
+                                            If (IsCheckingPieceRes == 1)
+                                            {
+                                                SEE.Pin.Result = 1;
+                                            }
+                                        }
+                                        List.ReplaceItem(Board, SEE.SourceIdx, SEE.Pin.AttackerPiece);
+                                    }
+                                }
+                            }
+                            If (SEE.Pin.Result == 0)
+                            {
+                                List.Add(CalcMovesMoveList, SEE.SourceIdx);
+                                List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
+                            }
                         }
                     }
                 }
@@ -8775,14 +8832,6 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
         Stop(this script);
     }
     If (Score == DrawByRepetitionEval)
-    {
-        Stop(this script);
-    }
-    If (abs(Score) > AbsMinCheckmateEval)
-    {
-        Stop(this script);
-    }
-    If (ChebyshevDistance[((BlackKingIdx * 100) + WhiteKingIdx)] == 1)
     {
         Stop(this script);
     }
