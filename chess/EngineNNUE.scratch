@@ -954,6 +954,22 @@ Define AddSpecialMove(string Move)(string Depth) (warp=true)
     List.Add(CalcMovesScoreList, MoveScoreRes);
 }
 
+Define AddToFiftyMoves(bool IsCaptureOrPawnMove) (warp=true)
+{
+    If IsCaptureOrPawnMove
+    {
+        List.Add(BoardHistoryFiftyMoves, 0);
+    }
+    Else
+    {
+        If (List.Length(BoardHistoryFiftyMoves) == 0)
+        {
+            List.Add(BoardHistoryFiftyMoves, 0);
+        }
+        List.Add(BoardHistoryFiftyMoves, (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] + 1));
+    }
+}
+
 Define ApplyMove(string Depth)(bool UpdateNNUE) (warp=true)
 {
     If UpdateNNUE
@@ -978,6 +994,7 @@ Define ApplyMove(string Depth)(bool UpdateNNUE) (warp=true)
     List.ReplaceItem(PreviousBoardHashKP, Depth, CurrentBoardHashKP);
     Call GetCurrentMove(Depth);
     List.ReplaceItem(AppliedMove, Depth, CurrentMove);
+    Call AddToFiftyMoves((((Not ((CurrentMove == 0))) And (Not ((floor((CurrentMove / 100)) == 0)))) And ((abs(Board[floor((CurrentMove / 100))]) == GoK_BlackPawn) Or (Not ((Board[floor((CurrentMove % 100))] == 0))))));
     SourceIdx = floor((CurrentMove / 100));
     If (SourceIdx > 0)
     {
@@ -3076,7 +3093,7 @@ Define GetBestMoveMedDiff (warp=false)
                 IsAWDone = 1;
             }
         }
-        If (((IsSearchTimeout == 1) Or (IdxDeepening == MaxSearchDepth)) Or (abs(GBM.Evaluation) > (AbsMaxCheckmateEval - (IdxDeepening * 1000))))
+        If (((IsSearchTimeout == 1) Or (IdxDeepening == MaxSearchDepth)) Or (abs(GBM.Evaluation) > (AbsMaxCheckmateEval - (List.Length(BoardHistoryFiftyMoves) + IdxDeepening))))
         {
             IsDeepeningDone = 1;
         }
@@ -3155,7 +3172,7 @@ Define GetHistoryStatScore(string SourcePieceParam)(string FromIdx)(string ToIdx
         {
             If (Not ((floor((AppliedMove[(Depth - 1)] / 100)) == 0)))
             {
-                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(SourcePieceParam)] * 64) + ToIdx));
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 68) + floor((AppliedMove[(Depth - 1)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx));
                 If ((Depth % 2) == 1)
                 {
                     HistoryStatScore += (HistoryContinuationOwn[(Idx + 0)] * 2);
@@ -3173,7 +3190,7 @@ Define GetHistoryStatScore(string SourcePieceParam)(string FromIdx)(string ToIdx
         {
             If (Not ((floor((AppliedMove[(Depth - 2)] / 100)) == 0)))
             {
-                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 64) + floor((AppliedMove[(Depth - 2)] % 100))) * 384) + ((PieceIdxLookup[abs(SourcePieceParam)] * 64) + ToIdx));
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 68) + floor((AppliedMove[(Depth - 2)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx));
                 If ((Depth % 2) == 1)
                 {
                     HistoryStatScore += (HistoryContinuation2Own[(Idx + 0)] * 1);
@@ -3793,6 +3810,7 @@ Define ImportBoard(string ImpBoard) (warp=false)
         HasBlackRookQSMoved = 0;
         GameMoves = "";
         List.DeleteItem(BoardHistory, all);
+        List.DeleteItem(BoardHistoryFiftyMoves, all);
         List.DeleteItem(BoardHistoryHash, all);
         List.DeleteItem(BoardHistoryMetaState, all);
         List.DeleteItem(BoardHistoryWasEngineMove, all);
@@ -4031,7 +4049,7 @@ Define InitBoard (warp=true)
     GoK_BlackKnight = 281;
     GoK_BlackPawn = 114;
     AbsMinCheckmateEval = (GoK_BlackKing - 10000);
-    AbsMaxCheckmateEval = 97000;
+    AbsMaxCheckmateEval = 100000;
     DrawByRepetitionEval = -19.9;
     MaxPly1DeepeningMoveOrderScore = 9999999;
     MaxMoveOrderScore = 9999999;
@@ -4100,6 +4118,7 @@ Define InitBoard (warp=true)
         }
     }
     List.DeleteItem(BoardHistory, all);
+    List.DeleteItem(BoardHistoryFiftyMoves, all);
     List.DeleteItem(BoardHistoryHash, all);
     List.DeleteItem(BoardHistoryMetaState, all);
     List.DeleteItem(BoardHistoryWasEngineMove, all);
@@ -6695,6 +6714,7 @@ Define RevertMove(num Depth) (warp=true)
     {
         List.ReplaceItem(CastlingState, Depth, CastlingState[(Depth - 1)]);
     }
+    List.DeleteItem(BoardHistoryFiftyMoves, List.Length(BoardHistoryFiftyMoves));
 }
 
 Define RevertMoveLight(string Depth) (warp=true)
@@ -6894,11 +6914,11 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             Call //("Put a checkmate baseline into node eval, which must be improved later by at east one move that gets us out of check");
             If ((Depth % 2) == 1)
             {
-                List.ReplaceItem(SearchEvalResults, Depth, (-100000 + (Depth * 1000)));
+                List.ReplaceItem(SearchEvalResults, Depth, (-100000 + List.Length(BoardHistoryFiftyMoves)));
             }
             Else
             {
-                List.ReplaceItem(SearchEvalResults, Depth, (100000 - (Depth * 1000)));
+                List.ReplaceItem(SearchEvalResults, Depth, (100000 - List.Length(BoardHistoryFiftyMoves)));
             }
         }
         Else
@@ -7113,7 +7133,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                                                 If (SearchCore.NodeEval > SearchAlpha)
                                                 {
                                                     Call Search_OnBestRootMoveFound(Search.MoveRes)(Search.EvalRes);
-                                                    If (SearchCore.NodeEval > (AbsMaxCheckmateEval - (((Depth + Horizon) - 1) * 1000)))
+                                                    If (SearchCore.NodeEval > (AbsMaxCheckmateEval - (List.Length(BoardHistoryFiftyMoves) + Horizon)))
                                                     {
                                                         IsSearchTimeout = 1;
                                                         Stop(this script);
@@ -7237,7 +7257,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 Call //("Fast search checkmate detection (no check evasion found)");
                 List.ReplaceItem(NodeTypes, Depth, "E");
-                List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
+                List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
             }
         }
         Else
@@ -7248,7 +7268,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 Call CalcBoardAttackedByMoveChecked((Depth + 1));
                 If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
                 {
-                    List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + ((Depth + 1) * 1000)) * Search.Factor));
+                    List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
                 }
                 Else
                 {
@@ -7452,8 +7472,21 @@ Define Search_DetectCheckmate(string Depth) (warp=true)
         Call //("Virtual king captures on previous ply => depth-corrected checkmate evaluation");
         If (abs(TargetPieces[(Depth - 1)]) == GoK_BlackKing)
         {
-            List.ReplaceItem(SearchEvalResults, Depth, ((100000 - ((Depth - 1) * 1000)) * DepthEvalFactor[(Depth - 1)]));
+            List.ReplaceItem(SearchEvalResults, Depth, ((100000 - (List.Length(BoardHistoryFiftyMoves) - 1)) * DepthEvalFactor[(Depth - 1)]));
             Stop(this script);
+        }
+        If ((abs((IdxToRank[BlackKingIdx] - IdxToRank[WhiteKingIdx])) < 2) And (abs((IdxToFile[BlackKingIdx] - IdxToFile[WhiteKingIdx])) < 2))
+        {
+            If ((Depth % 2) == 1)
+            {
+                List.ReplaceItem(SearchEvalResults, Depth, ((100000 - List.Length(BoardHistoryFiftyMoves)) * DepthEvalFactor[(Depth - 1)]));
+                Stop(this script);
+            }
+            Else
+            {
+                List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * DepthEvalFactor[(Depth - 1)]));
+                Stop(this script);
+            }
         }
         If (1 == 0)
         {
@@ -7463,7 +7496,7 @@ Define Search_DetectCheckmate(string Depth) (warp=true)
                 Call CalcBoardAttackedByMoveChecked(Depth);
                 If (((((Depth % 2) == 1) And (IsWhiteChecked == 1)) Or (((Depth % 2) == 0) And (IsBlackChecked == 1))) Or ((abs((IdxToRank[BlackKingIdx] - IdxToRank[WhiteKingIdx])) < 2) And (abs((IdxToFile[BlackKingIdx] - IdxToFile[WhiteKingIdx])) < 2)))
                 {
-                    List.ReplaceItem(SearchEvalResults, Depth, ((100000 - (Depth * 1000)) * DepthEvalFactor[Depth]));
+                    List.ReplaceItem(SearchEvalResults, Depth, ((100000 - List.Length(BoardHistoryFiftyMoves)) * DepthEvalFactor[Depth]));
                     Stop(this script);
                 }
             }
@@ -8063,7 +8096,7 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
             If (Not ((BoardEval[Depth] == "")))
             {
                 Call GetImproving(Depth);
-                Margin = (120 * Horizon);
+                Margin = (200 * Horizon);
                 If ((Depth % 2) == 1)
                 {
                     Call GetCalibratedEval(Depth);
@@ -8532,7 +8565,7 @@ Define StoreKillerMove(string Depth)(string Move)(string Horizon)(bool Malus)(bo
             If (Depth > 1)
             {
                 HistoryBonus = (((Horizon + 1) * (Horizon + 0)) * (1 - (2 * Malus)));
-                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 64) + floor((AppliedMove[(Depth - 1)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 68) + floor((AppliedMove[(Depth - 1)] % 100))) * 408) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 68) + floor((Move % 100))));
                 If ((Depth % 2) == 1)
                 {
                     List.ReplaceItem(HistoryContinuationOwn, (Idx + 0), (HistoryContinuationOwn[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuationOwn[(Idx + 0)] * (abs(HistoryBonus) / 10000))))));
@@ -8548,7 +8581,7 @@ Define StoreKillerMove(string Depth)(string Move)(string Horizon)(bool Malus)(bo
             If (Depth > 2)
             {
                 HistoryBonus = (((Horizon + 1) * (Horizon + 0)) * (1 - (2 * Malus)));
-                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 64) + floor((AppliedMove[(Depth - 2)] % 100))) * 384) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 64) + floor((Move % 100))));
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 2)])] * 68) + floor((AppliedMove[(Depth - 2)] % 100))) * 408) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 68) + floor((Move % 100))));
                 If ((Depth % 2) == 1)
                 {
                     List.ReplaceItem(HistoryContinuation2Own, (Idx + 0), (HistoryContinuation2Own[(Idx + 0)] + (HistoryBonus - floor((HistoryContinuation2Own[(Idx + 0)] * (abs(HistoryBonus) / 10000))))));
@@ -8861,6 +8894,7 @@ Define UndoPrevMove (warp=false)
     If (List.Length(GameMovesAN) > 0)
     {
         List.DeleteItem(BoardHistory, List.Length(BoardHistory));
+        List.DeleteItem(BoardHistoryFiftyMoves, List.Length(BoardHistoryFiftyMoves));
         List.DeleteItem(BoardHistoryHash, List.Length(BoardHistoryHash));
         List.DeleteItem(BoardHistoryMetaState, List.Length(BoardHistoryMetaState));
         List.DeleteItem(BoardHistoryWasEngineMove, List.Length(BoardHistoryWasEngineMove));
