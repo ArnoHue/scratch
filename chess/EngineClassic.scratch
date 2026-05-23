@@ -89,7 +89,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (20.05.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (23.05.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -141,54 +141,43 @@ WhenBroadcastReceived($gok_classic)
 {
     Call ​​log​​("$gok1");
     Call $gok_prepare;
-    Call IsOwnKingCheckMate;
-    If (IsOwnKingCheckMateRes == 1)
+    Call IsOppKingCheckMate;
+    If (IsOppKingCheckMateRes == 1)
     {
-        List.Add(_dci, "resign");
+        List.Add(_dci, "ma1a1");
         Event.Broadcast("dci message");
-        Call ​​warn​​("$gok: invoked on own mate");
+        Call ​​warn​​("$gok: invoked on opp mate");
         Stop(this script);
     }
     Else
     {
-        Call IsOppKingCheckMate;
-        If (IsOppKingCheckMateRes == 1)
+        Call GetRepetitionCount;
+        If (RepetitionCountRes > 2)
         {
-            List.Add(_dci, "ma1a1");
+            List.Add(_dci, "draw?");
             Event.Broadcast("dci message");
-            Call ​​warn​​("$gok: invoked on opp mate");
+            Call ​​warn​​("$gok: invoked on draw-by-rep");
             Stop(this script);
         }
         Else
         {
-            Call GetRepetitionCount;
-            If (RepetitionCountRes > 2)
+            Call IsDrawByMaterial;
+            If (IsDrawRes == 1)
             {
                 List.Add(_dci, "draw?");
                 Event.Broadcast("dci message");
-                Call ​​warn​​("$gok: invoked on draw-by-rep");
+                Call ​​warn​​("$gok: invoked on draw-by-material");
                 Stop(this script);
             }
             Else
             {
-                Call IsDrawByMaterial;
+                Call IsDrawByStalemate(1);
                 If (IsDrawRes == 1)
                 {
                     List.Add(_dci, "draw?");
                     Event.Broadcast("dci message");
-                    Call ​​warn​​("$gok: invoked on draw-by-material");
+                    Call ​​warn​​("$gok: invoked on draw-by-stalemate");
                     Stop(this script);
-                }
-                Else
-                {
-                    Call IsDrawByStalemate(1);
-                    If (IsDrawRes == 1)
-                    {
-                        List.Add(_dci, "draw?");
-                        Event.Broadcast("dci message");
-                        Call ​​warn​​("$gok: invoked on draw-by-stalemate");
-                        Stop(this script);
-                    }
                 }
             }
         }
@@ -1079,7 +1068,7 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
         If (((Not (Quiescence)) And ((Betas[Depth] - Alphas[Depth]) == 1)) And (TargetPieces[Depth] == 0))
         {
             Call GetImproving(Depth);
-            If (PickedMoveCountQuiet[Depth] > floor(((12 + (Horizon * Horizon)) * (1 + (Not ((IsImproving == 0)))))))
+            If (SearchedMovesCountQuiet[Depth] > floor(((6 + (Horizon * Horizon)) * (1 + (IsImproving == 1)))))
             {
                 IsFutile = 1;
                 Stop(this script);
@@ -1099,7 +1088,7 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
         {
             If ((Depth > 1) And (Horizon < 6))
             {
-                If (((TargetPieces[Depth] == 0) And (PickedMoveCount[Depth] > 1)) And ((Betas[Depth] - Alphas[Depth]) == 1))
+                If (((TargetPieces[Depth] == 0) And (SearchedMovesCount[Depth] > 1)) And ((Betas[Depth] - Alphas[Depth]) == 1))
                 {
                     Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
                     If (((Not ((SourcePieces[Depth] == GoK_OwnPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_OppPawn))) Or (Rank > 3)))
@@ -1457,6 +1446,8 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
     List.ReplaceItem(PickPhase, Depth, 1);
     List.ReplaceItem(PickMoveRes, Depth, 1);
     List.ReplaceItem(PickedMoveCount, Depth, 0);
+    List.ReplaceItem(SearchedMovesCountQuiet, Depth, 0);
+    List.ReplaceItem(SearchedMovesCount, Depth, 0);
     List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
     Call //("Move generation and application loop, recursive search invocation");
     Repeat Until (PickMoveRes[Depth] == 0)
@@ -1490,9 +1481,9 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         }
         If (1 == 0)
         {
-            If (PickedMoveCount[Depth] > 0)
+            If (SearchedMovesCount[Depth] > 0)
             {
-                If ((Depth == 1) And ((PickedMoveCount[Depth] > AWCount) And (abs(Alphas[Depth]) < AbsMinCheckmateEval)))
+                If ((Depth == 1) And ((SearchedMovesCount[Depth] > AWCount) And (abs(Alphas[Depth]) < AbsMinCheckmateEval)))
                 {
                     If (Not ((Alphas[Depth] > MinMaxAlpha)))
                     {
@@ -1510,6 +1501,32 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             {
                 Call RevertMove(Depth);
                 Call PickMove(Depth)(Quiescence);
+            }
+        }
+        If (PickMoveRes[Depth] == 1)
+        {
+            Call IsOwnKingCheckedPostMove((Depth + 1));
+            Repeat Until ((PickMoveRes[Depth] == 0) Or ((((Depth % 2) == 1) And (IsOwnSideChecked == 0)) Or (((Depth % 2) == 0) And (IsOppSideChecked == 0))))
+            {
+                Call RevertMove(Depth);
+                Call PickMove(Depth)(Quiescence);
+                If (PickMoveRes[Depth] == 1)
+                {
+                    If (AppliedMove[Depth] == ExcludedMove)
+                    {
+                        Call RevertMove(Depth);
+                        Call PickMove(Depth)(Quiescence);
+                    }
+                    Call IsOwnKingCheckedPostMove((Depth + 1));
+                }
+            }
+            If (PickMoveRes[Depth] == 1)
+            {
+                List.ReplaceItem(SearchedMovesCount, Depth, (SearchedMovesCount[Depth] + 1));
+                If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
+                {
+                    List.ReplaceItem(SearchedMovesCountQuiet, Depth, (SearchedMovesCountQuiet[Depth] + 1));
+                }
             }
         }
         If (IsBlockProfilerEnabled == 1)
@@ -1784,6 +1801,98 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                 Else
                 {
                     List.ReplaceItem(MinMaxResults, Depth, 0);
+                }
+            }
+        }
+    }
+    If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
+    {
+        If (SearchedMovesCount[Depth] == 0)
+        {
+            If (CheckedState[Depth] == 1)
+            {
+                If (((Not (Quiescence)) And (ExcludedMove == "")) Or Quiescence)
+                {
+                    Call //("Fast search checkmate detection (no check evasion found)");
+                    List.ReplaceItem(ScoreTypes, Depth, "E");
+                    List.ReplaceItem(MinMaxResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
+                }
+            }
+            Else
+            {
+                Call //("Fast full search checkmate and stalemate detection");
+                If ((Not (Quiescence)) And (ExcludedMove == ""))
+                {
+                    List.ReplaceItem(ScoreTypes, Depth, "E");
+                    Call CalcBoardAttackedByMoveChecked((Depth + 1));
+                    If ((((Depth % 2) == 1) And (IsOwnSideChecked == 1)) Or (((Depth % 2) == 0) And (IsOppSideChecked == 1)))
+                    {
+                        List.ReplaceItem(MinMaxResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
+                    }
+                    Else
+                    {
+                        List.ReplaceItem(MinMaxResults, Depth, 0);
+                    }
+                }
+            }
+        }
+        If ((Not (Quiescence)) And (Not ((BestMoves[Depth] == ""))))
+        {
+            Call StoreKillerMoveMalus(Depth)(Horizon)(MovesIdxBestMove[Depth]);
+        }
+        If (((IsMinMaxTimeout == 0) And (Depth > 1)) And (ExcludedMove == ""))
+        {
+            Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
+            If Quiescence
+            {
+                Call IsQuiescentCheckCond(Depth);
+                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(-1)("")("")("")("")("")(IsQuiescentCheckRes);
+            }
+            Else
+            {
+                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])("")(Horizon)("")("")("")("")("")("");
+            }
+        }
+        Call //("Collect statistics");
+        If Quiescence
+        {
+            MoveCountQ += MovesCount[Depth];
+        }
+        Else
+        {
+            MoveCount += MovesCount[Depth];
+        }
+        If (MovesIdxBestMove[Depth] > 0)
+        {
+            If Quiescence
+            {
+                ProfBestMoveCountQ += 1;
+                ProfBestMoveIdxSumQ += MovesIdxBestMove[Depth];
+            }
+            Else
+            {
+                ProfBestMoveCount += 1;
+                ProfBestMoveIdxSum += MovesIdxBestMove[Depth];
+            }
+            If (1 == 1)
+            {
+                If (IsBlockProfilerEnabled == 1)
+                {
+                    Call ExportBoardFEN((IsPlayerBlack == 1))(((Depth % 2) == 0));
+                    Call GetMoveNotation(BestMoves[Depth]);
+                    Call Log("Move ordering indication: ")(Operator.Join("Quiescence = ", Quiescence))(Operator.Join(", Ply = ", Depth))(Operator.Join(", MoveIdx = ", MovesIdxBestMove[Depth]))(Operator.Join(", MoveCount = ", MovesCount[Depth]))(Operator.Join(", Checked = ", CheckedState[Depth]))(Operator.Join(", Move = ", MoveNotationRes))(Operator.Join(", FEN = ", ExportDataFEN));
+                    List.ReplaceItem(PickedMoves, Depth, "");
+                    Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or (CheckedState[Depth] == 1)));
+                    Call Log("Moves: ")(CalcMovesMoveList)("")("")("")("")("")("");
+                    Call Log("Scores: ")(CalcMovesScoreList)("")("")("")("")("")("");
+                    Call Log("Notation: ")("")("")("")("")("")("")("");
+                    Idx = 0;
+                    Repeat (List.Length(CalcMovesMoveList))
+                    {
+                        Call GetMoveNotation(CalcMovesMoveList[Idx]);
+                        Call Log(MoveNotationRes)("")("")("")("")("")("")("");
+                        Idx += 1;
+                    }
                 }
             }
         }
@@ -2093,9 +2202,9 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
             {
                 CurrentMove = 1;
             }
-            If (PickedMoveCount[Depth] > 1)
+            If (SearchedMovesCount[Depth] > 1)
             {
-                Reduction = floor((128 * (1 + ((ln((Horizon + PlyExtension[Depth])) * ln(PickedMoveCount[Depth])) / 2))));
+                Reduction = floor((128 * (1 + ((ln((Horizon + PlyExtension[Depth])) * ln(SearchedMovesCount[Depth])) / 2))));
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
@@ -2125,10 +2234,10 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
                         Reduction += (0 - Operator.Round(((HistoryStatScore / MaxHistoryScore) * 512)));
                     }
                 }
-                If (1 == 0)
+                If (1 == 1)
                 {
                     Call GetImproving(Depth);
-                    If (Not ((IsImproving == 0)))
+                    If (IsImproving == 1)
                     {
                         Reduction += -148;
                     }
@@ -2163,7 +2272,7 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
             }
         }
         Call //("Non-PV search");
-        If ((((IsReductionAndDone == 1) And ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))) Or ((IsReductionAndDone == 0) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsMinMaxTimeout == 0))
+        If ((((IsReductionAndDone == 1) And ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))) Or ((IsReductionAndDone == 0) And ((SearchedMovesCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsMinMaxTimeout == 0))
         {
             If ((Depth % 2) == 1)
             {
@@ -2408,20 +2517,6 @@ Define AddMoveImplLookup(string SourceIdx)(string TargetIdx)(string Depth)(bool 
             If ((BoardAttackedCalculated[(Depth + 0)] == 1) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + TargetIdx)] > 0))
             {
                 Stop(this script);
-            }
-            If (Depth == 1)
-            {
-                Call ClearMoveList((Depth + 2));
-                Call AddMoveToList(((SourceIdx * 100) + TargetIdx))((Depth + 2));
-                List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                Call ApplyMoveLight((Depth + 2));
-                Call CalcBoardAttackedByMoveChecked((Depth + 3));
-                If ((((Depth % 2) == 1) And (IsOwnSideChecked == 1)) Or (((Depth % 2) == 0) And (IsOppSideChecked == 1)))
-                {
-                    Call RevertMoveLight((Depth + 2));
-                    Stop(this script);
-                }
-                Call RevertMoveLight((Depth + 2));
             }
         }
     }
@@ -9665,6 +9760,33 @@ Define IsOppKingCheckMate (warp=true)
     }
 }
 
+Define IsOwnKingCheckedPostMove(string CheckingDepth) (warp=true)
+{
+    IsChecked = 0;
+    Factor = (1 - (2 * ((CheckingDepth % 2) == 0)));
+    IdxOuter2 = 1;
+    Repeat (64)
+    {
+        If ((Board[(IdxOuter2 + 0)] * Factor) > 0)
+        {
+            Call IsCheckingPiece(IdxOuter2);
+            If (IsCheckingPieceRes == 1)
+            {
+                IsChecked = 1;
+            }
+        }
+        IdxOuter2 += 1;
+    }
+    If ((CheckingDepth % 2) == 1)
+    {
+        IsOppSideChecked = IsChecked;
+    }
+    Else
+    {
+        IsOwnSideChecked = IsChecked;
+    }
+}
+
 Define IsOwnKingCheckMate (warp=true)
 {
     IsOwnKingCheckMateRes = 0;
@@ -10380,7 +10502,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     If (PickPhase[(Depth + 0)] == 4)
     {
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(4);
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((CheckedState[(Depth + 0)] == 1) And (BoardAttackedCalculated[(Depth + 0)] == 1))));
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 5);
     }
