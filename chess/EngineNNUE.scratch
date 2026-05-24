@@ -608,20 +608,6 @@ Define AddMoveImplLookup(string SourceIdx)(string TargetIdx)(string Depth)(bool 
             {
                 Stop(this script);
             }
-            If (Depth == 1)
-            {
-                Call ClearMoveList((Depth + 2));
-                Call AddMoveToList(((SourceIdx * 100) + TargetIdx))((Depth + 2));
-                List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-                Call ApplyMoveLight((Depth + 2));
-                Call CalcBoardAttackedByMoveChecked((Depth + 3));
-                If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
-                {
-                    Call RevertMoveLight((Depth + 2));
-                    Stop(this script);
-                }
-                Call RevertMoveLight((Depth + 2));
-            }
         }
     }
     Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)(CalcAttackState)(CapturesOnly);
@@ -5299,6 +5285,33 @@ Define IsLowerCase(string Char) (warp=true)
     }
 }
 
+Define IsOwnKingCheckedPostMove(string CheckingDepth) (warp=true)
+{
+    IsChecked = 0;
+    Factor = (1 - (2 * ((CheckingDepth % 2) == 0)));
+    Caller.Idx = 1;
+    Repeat (64)
+    {
+        If ((Board[(Caller.Idx + 0)] * Factor) > 0)
+        {
+            Call IsCheckingPiece(Caller.Idx);
+            If (IsCheckingPieceRes == 1)
+            {
+                IsChecked = 1;
+            }
+        }
+        Caller.Idx += 1;
+    }
+    If ((CheckingDepth % 2) == 1)
+    {
+        IsWhiteChecked = IsChecked;
+    }
+    Else
+    {
+        IsBlackChecked = IsChecked;
+    }
+}
+
 Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
@@ -6992,6 +7005,8 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     List.ReplaceItem(PickPhase, Depth, 1);
     List.ReplaceItem(PickMoveRes, Depth, 1);
     List.ReplaceItem(PickedMoveCount, Depth, 0);
+    List.ReplaceItem(SearchedMovesCountQuiet, Depth, 0);
+    List.ReplaceItem(SearchedMovesCount, Depth, 0);
     List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
     If ((Depth > 1) And (NNUE_AccDirty[(Depth - 1)] == 1))
     {
@@ -7036,6 +7051,32 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             {
                 Call RevertMove(Depth);
                 Call PickMove(Depth)(Quiescence)((1 == 0));
+            }
+        }
+        If (PickMoveRes[Depth] == 1)
+        {
+            Call IsOwnKingCheckedPostMove((Depth + 1));
+            Repeat Until ((PickMoveRes[Depth] == 0) Or ((((Depth % 2) == 1) And (IsBlackChecked == 0)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 0))))
+            {
+                Call RevertMove(Depth);
+                Call PickMove(Depth)(Quiescence)((1 == 0));
+                If (PickMoveRes[Depth] == 1)
+                {
+                    If (AppliedMove[Depth] == ExcludedMove)
+                    {
+                        Call RevertMove(Depth);
+                        Call PickMove(Depth)(Quiescence)((1 == 0));
+                    }
+                    Call IsOwnKingCheckedPostMove((Depth + 1));
+                }
+            }
+            If (PickMoveRes[Depth] == 1)
+            {
+                List.ReplaceItem(SearchedMovesCount, Depth, (SearchedMovesCount[Depth] + 1));
+                If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
+                {
+                    List.ReplaceItem(SearchedMovesCountQuiet, Depth, (SearchedMovesCountQuiet[Depth] + 1));
+                }
             }
         }
         If (IsBlockProfilerEnabled == 1)
@@ -7307,6 +7348,78 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
         }
     }
+    If ((Not (Quiescence)) And (IsSearchTimeout == 0))
+    {
+        If (SearchedMovesCount[Depth] == 0)
+        {
+            Search.Factor = (((Depth % 2) * 2) - 1);
+            If (CheckedState[Depth] == 1)
+            {
+                If (((Not (Quiescence)) And (ExcludedMove == "")) Or Quiescence)
+                {
+                    Call //("Fast search checkmate detection (no check evasion found)");
+                    List.ReplaceItem(NodeTypes, Depth, "E");
+                    List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
+                }
+            }
+            Else
+            {
+                If ((Not (Quiescence)) And (ExcludedMove == ""))
+                {
+                    List.ReplaceItem(NodeTypes, Depth, "E");
+                    Call CalcBoardAttackedByMoveChecked((Depth + 1));
+                    If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
+                    {
+                        List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
+                    }
+                    Else
+                    {
+                        List.ReplaceItem(SearchEvalResults, Depth, 0);
+                    }
+                }
+            }
+        }
+        If ((Not (Quiescence)) And (Not ((BestMoves[Depth] == ""))))
+        {
+            Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon)((1 == 0))((1 == 0));
+            Call StoreKillerMoveMalus(Depth)(Horizon)(BestMoveListIdx[Depth]);
+        }
+        If (((IsSearchTimeout == 0) And (Depth > 1)) And (ExcludedMove == ""))
+        {
+            Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
+            If Quiescence
+            {
+                Call IsQuiescentCheckCond(Depth);
+                Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)("")("")("")("")("")(IsQuiescentCheckRes);
+            }
+            Else
+            {
+                Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(Horizon)("")("")("")("")("")("");
+            }
+        }
+        Call //("Collect statistics");
+        If (Quiescence[Depth] == 0)
+        {
+            MoveCount += MovesCount[Depth];
+        }
+        Else
+        {
+            MoveCountQ += MovesCount[Depth];
+        }
+        If (BestMoveListIdx[Depth] > 0)
+        {
+            If Quiescence
+            {
+                ProfBestMoveCountQ += 1;
+                ProfBestMoveIdxSumQ += BestMoveListIdx[Depth];
+            }
+            Else
+            {
+                ProfBestMoveCount += 1;
+                ProfBestMoveIdxSum += BestMoveListIdx[Depth];
+            }
+        }
+    }
     If ((Not (Quiescence)) And (Not ((BestMoves[Depth] == ""))))
     {
         Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon)((1 == 0))((1 == 0));
@@ -7384,9 +7497,9 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
             {
                 CurrentValue = 1;
             }
-            If (PickedMoveCount[Depth] > 1)
+            If (SearchedMovesCount[Depth] > 1)
             {
-                Reduction = floor(((1 + ((ln(PickedMoveCount[Depth]) * ln((Horizon + SearchExtension[Depth]))) / 2)) * 128));
+                Reduction = floor(((1 + ((ln(SearchedMovesCount[Depth]) * ln((Horizon + SearchExtension[Depth]))) / 2)) * 128));
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
@@ -7450,7 +7563,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
             }
         }
         Call //("Non-PV search");
-        If ((((Search.LmrNonPV.IsReSearchRequired == 0) And ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))) Or ((Search.LmrNonPV.IsReSearchRequired == 1) And ((PickedMoveCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsSearchTimeout == 0))
+        If ((((Search.LmrNonPV.IsReSearchRequired == 0) And ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))) Or ((Search.LmrNonPV.IsReSearchRequired == 1) And ((SearchedMovesCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsSearchTimeout == 0))
         {
             If ((Depth % 2) == 1)
             {
@@ -7791,7 +7904,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                 {
                     IsImproving = 1;
                 }
-                If (PickedMoveCountQuiet[Depth] > floor(((6 + (Horizon * Horizon)) / (2 - IsImproving))))
+                If (SearchedMovesCountQuiet[Depth] > floor(((6 + (Horizon * Horizon)) / (2 - IsImproving))))
                 {
                     IsFutile = 1;
                     Stop(this script);
@@ -7811,7 +7924,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
         {
             If ((Depth > 1) And (Horizon < 6))
             {
-                If ((TargetPieces[Depth] == 0) And ((PickedMoveCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+                If ((TargetPieces[Depth] == 0) And ((SearchedMovesCount[Depth] > 1) And ((Betas[Depth] - Alphas[Depth]) == 1)))
                 {
                     Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
                     If (((Not ((SourcePieces[Depth] == GoK_BlackPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_WhitePawn))) Or (Rank > 3)))
