@@ -3327,6 +3327,12 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If ((Not ((TargetPieceParam == 0))) And (Not ((TargetPieceParam == ""))))
     {
         MvvLvaScore = ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]));
+        If (Quiescence[Depth] == 1)
+        {
+            Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((PieceIdxLookup[abs(TargetPieceParam)] - 1) * 64) + ToIdx));
+            MoveScoreRes = (((7000000 + (100000 * PieceIdxLookup[abs(TargetPieceParam)])) + HistoryCaptureScores[Idx2]) * Factor);
+            Stop(this script);
+        }
         Call ClearMoveList((Depth + 2));
         Call AddMoveToList(Move)((Depth + 2));
         List.ReplaceItem(MovesIdx, (Depth + 2), 1);
@@ -5470,46 +5476,228 @@ Define NNUE_ActDeactBulkImpl(string FromSquare)(string ToSquare)(string SourcePi
     NNUE_Side = 0;
     Repeat (2)
     {
-        NNUE_FeatureFrom = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * SourcePiece) + FromSquare)) + 1)] + 0);
-        NNUE_FeatureTo = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * SourcePiece) + ToSquare)) + 1)] + 0);
-        If (TargetPiece == "")
+        NNUE_Chunk = 0;
+        Repeat (2)
         {
-            NNUE.HasCapture = 0;
-        }
-        Else
-        {
-            NNUE.HasCapture = 1;
-            NNUE_Feature_Cap = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * TargetPiece) + ToSquare)) + 1)] + 0);
-        }
-        NNUE.TargetIdx = (((NNUE_Side * 192) + (Depth * 384)) + 1);
-        NNUE.SourceIdx = NNUE.TargetIdx;
-        If ((Depth > 0) And (NNUE_Accumulator_MetaState[Depth] == 1))
-        {
-            NNUE.SourceIdx += -384;
-        }
-        NNUE.IW_From_Base = (NNUE_FeatureFrom * 192);
-        NNUE.IW_To_Base = (NNUE_FeatureTo * 192);
-        If (NNUE.HasCapture == 1)
-        {
-            NNUE.IW_Cap_Base = (NNUE_Feature_Cap * 192);
-        }
-        If (NNUE.HasCapture == 1)
-        {
-            Idx = 1;
-            Repeat (192)
+            NNUE_Offset = (NNUE_Chunk * (NNUE_HiddenPackedSize / 2));
+            NNUE.Idx1_Base = (((NNUE_Side * NNUE_HiddenPackedSize) + NNUE_Offset) + 1);
+            NNUE_FeatureFrom = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * SourcePiece) + FromSquare)) + 1)] + 0);
+            NNUE_FeatureTo = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * SourcePiece) + ToSquare)) + 1)] + 0);
+            If (TargetPiece == "")
             {
-                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + (Idx - 1)), ((((NNUE_Accumulator[(NNUE.SourceIdx + (Idx - 1))] - NNUE_InputWeights_1[(NNUE.IW_From_Base + Idx)]) + NNUE_InputWeights_1[(NNUE.IW_To_Base + Idx)]) - NNUE_InputWeights_1[(NNUE.IW_Cap_Base + Idx)]) + 8796227241984));
-                Idx += 1;
+                NNUE_Feature_Cap = 0;
             }
-        }
-        Else
-        {
-            Idx = 1;
-            Repeat (192)
+            Else
             {
-                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + (Idx - 1)), ((NNUE_Accumulator[(NNUE.SourceIdx + (Idx - 1))] - NNUE_InputWeights_1[(NNUE.IW_From_Base + Idx)]) + NNUE_InputWeights_1[(NNUE.IW_To_Base + Idx)]));
-                Idx += 1;
+                NNUE_Feature_Cap = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * TargetPiece) + ToSquare)) + 1)] + 0);
             }
+            NNUE.Idx2 = (((NNUE_FeatureFrom * NNUE_HiddenPackedSize) + NNUE_Offset) + 1);
+            NNUE.Idx3 = (((NNUE_FeatureTo * NNUE_HiddenPackedSize) + NNUE_Offset) + 1);
+            If (NNUE_Feature_Cap == 0)
+            {
+                NNUE.Idx4 = 0;
+            }
+            Else
+            {
+                NNUE.Idx4 = (((NNUE_Feature_Cap * NNUE_HiddenPackedSize) + NNUE_Offset) + 1);
+            }
+            NNUE.ChunkSize = (NNUE_FeatureSize * (NNUE_HiddenPackedSize / 2));
+            NNUE.Idx2_InW2 = 0;
+            If (NNUE.Idx2 > NNUE.ChunkSize)
+            {
+                NNUE.Idx2 += (0 - NNUE.ChunkSize);
+                NNUE.Idx2_InW2 = 1;
+            }
+            NNUE.Idx3_InW2 = 0;
+            If (NNUE.Idx3 > NNUE.ChunkSize)
+            {
+                NNUE.Idx3 += (0 - NNUE.ChunkSize);
+                NNUE.Idx3_InW2 = 1;
+            }
+            If (NNUE.Idx4 > 0)
+            {
+                NNUE.Idx4_InW2 = 0;
+                If (NNUE.Idx4 > NNUE.ChunkSize)
+                {
+                    NNUE.Idx4 += (0 - NNUE.ChunkSize);
+                    NNUE.Idx4_InW2 = 1;
+                }
+            }
+            NNUE.CapType = 0;
+            If (NNUE.Idx4 > 0)
+            {
+                If (NNUE.Idx4_InW2 == 1)
+                {
+                    NNUE.CapType = 2;
+                }
+                Else
+                {
+                    NNUE.CapType = 1;
+                }
+            }
+            If (Depth == 0)
+            {
+                NNUE.SourceIdx = NNUE.Idx1_Base;
+                NNUE.TargetIdx = NNUE.Idx1_Base;
+            }
+            Else
+            {
+                NNUE.TargetIdx = (NNUE.Idx1_Base + ((NNUE_HiddenPackedSize * 2) * Depth));
+                If (NNUE_Accumulator_MetaState[Depth] == 1)
+                {
+                    NNUE.SourceIdx = (NNUE.Idx1_Base + ((NNUE_HiddenPackedSize * 2) * (Depth - 1)));
+                }
+                Else
+                {
+                    If (NNUE_Accumulator_MetaState[Depth] == 2)
+                    {
+                        NNUE.SourceIdx = (NNUE.Idx1_Base + ((NNUE_HiddenPackedSize * 2) * Depth));
+                    }
+                    Else
+                    {
+                        Stop(this script);
+                    }
+                }
+            }
+            If (NNUE.Idx2_InW2 == 1)
+            {
+                If (NNUE.Idx3_InW2 == 1)
+                {
+                    If (NNUE.CapType == 0)
+                    {
+                        Idx = 0;
+                        Repeat ((NNUE_HiddenPackedSize / 2))
+                        {
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_2[(NNUE.Idx3 + Idx)]));
+                            Idx += 1;
+                        }
+                    }
+                    Else
+                    {
+                        If (NNUE.CapType == 2)
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_2[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                        Else
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_2[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                    }
+                }
+                Else
+                {
+                    If (NNUE.CapType == 0)
+                    {
+                        Idx = 0;
+                        Repeat ((NNUE_HiddenPackedSize / 2))
+                        {
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_1[(NNUE.Idx3 + Idx)]));
+                            Idx += 1;
+                        }
+                    }
+                    Else
+                    {
+                        If (NNUE.CapType == 2)
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_1[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                        Else
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_1[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            Else
+            {
+                If (NNUE.Idx3_InW2 == 1)
+                {
+                    If (NNUE.CapType == 0)
+                    {
+                        Idx = 0;
+                        Repeat ((NNUE_HiddenPackedSize / 2))
+                        {
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_2[(NNUE.Idx3 + Idx)]));
+                            Idx += 1;
+                        }
+                    }
+                    Else
+                    {
+                        If (NNUE.CapType == 2)
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_2[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                        Else
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_2[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                    }
+                }
+                Else
+                {
+                    If (NNUE.CapType == 0)
+                    {
+                        Idx = 0;
+                        Repeat ((NNUE_HiddenPackedSize / 2))
+                        {
+                            List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_1[(NNUE.Idx3 + Idx)]));
+                            Idx += 1;
+                        }
+                    }
+                    Else
+                    {
+                        If (NNUE.CapType == 2)
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_1[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_2[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                        Else
+                        {
+                            Idx = 0;
+                            Repeat ((NNUE_HiddenPackedSize / 2))
+                            {
+                                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + NNUE_InputWeights_1[(NNUE.Idx3 + Idx)]) - NNUE_InputWeights_1[(NNUE.Idx4 + Idx)]) + 140737496743936));
+                                Idx += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            NNUE_Chunk += 1;
         }
         NNUE_Side += 1;
     }
@@ -5521,31 +5709,87 @@ Define NNUE_ActDeactImpl(string Square)(string Piece)(bool Activate)(string Dept
     NNUE_Side = 0;
     Repeat (2)
     {
-        NNUE_FeatureIdx = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * Piece) + Square)) + 1)] + 0);
-        NNUE.IW_Base = (NNUE_FeatureIdx * 192);
-        NNUE.TargetIdx = (((NNUE_Side * 192) + (Depth * 384)) + 1);
-        NNUE.SourceIdx = NNUE.TargetIdx;
-        If ((Depth > 0) And (NNUE_Accumulator_MetaState[Depth] == 1))
+        NNUE_Chunk = 0;
+        Repeat (2)
         {
-            NNUE.SourceIdx += -384;
-        }
-        If Activate
-        {
-            Idx = 1;
-            Repeat (192)
+            NNUE_Offset = (NNUE_Chunk * (NNUE_HiddenPackedSize / 2));
+            NNUE.Idx1_Base = (((NNUE_Side * NNUE_HiddenPackedSize) + NNUE_Offset) + 1);
+            NNUE_Feature = (NNUE_InputIdxMap[(((NNUE_Side * 1000) + ((64 * Piece) + Square)) + 1)] + 0);
+            NNUE.Idx2 = (((NNUE_Feature * NNUE_HiddenPackedSize) + NNUE_Offset) + 1);
+            NNUE.ChunkSize = (NNUE_FeatureSize * (NNUE_HiddenPackedSize / 2));
+            NNUE.Idx2_InW2 = 0;
+            If (NNUE.Idx2 > NNUE.ChunkSize)
             {
-                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + (Idx - 1)), ((NNUE_Accumulator[(NNUE.SourceIdx + (Idx - 1))] + NNUE_InputWeights_1[(NNUE.IW_Base + Idx)]) - 8796227241984));
-                Idx += 1;
+                NNUE.Idx2 += (0 - NNUE.ChunkSize);
+                NNUE.Idx2_InW2 = 1;
             }
-        }
-        Else
-        {
-            Idx = 1;
-            Repeat (192)
+            If (Depth == 0)
             {
-                List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + (Idx - 1)), ((NNUE_Accumulator[(NNUE.SourceIdx + (Idx - 1))] - NNUE_InputWeights_1[(NNUE.IW_Base + Idx)]) + 8796227241984));
-                Idx += 1;
+                NNUE.SourceIdx = NNUE.Idx1_Base;
+                NNUE.TargetIdx = NNUE.Idx1_Base;
             }
+            Else
+            {
+                NNUE.TargetIdx = (NNUE.Idx1_Base + ((NNUE_HiddenPackedSize * 2) * Depth));
+                If (NNUE_Accumulator_MetaState[Depth] == 1)
+                {
+                    NNUE.SourceIdx = (NNUE.Idx1_Base + ((NNUE_HiddenPackedSize * 2) * (Depth - 1)));
+                }
+                Else
+                {
+                    If (NNUE_Accumulator_MetaState[Depth] == 2)
+                    {
+                        NNUE.SourceIdx = (NNUE.Idx1_Base + ((NNUE_HiddenPackedSize * 2) * Depth));
+                    }
+                    Else
+                    {
+                        Stop(this script);
+                    }
+                }
+            }
+            If (NNUE.Idx2_InW2 == 1)
+            {
+                If Activate
+                {
+                    Idx = 0;
+                    Repeat ((NNUE_HiddenPackedSize / 2))
+                    {
+                        List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] + NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) - 140737496743936));
+                        Idx += 1;
+                    }
+                }
+                Else
+                {
+                    Idx = 0;
+                    Repeat ((NNUE_HiddenPackedSize / 2))
+                    {
+                        List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_2[(NNUE.Idx2 + Idx)]) + 140737496743936));
+                        Idx += 1;
+                    }
+                }
+            }
+            Else
+            {
+                If Activate
+                {
+                    Idx = 0;
+                    Repeat ((NNUE_HiddenPackedSize / 2))
+                    {
+                        List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] + NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) - 140737496743936));
+                        Idx += 1;
+                    }
+                }
+                Else
+                {
+                    Idx = 0;
+                    Repeat ((NNUE_HiddenPackedSize / 2))
+                    {
+                        List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + Idx), ((NNUE_Accumulator[(NNUE.SourceIdx + Idx)] - NNUE_InputWeights_1[(NNUE.Idx2 + Idx)]) + 140737496743936));
+                        Idx += 1;
+                    }
+                }
+            }
+            NNUE_Chunk += 1;
         }
         NNUE_Side += 1;
     }
@@ -5609,106 +5853,66 @@ Define NNUE_DecodeNetwork (warp=true)
     }
     NNUE_Decoded = 1;
     List.DeleteAll(NNUE_ListRes_1);
-    NNUE_Pack_FeatureIdx = 0;
+    NNUE_Pack_FIdx = 0;
     Repeat (384)
     {
-        NNUE_Pack_SlotIdx = 0;
-        Repeat (170)
+        NNUE_Pack_SIdx = 0;
+        Repeat (256)
         {
-            NNUE_Pack_BaseIdx = (((NNUE_Pack_FeatureIdx * 512) + (NNUE_Pack_SlotIdx * 3)) + 1);
-            NNUE_Pack_V0 = (NNUE_InputWeights_1[NNUE_Pack_BaseIdx] + 2048);
-            NNUE_Pack_V1 = (NNUE_InputWeights_1[(NNUE_Pack_BaseIdx + 1)] + 2048);
-            NNUE_Pack_V2 = (NNUE_InputWeights_1[(NNUE_Pack_BaseIdx + 2)] + 2048);
-            NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-            List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-            NNUE_Pack_SlotIdx += 1;
+            NNUE_Pack_Base = (((NNUE_Pack_FIdx * 512) + (NNUE_Pack_SIdx * 2)) + 1);
+            List.Add(NNUE_ListRes_1, ((NNUE_InputWeights_1[NNUE_Pack_Base] + 8388608) + ((NNUE_InputWeights_1[(NNUE_Pack_Base + 1)] + 8388608) * 16777216)));
+            NNUE_Pack_SIdx += 1;
         }
-        NNUE_Pack_BaseIdx = ((NNUE_Pack_FeatureIdx * 512) + 511);
-        NNUE_Pack_V0 = (NNUE_InputWeights_1[NNUE_Pack_BaseIdx] + 2048);
-        NNUE_Pack_V1 = (NNUE_InputWeights_1[(NNUE_Pack_BaseIdx + 1)] + 2048);
-        NNUE_Pack_V2 = 2048;
-        NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-        List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-        Repeat (21)
-        {
-            NNUE_Pack_V0 = 2048;
-            NNUE_Pack_V1 = 2048;
-            NNUE_Pack_V2 = 2048;
-            NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-            List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-        }
-        NNUE_Pack_FeatureIdx += 1;
-    }
-    NNUE_Pack_FeatureIdx = 0;
-    Repeat (384)
-    {
-        NNUE_Pack_SlotIdx = 0;
-        Repeat (170)
-        {
-            NNUE_Pack_BaseIdx = (((NNUE_Pack_FeatureIdx * 512) + (NNUE_Pack_SlotIdx * 3)) + 1);
-            NNUE_Pack_V0 = (NNUE_InputWeights_2[NNUE_Pack_BaseIdx] + 2048);
-            NNUE_Pack_V1 = (NNUE_InputWeights_2[(NNUE_Pack_BaseIdx + 1)] + 2048);
-            NNUE_Pack_V2 = (NNUE_InputWeights_2[(NNUE_Pack_BaseIdx + 2)] + 2048);
-            NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-            List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-            NNUE_Pack_SlotIdx += 1;
-        }
-        NNUE_Pack_BaseIdx = ((NNUE_Pack_FeatureIdx * 512) + 511);
-        NNUE_Pack_V0 = (NNUE_InputWeights_2[NNUE_Pack_BaseIdx] + 2048);
-        NNUE_Pack_V1 = (NNUE_InputWeights_2[(NNUE_Pack_BaseIdx + 1)] + 2048);
-        NNUE_Pack_V2 = 2048;
-        NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-        List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-        Repeat (21)
-        {
-            NNUE_Pack_V0 = 2048;
-            NNUE_Pack_V1 = 2048;
-            NNUE_Pack_V2 = 2048;
-            NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-            List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-        }
-        NNUE_Pack_FeatureIdx += 1;
+        NNUE_Pack_FIdx += 1;
     }
     List.DeleteAll(NNUE_InputWeights_1);
-    List.DeleteAll(NNUE_InputWeights_2);
-    NNUE_Pack_TmpIdx = 1;
+    NNUE_Pack_Tmp = 1;
     Repeat (List.Length(NNUE_ListRes_1))
     {
-        List.Add(NNUE_InputWeights_1, NNUE_ListRes_1[NNUE_Pack_TmpIdx]);
-        NNUE_Pack_TmpIdx += 1;
+        List.Add(NNUE_InputWeights_1, NNUE_ListRes_1[NNUE_Pack_Tmp]);
+        NNUE_Pack_Tmp += 1;
     }
     List.DeleteAll(NNUE_ListRes_1);
-    NNUE_Pack_SlotIdx = 0;
-    Repeat (170)
+    List.DeleteAll(NNUE_ListRes_1);
+    NNUE_Pack_FIdx = 0;
+    Repeat (384)
     {
-        NNUE_Pack_BaseIdx = ((NNUE_Pack_SlotIdx * 3) + 1);
-        NNUE_Pack_V0 = (NNUE_HiddenBias[NNUE_Pack_BaseIdx] + 16384);
-        NNUE_Pack_V1 = (NNUE_HiddenBias[(NNUE_Pack_BaseIdx + 1)] + 16384);
-        NNUE_Pack_V2 = (NNUE_HiddenBias[(NNUE_Pack_BaseIdx + 2)] + 16384);
-        NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-        List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-        NNUE_Pack_SlotIdx += 1;
+        NNUE_Pack_SIdx = 0;
+        Repeat (256)
+        {
+            NNUE_Pack_Base = (((NNUE_Pack_FIdx * 512) + (NNUE_Pack_SIdx * 2)) + 1);
+            List.Add(NNUE_ListRes_1, ((NNUE_InputWeights_2[NNUE_Pack_Base] + 8388608) + ((NNUE_InputWeights_2[(NNUE_Pack_Base + 1)] + 8388608) * 16777216)));
+            NNUE_Pack_SIdx += 1;
+        }
+        NNUE_Pack_FIdx += 1;
     }
-    NNUE_Pack_BaseIdx = 511;
-    NNUE_Pack_V0 = (NNUE_HiddenBias[NNUE_Pack_BaseIdx] + 16384);
-    NNUE_Pack_V1 = (NNUE_HiddenBias[(NNUE_Pack_BaseIdx + 1)] + 16384);
-    NNUE_Pack_V2 = 16384;
-    NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-    List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
-    Repeat (21)
+    List.DeleteAll(NNUE_InputWeights_2);
+    NNUE_Pack_Tmp = 1;
+    Repeat (List.Length(NNUE_ListRes_1))
     {
-        NNUE_Pack_V0 = 16384;
-        NNUE_Pack_V1 = 16384;
-        NNUE_Pack_V2 = 16384;
-        NNUE_Pack_Slot = ((NNUE_Pack_V0 + (NNUE_Pack_V1 * 65536)) + (NNUE_Pack_V2 * 4294967296));
-        List.Add(NNUE_ListRes_1, NNUE_Pack_Slot);
+        List.Add(NNUE_InputWeights_2, NNUE_ListRes_1[NNUE_Pack_Tmp]);
+        NNUE_Pack_Tmp += 1;
+    }
+    List.DeleteAll(NNUE_ListRes_1);
+    List.DeleteAll(NNUE_ListRes_1);
+    NNUE_Pack_FIdx = 0;
+    Repeat (1)
+    {
+        NNUE_Pack_SIdx = 0;
+        Repeat (256)
+        {
+            NNUE_Pack_Base = (((NNUE_Pack_FIdx * 512) + (NNUE_Pack_SIdx * 2)) + 1);
+            List.Add(NNUE_ListRes_1, ((NNUE_HiddenBias[NNUE_Pack_Base] + 8388608) + ((NNUE_HiddenBias[(NNUE_Pack_Base + 1)] + 8388608) * 16777216)));
+            NNUE_Pack_SIdx += 1;
+        }
+        NNUE_Pack_FIdx += 1;
     }
     List.DeleteAll(NNUE_HiddenBias);
-    NNUE_Pack_TmpIdx = 1;
-    Repeat (192)
+    NNUE_Pack_Tmp = 1;
+    Repeat (List.Length(NNUE_ListRes_1))
     {
-        List.Add(NNUE_HiddenBias, NNUE_ListRes_1[NNUE_Pack_TmpIdx]);
-        NNUE_Pack_TmpIdx += 1;
+        List.Add(NNUE_HiddenBias, NNUE_ListRes_1[NNUE_Pack_Tmp]);
+        NNUE_Pack_Tmp += 1;
     }
     List.DeleteAll(NNUE_ListRes_1);
 }
@@ -5765,70 +5969,32 @@ Define NNUE_DecToHex(string CSV) (warp=true)
 Define NNUE_Evaluate(string Side)(string Depth) (warp=true)
 {
     NNUE_EvalRes = (NNUE_OutputBias[1] + 0);
-    NNUE.OwnBase = ((Side * 192) + (Depth * 384));
-    NNUE.OppBase = (((1 - Side) * 192) + (Depth * 384));
+    NNUE.OwnBase = ((Side * NNUE_HiddenPackedSize) + (Depth * (NNUE_HiddenPackedSize * 2)));
+    NNUE.OppBase = (((1 - Side) * NNUE_HiddenPackedSize) + (Depth * (NNUE_HiddenPackedSize * 2)));
     Idx = 1;
-    NNUE.HwIdx = 1;
-    Repeat (170)
+    Repeat (NNUE_HiddenPackedSize)
     {
-        NNUE.AccSlot = NNUE_Accumulator[(NNUE.OwnBase + Idx)];
-        NNUE.Lane = ((NNUE.AccSlot - (floor((NNUE.AccSlot / 65536)) * 65536)) - 16384);
-        If (NNUE.Lane > 0)
+        NNUE.AccPacked_Own = floor(NNUE_Accumulator[(NNUE.OwnBase + Idx)]);
+        NNUE.AccPacked_Opp = floor(NNUE_Accumulator[(NNUE.OppBase + Idx)]);
+        If (((floor(NNUE.AccPacked_Own) - (16777216 * floor((NNUE.AccPacked_Own / 16777216)))) - 8388608) > 0)
         {
-            NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 0)]);
+            NNUE_EvalRes += (((floor(NNUE.AccPacked_Own) - (16777216 * floor((NNUE.AccPacked_Own / 16777216)))) - 8388608) * floor(NNUE_HiddenWeights[((2 * Idx) + -1)]));
         }
-        NNUE.Lane = ((floor((NNUE.AccSlot / 65536)) - (floor((floor((NNUE.AccSlot / 65536)) / 65536)) * 65536)) - 16384);
-        If (NNUE.Lane > 0)
+        If ((floor((NNUE.AccPacked_Own / 16777216)) - 8388608) > 0)
         {
-            NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 1)]);
+            NNUE_EvalRes += ((floor((NNUE.AccPacked_Own / 16777216)) - 8388608) * floor(NNUE_HiddenWeights[((2 * Idx) + 0)]));
         }
-        NNUE.Lane = (floor((NNUE.AccSlot / 4294967296)) - 16384);
-        If (NNUE.Lane > 0)
+        If (((floor(NNUE.AccPacked_Opp) - (16777216 * floor((NNUE.AccPacked_Opp / 16777216)))) - 8388608) > 0)
         {
-            NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 2)]);
+            NNUE_EvalRes += (((floor(NNUE.AccPacked_Opp) - (16777216 * floor((NNUE.AccPacked_Opp / 16777216)))) - 8388608) * floor(NNUE_HiddenWeights[(512 + ((2 * Idx) + -1))]));
         }
-        NNUE.AccSlot = NNUE_Accumulator[(NNUE.OppBase + Idx)];
-        NNUE.Lane = ((NNUE.AccSlot - (floor((NNUE.AccSlot / 65536)) * 65536)) - 16384);
-        If (NNUE.Lane > 0)
+        If ((floor((NNUE.AccPacked_Opp / 16777216)) - 8388608) > 0)
         {
-            NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 512)]);
-        }
-        NNUE.Lane = ((floor((NNUE.AccSlot / 65536)) - (floor((floor((NNUE.AccSlot / 65536)) / 65536)) * 65536)) - 16384);
-        If (NNUE.Lane > 0)
-        {
-            NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 513)]);
-        }
-        NNUE.Lane = (floor((NNUE.AccSlot / 4294967296)) - 16384);
-        If (NNUE.Lane > 0)
-        {
-            NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 514)]);
+            NNUE_EvalRes += ((floor((NNUE.AccPacked_Opp / 16777216)) - 8388608) * floor(NNUE_HiddenWeights[(512 + ((2 * Idx) + 0))]));
         }
         Idx += 1;
-        NNUE.HwIdx += 3;
     }
-    NNUE.AccSlot = NNUE_Accumulator[(NNUE.OwnBase + Idx)];
-    NNUE.Lane = ((NNUE.AccSlot - (floor((NNUE.AccSlot / 65536)) * 65536)) - 16384);
-    If (NNUE.Lane > 0)
-    {
-        NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 0)]);
-    }
-    NNUE.Lane = ((floor((NNUE.AccSlot / 65536)) - (floor((floor((NNUE.AccSlot / 65536)) / 65536)) * 65536)) - 16384);
-    If (NNUE.Lane > 0)
-    {
-        NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 1)]);
-    }
-    NNUE.AccSlot = NNUE_Accumulator[(NNUE.OppBase + Idx)];
-    NNUE.Lane = ((NNUE.AccSlot - (floor((NNUE.AccSlot / 65536)) * 65536)) - 16384);
-    If (NNUE.Lane > 0)
-    {
-        NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 512)]);
-    }
-    NNUE.Lane = ((floor((NNUE.AccSlot / 65536)) - (floor((floor((NNUE.AccSlot / 65536)) / 65536)) * 65536)) - 16384);
-    If (NNUE.Lane > 0)
-    {
-        NNUE_EvalRes += (NNUE.Lane * NNUE_HiddenWeights[(NNUE.HwIdx + 513)]);
-    }
-    NNUE_EvalRes = (NNUE_EvalRes / 8192);
+    NNUE_EvalRes = (NNUE_EvalRes / (16 * NNUE_HiddenSize));
 }
 
 Define NNUE_HexToDec(string Hex) (warp=true)
@@ -5893,9 +6059,10 @@ Define NNUE_Init (warp=true)
 {
     Call NNUE_DecodeNetwork;
     NNUE_FeatureSize = 768;
-    NNUE_HiddenSize = 192;
+    NNUE_HiddenSize = 512;
+    NNUE_HiddenPackedSize = 256;
     List.DeleteAll(NNUE_Accumulator);
-    Repeat (((NNUE_HiddenSize * 2) * 50))
+    Repeat (((NNUE_HiddenPackedSize * 2) * 50))
     {
         List.Add(NNUE_Accumulator, 0);
     }
@@ -5907,10 +6074,10 @@ Define NNUE_Init (warp=true)
         List.Add(NNUE_AccDirty, 0);
     }
     Idx = 1;
-    Repeat (NNUE_HiddenSize)
+    Repeat (NNUE_HiddenPackedSize)
     {
         List.ReplaceItem(NNUE_Accumulator, Idx, NNUE_HiddenBias[Idx]);
-        List.ReplaceItem(NNUE_Accumulator, (NNUE_HiddenSize + Idx), NNUE_HiddenBias[Idx]);
+        List.ReplaceItem(NNUE_Accumulator, (NNUE_HiddenPackedSize + Idx), NNUE_HiddenBias[Idx]);
         Idx += 1;
     }
     List.DeleteAll(NNUE_GoKIdxToSquare);
@@ -6042,10 +6209,10 @@ Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)
     }
     If (AppliedMove[Depth] == 0)
     {
-        NNUE.Idx1 = ((NNUE_HiddenSize * 2) * (Depth - 1));
-        NNUE.TargetIdx = ((NNUE_HiddenSize * 2) * Depth);
+        NNUE.Idx1 = ((NNUE_HiddenPackedSize * 2) * (Depth - 1));
+        NNUE.TargetIdx = ((NNUE_HiddenPackedSize * 2) * Depth);
         NNUE_Idx = 1;
-        Repeat ((NNUE_HiddenSize * 2))
+        Repeat ((NNUE_HiddenPackedSize * 2))
         {
             List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + NNUE_Idx), NNUE_Accumulator[(NNUE.Idx1 + NNUE_Idx)]);
             NNUE_Idx += 1;
@@ -6079,10 +6246,10 @@ Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)
         }
         If (NNUE_Found == 0)
         {
-            NNUE.Idx1 = ((NNUE_HiddenSize * 2) * (Depth - 1));
-            NNUE.TargetIdx = ((NNUE_HiddenSize * 2) * Depth);
+            NNUE.Idx1 = ((NNUE_HiddenPackedSize * 2) * (Depth - 1));
+            NNUE.TargetIdx = ((NNUE_HiddenPackedSize * 2) * Depth);
             NNUE_Idx = 1;
-            Repeat ((NNUE_HiddenSize * 2))
+            Repeat ((NNUE_HiddenPackedSize * 2))
             {
                 List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + NNUE_Idx), NNUE_Accumulator[(NNUE.Idx1 + NNUE_Idx)]);
                 NNUE_Idx += 1;
@@ -6110,10 +6277,10 @@ Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)
 Define NNUE_Public_Refresh (warp=true)
 {
     Idx = 1;
-    Repeat (192)
+    Repeat (NNUE_HiddenPackedSize)
     {
         List.ReplaceItem(NNUE_Accumulator, Idx, NNUE_HiddenBias[Idx]);
-        List.ReplaceItem(NNUE_Accumulator, (Idx + 192), NNUE_HiddenBias[Idx]);
+        List.ReplaceItem(NNUE_Accumulator, (Idx + NNUE_HiddenPackedSize), NNUE_HiddenBias[Idx]);
         Idx += 1;
     }
     Call NNUE_StartBulkActivation(0);
@@ -8138,7 +8305,7 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
             If (Not ((BoardEval[Depth] == "")))
             {
                 Call GetImproving(Depth);
-                Margin = (200 * Horizon);
+                Margin = (120 * Horizon);
                 If ((Depth % 2) == 1)
                 {
                     Call GetCalibratedEval(Depth);
@@ -8242,69 +8409,66 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
             SEE.SourcePiece = Board[(SEE.SourceIdx + 0)];
             If (((Side == 1) And (SEE.SourcePiece > 0)) Or ((Side == 2) And (SEE.SourcePiece < 0)))
             {
-                If ((Not ((abs(SEE.SourcePiece) == GoK_BlackPawn))) Or (Not ((IdxToFile[(SEE.SourceIdx + 0)] == IdxToFile[(SEE.TargetIdx + 0)]))))
+                SEE.Idx = ((PieceIdxLookup[abs(SEE.SourcePiece)] * 10000) + ((SEE.SourceIdx * 100) + SEE.TargetIdx));
+                If (((Side == 1) And (Not ((MoveToHash[(60000 + SEE.Idx)] == 0)))) Or ((Side == 2) And (Not ((MoveToHash[SEE.Idx] == 0)))))
                 {
-                    SEE.Idx = ((PieceIdxLookup[abs(SEE.SourcePiece)] * 10000) + ((SEE.SourceIdx * 100) + SEE.TargetIdx));
-                    If (((Side == 1) And (Not ((MoveToHash[(60000 + SEE.Idx)] == 0)))) Or ((Side == 2) And (Not ((MoveToHash[SEE.Idx] == 0)))))
+                    Call SEE.IsCounterCaptureReachable(abs(Board[(SEE.SourceIdx + 0)]))(SEE.SourceIdx)(SEE.TargetIdx);
+                    If (IsReachableRes == 1)
                     {
-                        Call SEE.IsCounterCaptureReachable(abs(Board[(SEE.SourceIdx + 0)]))(SEE.SourceIdx)(SEE.TargetIdx);
-                        If (IsReachableRes == 1)
+                        SEE.Pin.Result = 0;
+                        If WithPinFilter
                         {
-                            SEE.Pin.Result = 0;
-                            If WithPinFilter
+                            SEE.Pin.AttackerPiece = Board[SEE.SourceIdx];
+                            If (SEE.Pin.AttackerPiece > 0)
                             {
-                                SEE.Pin.AttackerPiece = Board[SEE.SourceIdx];
-                                If (SEE.Pin.AttackerPiece > 0)
+                                SEE.Pin.King = BlackKingIdx;
+                            }
+                            Else
+                            {
+                                SEE.Pin.King = WhiteKingIdx;
+                            }
+                            SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.SourceIdx * 100)) + SEE.Pin.King);
+                            If (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0)))))
+                            {
+                                SEE.Pin.Move = ((SEE.Pin.King * 100) + SEE.SourceIdx);
+                                SEE.Pin.Inc = MoveToPathStepInc[SEE.Pin.Move];
+                                SEE.Pin.Walk = SEE.Pin.King;
+                                SEE.Pin.PathClear = 1;
+                                Repeat ((MoveToPathDelta[SEE.Pin.Move] - 1))
                                 {
-                                    SEE.Pin.King = BlackKingIdx;
+                                    SEE.Pin.Walk += SEE.Pin.Inc;
+                                    SEE.Pin.PathClear = (SEE.Pin.PathClear * (Board[SEE.Pin.Walk] == 0));
                                 }
-                                Else
+                                If (SEE.Pin.PathClear == 1)
                                 {
-                                    SEE.Pin.King = WhiteKingIdx;
-                                }
-                                SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.SourceIdx * 100)) + SEE.Pin.King);
-                                If (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0)))))
-                                {
-                                    SEE.Pin.Move = ((SEE.Pin.King * 100) + SEE.SourceIdx);
-                                    SEE.Pin.Inc = MoveToPathStepInc[SEE.Pin.Move];
-                                    SEE.Pin.Walk = SEE.Pin.King;
-                                    SEE.Pin.PathClear = 1;
-                                    Repeat ((MoveToPathDelta[SEE.Pin.Move] - 1))
+                                    List.ReplaceItem(Board, SEE.SourceIdx, 0);
+                                    SEE.Pin.Walk = (SEE.SourceIdx + SEE.Pin.Inc);
+                                    SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
+                                    SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0))))));
+                                    SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
+                                    Repeat Until ((Not ((SEE.Pin.OnLine == 1))) Or (Not ((SEE.Pin.BlockerPiece == 0))))
                                     {
                                         SEE.Pin.Walk += SEE.Pin.Inc;
-                                        SEE.Pin.PathClear = (SEE.Pin.PathClear * (Board[SEE.Pin.Walk] == 0));
-                                    }
-                                    If (SEE.Pin.PathClear == 1)
-                                    {
-                                        List.ReplaceItem(Board, SEE.SourceIdx, 0);
-                                        SEE.Pin.Walk = (SEE.SourceIdx + SEE.Pin.Inc);
                                         SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
                                         SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0))))));
                                         SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
-                                        Repeat Until ((Not ((SEE.Pin.OnLine == 1))) Or (Not ((SEE.Pin.BlockerPiece == 0))))
-                                        {
-                                            SEE.Pin.Walk += SEE.Pin.Inc;
-                                            SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
-                                            SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0))))));
-                                            SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
-                                        }
-                                        If ((SEE.Pin.OnLine == 1) And ((SEE.Pin.AttackerPiece * SEE.Pin.BlockerPiece) < 0))
-                                        {
-                                            Call IsCheckingPiece(SEE.Pin.Walk);
-                                            If (IsCheckingPieceRes == 1)
-                                            {
-                                                SEE.Pin.Result = 1;
-                                            }
-                                        }
-                                        List.ReplaceItem(Board, SEE.SourceIdx, SEE.Pin.AttackerPiece);
                                     }
+                                    If ((SEE.Pin.OnLine == 1) And ((SEE.Pin.AttackerPiece * SEE.Pin.BlockerPiece) < 0))
+                                    {
+                                        Call IsCheckingPiece(SEE.Pin.Walk);
+                                        If (IsCheckingPieceRes == 1)
+                                        {
+                                            SEE.Pin.Result = 1;
+                                        }
+                                    }
+                                    List.ReplaceItem(Board, SEE.SourceIdx, SEE.Pin.AttackerPiece);
                                 }
                             }
-                            If (SEE.Pin.Result == 0)
-                            {
-                                List.Add(CalcMovesMoveList, SEE.SourceIdx);
-                                List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
-                            }
+                        }
+                        If (SEE.Pin.Result == 0)
+                        {
+                            List.Add(CalcMovesMoveList, SEE.SourceIdx);
+                            List.Add(CalcMovesScoreList, (0 - SEE.SourcePiece));
                         }
                     }
                 }
