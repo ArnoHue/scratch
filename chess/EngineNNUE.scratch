@@ -2,6 +2,7 @@
 
 WhenGreenFlagClicked()
 {
+    IsDCI = 0;
     NNUE_Decoded = 0;
     Level = 4;
     GoK_Level = 4;
@@ -131,6 +132,155 @@ WhenKeyPressed(t)
 
 
 //----- Broadcast received events -------------------------------------------------------------------------------------
+
+WhenBroadcastReceived($gok_nnue)
+{
+    IsDCI = 1;
+    Call ​​log​​("$gok1");
+    Call $gok_prepare;
+    Call IsOwnKingCheckMate;
+    If (IsOwnKingCheckMateRes == 1)
+    {
+        List.Add(_dci, "ma1a1");
+        Event.Broadcast("dci message");
+        Call ​​warn​​("$gok: invoked on opp mate");
+        Stop(this script);
+    }
+    Else
+    {
+        Call GetRepetitionCount;
+        If (RepetitionCountRes > 2)
+        {
+            List.Add(_dci, "draw?");
+            Event.Broadcast("dci message");
+            Call ​​warn​​("$gok: invoked on draw-by-rep");
+            Stop(this script);
+        }
+        Else
+        {
+            Call IsDrawByMaterial;
+            If (IsDrawRes == 1)
+            {
+                List.Add(_dci, "draw?");
+                Event.Broadcast("dci message");
+                Call ​​warn​​("$gok: invoked on draw-by-material");
+                Stop(this script);
+            }
+            Else
+            {
+                Call IsDrawByStalemate(1);
+                If (IsDrawRes == 1)
+                {
+                    List.Add(_dci, "draw?");
+                    Event.Broadcast("dci message");
+                    Call ​​warn​​("$gok: invoked on draw-by-stalemate");
+                    Stop(this script);
+                }
+            }
+        }
+    }
+    Call ​​log​​("$gok2");
+    Call AddBoardToHistory(0);
+    GBM.Move = "";
+    Call GetOpeningMoves;
+    If (List.Length(OpeningMovesRes) > 0)
+    {
+        GBM.Move = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
+    }
+    Else
+    {
+        Call GetBestMoveMedDiff;
+    }
+    Call ​​log​​("$gok3");
+    If (GBM.Move == "")
+    {
+        List.Add(_dci, "resign");
+        Event.Broadcast("dci message");
+        Call ​​warn​​("$gok: search system error => resigning");
+        Stop(this script);
+    }
+    Call ​​log​​("$gok4");
+    Call ClearMoveList(1);
+    Call AddMoveToList(GBM.Move)(1);
+    List.ReplaceItem(MovesIdx, 1, 1);
+    Call ApplyMove(1)();
+    Call AddBoardToHistory(1);
+    Call RevertMove(1);
+    Call GetMoveNotation(GBM.Move);
+    If (MoveNotationRes == "O-O")
+    {
+        If (IsPlayerBlack == 0)
+        {
+            List.Add(_dci, "me8g8");
+        }
+        Else
+        {
+            List.Add(_dci, "me1g1");
+        }
+    }
+    Else
+    {
+        If (MoveNotationRes == "O-O-O")
+        {
+            If (IsPlayerBlack == 0)
+            {
+                List.Add(_dci, "me8c8");
+            }
+            Else
+            {
+                List.Add(_dci, "me1c1");
+            }
+        }
+        Else
+        {
+            List.Add(_dci, Operator.Join("m", Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((VirtualMove / 100))]), Operator.Join((9 - IdxToRank[floor((VirtualMove / 100))]), Operator.Join(Operator.LetterOf("abcdefgh", IdxToFile[floor((VirtualMove % 100))]), (9 - IdxToRank[floor((VirtualMove % 100))]))))));
+        }
+    }
+    Call ​​log​​("$gok5");
+    Event.Broadcast("dci message");
+    Call ​​log​​("$gok6");
+}
+
+WhenBroadcastReceived($gok_nnue draw?)
+{
+    IsDCI = 1;
+    Call $gok_prepare;
+    GBM.Evaluation = 0;
+    Call GetBestMoveMedDiff;
+    If (GBM.Evaluation < 0)
+    {
+        List.Add(_dci, "accept");
+    }
+    Else
+    {
+        List.Add(_dci, "decline");
+    }
+    Event.Broadcast("dci message");
+}
+
+WhenBroadcastReceived($gok_nnue stop)
+{
+    IsDCI = 1;
+    IsSearchTimeout = 1;
+}
+
+WhenBroadcastReceived(dci new game)
+{
+    IsPlayerBlack = "";
+    GoK_IsGameSuspended = 0;
+    List.DeleteAll(BoardHistory);
+    List.DeleteAll(BoardHistoryFiftyMoves);
+    List.DeleteAll(BoardHistoryHash);
+    List.DeleteAll(BoardHistoryMetaState);
+    List.DeleteAll(BoardHistoryWasEngineMove);
+    List.DeleteAll(GameMovesAN);
+    GameMoves = "";
+}
+
+WhenBroadcastReceived(dci register)
+{
+    List.Add(_dci engines, "gok_nnue");
+}
 
 WhenBroadcastReceived(GoK_LevelChanged)
 {
@@ -408,6 +558,252 @@ WhenBroadcastReceived(UI_UndoClicked)
 
 
 //----- Custom blocks -------------------------------------------------------------------------------------------------
+
+Define $gok_prepare (warp=false)
+{
+    List.ReplaceItem(EnPassantTarget, 1, "");
+    DCI.target_ipb = 0;
+    If Operator.Contains(_dci fen, " w")
+    {
+        DCI.target_ipb = 1;
+    }
+    If (Not ((DCI.target_ipb == IsPlayerBlack)))
+    {
+        IsPlayerBlack = DCI.target_ipb;
+        GoK_IsPlayerBlack = DCI.target_ipb;
+        ExecutionDepth = 0;
+        IsExecutionRunning = 0;
+        Level = 5;
+        GoK_Level = 5;
+        Call EnterExecution;
+        Call InitBoard;
+        Call InitBoardPhase2;
+        Call ExitExecution;
+        Call ExecuteInit;
+        Call ​​warn​​("$gok_reinit");
+        Call InitOpeningBook;
+    }
+    Call ImportBoardFEN(_dci fen);
+    DCI.cas_own_ks = 0;
+    DCI.cas_own_qs = 0;
+    DCI.cas_opp_ks = 0;
+    DCI.cas_opp_qs = 0;
+    DCI.cas_i = 1;
+    Repeat Until ((Operator.LetterOf(_dci fen, DCI.cas_i) == " ") Or (DCI.cas_i > Variable.Length(_dci fen)))
+    {
+        DCI.cas_i += 1;
+    }
+    DCI.cas_i += 3;
+    Repeat Until ((DCI.cas_i > Variable.Length(_dci fen)) Or (Operator.LetterOf(_dci fen, DCI.cas_i) == " "))
+    {
+        If (Operator.LetterOf(_dci fen, DCI.cas_i) == "K")
+        {
+            Call IsLowerCase(Operator.LetterOf(_dci fen, DCI.cas_i));
+            If (IsLowerCaseRes == 0)
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_own_ks = 1;
+                }
+                Else
+                {
+                    DCI.cas_opp_ks = 1;
+                }
+            }
+            Else
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_opp_ks = 1;
+                }
+                Else
+                {
+                    DCI.cas_own_ks = 1;
+                }
+            }
+        }
+        If (Operator.LetterOf(_dci fen, DCI.cas_i) == "Q")
+        {
+            Call IsLowerCase(Operator.LetterOf(_dci fen, DCI.cas_i));
+            If (IsLowerCaseRes == 0)
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_own_qs = 1;
+                }
+                Else
+                {
+                    DCI.cas_opp_qs = 1;
+                }
+            }
+            Else
+            {
+                If (IsPlayerBlack == 1)
+                {
+                    DCI.cas_opp_qs = 1;
+                }
+                Else
+                {
+                    DCI.cas_own_qs = 1;
+                }
+            }
+        }
+        DCI.cas_i += 1;
+    }
+    List.ReplaceItem(EnPassantTarget, 1, "");
+    If (DCI.cas_i < Variable.Length(_dci fen))
+    {
+        DCI.ep_pos = (DCI.cas_i + 1);
+        If ((Not ((Operator.LetterOf(_dci fen, DCI.ep_pos) == "-"))) And (Not ((Operator.LetterOf(_dci fen, DCI.ep_pos) == ""))))
+        {
+            DCI.ep_file = List.IndexOf(DCI.files, Operator.LetterOf(_dci fen, DCI.ep_pos));
+            If (Operator.LetterOf(_dci fen, (DCI.ep_pos + 1)) == 3)
+            {
+                List.ReplaceItem(EnPassantTarget, 1, (32 + DCI.ep_file));
+            }
+            Else
+            {
+                List.ReplaceItem(EnPassantTarget, 1, (41 - DCI.ep_file));
+            }
+            DCI.ep_file = (0 + 0);
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "a")
+            {
+                DCI.ep_file = (1 + 0);
+            }
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "b")
+            {
+                DCI.ep_file = (2 + 0);
+            }
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "c")
+            {
+                DCI.ep_file = (3 + 0);
+            }
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "d")
+            {
+                DCI.ep_file = (4 + 0);
+            }
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "e")
+            {
+                DCI.ep_file = (5 + 0);
+            }
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "f")
+            {
+                DCI.ep_file = (6 + 0);
+            }
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "g")
+            {
+                DCI.ep_file = (7 + 0);
+            }
+            If (Operator.LetterOf(_dci fen, DCI.ep_pos) == "h")
+            {
+                DCI.ep_file = (8 + 0);
+            }
+            If (IsPlayerBlack == 1)
+            {
+                DCI.ep_file = (9 - DCI.ep_file);
+            }
+            If (DCI.ep_file > 0)
+            {
+                List.ReplaceItem(EnPassantTarget, 1, (32 + DCI.ep_file));
+            }
+        }
+    }
+    GameMoves = "";
+    If (Not ((EnPassantTarget[1] == "")))
+    {
+        DCI.synth_target = EnPassantTarget[1];
+        If (Board[DCI.synth_target] > 0)
+        {
+            DCI.synth_source = (DCI.synth_target - 16);
+        }
+        Else
+        {
+            DCI.synth_source = (DCI.synth_target + 16);
+        }
+        GameMoves = MoveToZeroPaddedStr[(((DCI.synth_source * 100) + DCI.synth_target) + 1)];
+    }
+    DCI.fm_i = 0;
+    DCI.fm_tok = 0;
+    DCI.fm_str = "";
+    Repeat (Variable.Length(_dci fen))
+    {
+        DCI.fm_i += 1;
+        DCI.fm_ch = Operator.LetterOf(_dci fen, DCI.fm_i);
+        If (DCI.fm_ch == " ")
+        {
+            DCI.fm_tok += 1;
+        }
+        Else
+        {
+            If (DCI.fm_tok == 4)
+            {
+                DCI.fm_str = Operator.Join(DCI.fm_str, DCI.fm_ch);
+            }
+        }
+    }
+    List.DeleteAll(BoardHistoryFiftyMoves);
+    DCI.fm_n = 0;
+    Repeat (DCI.fm_str)
+    {
+        DCI.fm_n += 1;
+        List.Add(BoardHistoryFiftyMoves, DCI.fm_n);
+    }
+    HasOwnRookQSMoved = 0;
+    HasOwnKingMoved = 0;
+    HasOwnCastled = 0;
+    HasOwnRookKSMoved = 0;
+    HasOppRookQSMoved = 0;
+    HasOppKingMoved = 0;
+    HasOppCastled = 0;
+    HasOppRookKSMoved = 0;
+    If (Not ((DCI.cas_own_qs == 1)))
+    {
+        HasOwnRookQSMoved = 1;
+    }
+    If (Not (((DCI.cas_own_qs == 1) Or (DCI.cas_own_ks == 1))))
+    {
+        HasOwnKingMoved = 1;
+        HasOwnCastled = 1;
+    }
+    If (Not ((DCI.cas_own_ks == 1)))
+    {
+        HasOwnRookKSMoved = 1;
+    }
+    If (Not ((DCI.cas_opp_qs == 1)))
+    {
+        HasOppRookQSMoved = 1;
+    }
+    If (Not (((DCI.cas_opp_qs == 1) Or (DCI.cas_opp_ks == 1))))
+    {
+        HasOppKingMoved = 1;
+        HasOppCastled = 1;
+    }
+    If (Not ((DCI.cas_opp_ks == 1)))
+    {
+        HasOppRookKSMoved = 1;
+    }
+    Call CalcBoardStats;
+    If (_dci think time > 0)
+    {
+        CustomThinkTime = _dci think time;
+    }
+    Else
+    {
+        CustomThinkTime = 1;
+    }
+    GameMoves = "";
+    If (EnPassantTarget[(1 + 0)] > (0 + 0))
+    {
+        If (Board[EnPassantTarget[(1 + 0)]] > (0 + 0))
+        {
+            GameMoves = MoveToZeroPaddedStr[((((EnPassantTarget[(1 + 0)] - (16 + 0)) * (100 + 0)) + EnPassantTarget[(1 + 0)]) + (1 + 0))];
+        }
+        Else
+        {
+            GameMoves = MoveToZeroPaddedStr[((((EnPassantTarget[(1 + 0)] + (16 + 0)) * (100 + 0)) + EnPassantTarget[(1 + 0)]) + (1 + 0))];
+        }
+    }
+}
 
 Define //(string Comment) (warp=true)
 {
@@ -1805,10 +2201,13 @@ Define DrawBoardAndWait (warp=false)
         List.Add(GoK_VirtualBoard, VirtualBoard[Idx]);
         Idx += 1;
     }
-    GoK_ProgressValue = 0;
-    Event.BroadcastAndWait("Pieces_DrawBoard");
-    Event.BroadcastAndWait("GoK_ProgressValueChanged");
-    Event.BroadcastAndWait("GoK_EvaluationValueChanged");
+    If (IsDCI == 0)
+    {
+        GoK_ProgressValue = 0;
+        Event.BroadcastAndWait("Pieces_DrawBoard");
+        Event.BroadcastAndWait("GoK_ProgressValueChanged");
+        Event.BroadcastAndWait("GoK_EvaluationValueChanged");
+    }
 }
 
 Define EnterExecution (warp=false)
@@ -4177,7 +4576,11 @@ Define InitBoard (warp=true)
     List.DeleteItem(CastlingState, all);
     List.DeleteItem(PawnShelterCapture, all);
     List.DeleteItem(BoardEval, all);
+    List.DeleteItem(SingularAlphaBeta, all);
+    List.DeleteItem(TTEval, all);
     List.DeleteItem(BoardEval, all);
+    List.DeleteItem(SingularAlphaBeta, all);
+    List.DeleteItem(TTEval, all);
     List.DeleteItem(QuiescentCheckMoveCount, all);
     List.DeleteItem(HashMoveMetaData, all);
     List.DeleteItem(HashMove, all);
@@ -4227,6 +4630,8 @@ Define InitBoard (warp=true)
         List.Add(CastlingState, 0);
         List.Add(PawnShelterCapture, 0);
         List.Add(BoardEval, "");
+        List.Add(SingularAlphaBeta, "");
+        List.Add(TTEval, "");
         List.Add(QuiescentCheckMoveCount, "");
         List.Add(HashMoveMetaData, "");
         List.Add(HashMove, "");
@@ -5084,13 +5489,13 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
     }
     If (Piece > 0)
     {
-        If (floor(MoveToHash[((60000 + (floor(PieceIdxLookup[Piece]) * 10000)) + ((Idx * 100) + WhiteKingIdx))]) == 0)
+        If (MoveToHash[((60000 + (PieceIdxLookup[Piece] * 10000)) + ((Idx * 100) + WhiteKingIdx))] == 0)
         {
             Stop(this script);
         }
         If (Piece == GoK_BlackPawn)
         {
-            If (floor(IdxToFile[Idx]) == floor(IdxToFile[WhiteKingIdx]))
+            If (IdxToFile[Idx] == IdxToFile[WhiteKingIdx])
             {
                 Stop(this script);
             }
@@ -5108,13 +5513,13 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
     {
         If (Piece < 0)
         {
-            If (floor(MoveToHash[((floor(PieceIdxLookup[(0 - Piece)]) * 10000) + ((Idx * 100) + BlackKingIdx))]) == 0)
+            If (MoveToHash[((PieceIdxLookup[(0 - Piece)] * 10000) + ((Idx * 100) + BlackKingIdx))] == 0)
             {
                 Stop(this script);
             }
             If (Piece == GoK_WhitePawn)
             {
-                If (floor(IdxToFile[Idx]) == floor(IdxToFile[BlackKingIdx]))
+                If (IdxToFile[Idx] == IdxToFile[BlackKingIdx])
                 {
                     Stop(this script);
                 }
@@ -5130,11 +5535,11 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
         }
     }
     SourceIdx = Idx;
-    IdxInc = floor(MoveToPathStepInc[CurrentMove]);
-    Repeat ((floor(MoveToPathDelta[CurrentMove]) - 1))
+    IdxInc = MoveToPathStepInc[CurrentMove];
+    Repeat ((MoveToPathDelta[CurrentMove] - 1))
     {
         SourceIdx += IdxInc;
-        If (Not ((floor(Board[SourceIdx]) == 0)))
+        If (Not ((Board[SourceIdx] == 0)))
         {
             Stop(this script);
         }
@@ -5282,7 +5687,7 @@ Define IsOwnKingCheckedPostMove(string CheckingDepth) (warp=true)
     Caller.Idx = 1;
     Repeat (64)
     {
-        If ((floor(Board[(Caller.Idx + 0)]) * Factor) > 0)
+        If ((Board[(Caller.Idx + 0)] * Factor) > 0)
         {
             Call IsCheckingPiece(Caller.Idx);
             If (IsCheckingPieceRes == 1)
@@ -5299,6 +5704,20 @@ Define IsOwnKingCheckedPostMove(string CheckingDepth) (warp=true)
     Else
     {
         IsBlackChecked = IsChecked;
+    }
+}
+
+Define IsOwnKingCheckMate (warp=true)
+{
+    If (IsPlayerBlack == 1)
+    {
+        Call IsWhiteKingCheckMate;
+        IsOwnKingCheckMateRes = IsWhiteKingCheckMateRes;
+    }
+    Else
+    {
+        Call IsBlackKingCheckMate;
+        IsOwnKingCheckMateRes = IsBlackKingCheckMateRes;
     }
 }
 
@@ -7333,12 +7752,12 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
             }
             If (SearchedMovesCount[Depth] > 1)
             {
-                Reduction = floor(((1 + ((ln(SearchedMovesCount[Depth]) * ln((Horizon + SearchExtension[Depth]))) / 2)) * 128));
+                Reduction = 0;
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
                     {
-                        Reduction += -128;
+                        Reduction += floor(((1 + ((ln(SearchedMovesCount[Depth]) * ln((Horizon + SearchExtension[Depth]))) / 2)) * 128));
                     }
                 }
                 If (1 == 1)
@@ -7662,22 +8081,23 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                         {
                             If (abs(TTProbeNode.EvalRes) < AbsMinCheckmateEval)
                             {
-                                SE.BoundEval = TTProbeNode.EvalRes;
+                                List.ReplaceItem(TTEval, Depth, TTProbeNode.EvalRes);
+                                List.ReplaceItem(SingularAlphaBeta, Depth, TTProbeNode.EvalRes);
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
                                 Call ApplyMove(Depth)((1 == 1));
                                 Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
                                 If ((Depth % 2) == 1)
                                 {
-                                    SE.BoundEval += (0 - (Horizon * 2));
-                                    List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
-                                    List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
+                                    List.ReplaceItem(SingularAlphaBeta, Depth, (SingularAlphaBeta[Depth] + (0 - (Horizon * 3))));
+                                    List.ReplaceItem(Alphas, (Depth + 2), (SingularAlphaBeta[Depth] - 1));
+                                    List.ReplaceItem(Betas, (Depth + 2), SingularAlphaBeta[Depth]);
                                 }
                                 Else
                                 {
-                                    SE.BoundEval += (Horizon * 2);
-                                    List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
-                                    List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
+                                    List.ReplaceItem(SingularAlphaBeta, Depth, (SingularAlphaBeta[Depth] + (Horizon * 3)));
+                                    List.ReplaceItem(Alphas, (Depth + 2), SingularAlphaBeta[Depth]);
+                                    List.ReplaceItem(Betas, (Depth + 2), (SingularAlphaBeta[Depth] + 1));
                                 }
                                 Reduction = floor((Horizon / 2));
                                 Call SearchNextPly((Depth + 1))(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
@@ -7685,31 +8105,29 @@ Define Search_DetectExtensions(string Depth)(bool InitialDeepening)(string Quies
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
                                 Call ApplyMove(Depth)((1 == 1));
-                                If ((((Depth % 2) == 1) And (Not ((SE.BoundEval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((SE.BoundEval > Alphas[Depth])))))
-                                {
-                                    List.ReplaceItem(SearchEvalResults, Depth, SE.BoundEval);
-                                    List.ReplaceItem(SearchExtension, Depth, "*");
-                                    Stop(this script);
-                                }
-                                If ((((Depth % 2) == 1) And (SearchEvalResults[(Depth + 2)] < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (SearchEvalResults[(Depth + 2)] > Alphas[(Depth + 2)])))
+                                If ((((Depth % 2) == 1) And (SearchEvalResults[(Depth + 2)] < SingularAlphaBeta[Depth])) Or (((Depth % 2) == 0) And (SearchEvalResults[(Depth + 2)] > SingularAlphaBeta[Depth])))
                                 {
                                     List.ReplaceItem(SearchExtension, Depth, 1);
                                     Stop(this script);
                                 }
-                                If ((((Depth % 2) == 1) And (Not ((TTProbeNode.EvalRes < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((TTProbeNode.EvalRes > Alphas[Depth])))))
+                                If ((((Depth % 2) == 1) And (Not ((SingularAlphaBeta[Depth] < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((SingularAlphaBeta[Depth] > Alphas[Depth])))))
                                 {
-                                    List.ReplaceItem(SearchExtension, Depth, -2);
+                                    List.ReplaceItem(SearchEvalResults, Depth, SingularAlphaBeta[Depth]);
+                                    List.ReplaceItem(SearchExtension, Depth, "*");
                                     Stop(this script);
                                 }
-                                If Cutnode
+                                If (1 == 0)
                                 {
-                                    List.ReplaceItem(SearchExtension, Depth, -1);
-                                    Stop(this script);
-                                }
-                                If ((((Depth % 2) == 1) And (Not ((TTProbeNode.EvalRes > SearchEvalResults[(Depth + 2)])))) Or (((Depth % 2) == 0) And (Not ((TTProbeNode.EvalRes < SearchEvalResults[(Depth + 2)])))))
-                                {
-                                    List.ReplaceItem(SearchExtension, Depth, -1);
-                                    Stop(this script);
+                                    If ((((Depth % 2) == 1) And (Not ((TTEval[Depth] < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((TTEval[Depth] > Alphas[Depth])))))
+                                    {
+                                        List.ReplaceItem(SearchExtension, Depth, -2);
+                                        Stop(this script);
+                                    }
+                                    If ((((Depth % 2) == 1) And ((Not ((TTEval[Depth] > SearchEvalResults[(Depth + 2)]))) And (Not ((TTEval[Depth] > Alphas[Depth]))))) Or (((Depth % 2) == 0) And ((Not ((TTEval[Depth] < SearchEvalResults[(Depth + 2)]))) And (Not ((TTEval[Depth] < Betas[Depth]))))))
+                                    {
+                                        List.ReplaceItem(SearchExtension, Depth, -1);
+                                        Stop(this script);
+                                    }
                                 }
                             }
                         }
@@ -8182,23 +8600,23 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
         SEE.SourceIdx = 1;
         If WithPinFilter
         {
-            SEE.Pin.QIdx = floor(PieceIdxLookup[GoK_BlackQueen]);
+            SEE.Pin.QIdx = PieceIdxLookup[GoK_BlackQueen];
         }
         Repeat (64)
         {
-            SEE.SourcePiece = floor(Board[(SEE.SourceIdx + 0)]);
+            SEE.SourcePiece = Board[(SEE.SourceIdx + 0)];
             If (((Side == 1) And (SEE.SourcePiece > 0)) Or ((Side == 2) And (SEE.SourcePiece < 0)))
             {
-                SEE.Idx = ((floor(PieceIdxLookup[abs(SEE.SourcePiece)]) * 10000) + ((SEE.SourceIdx * 100) + SEE.TargetIdx));
-                If (((Side == 1) And (Not ((floor(MoveToHash[(60000 + SEE.Idx)]) == 0)))) Or ((Side == 2) And (Not ((floor(MoveToHash[SEE.Idx]) == 0)))))
+                SEE.Idx = ((PieceIdxLookup[abs(SEE.SourcePiece)] * 10000) + ((SEE.SourceIdx * 100) + SEE.TargetIdx));
+                If (((Side == 1) And (Not ((MoveToHash[(60000 + SEE.Idx)] == 0)))) Or ((Side == 2) And (Not ((MoveToHash[SEE.Idx] == 0)))))
                 {
-                    Call SEE.IsCounterCaptureReachable(abs(floor(Board[(SEE.SourceIdx + 0)])))(SEE.SourceIdx)(SEE.TargetIdx);
+                    Call SEE.IsCounterCaptureReachable(abs(Board[(SEE.SourceIdx + 0)]))(SEE.SourceIdx)(SEE.TargetIdx);
                     If (IsReachableRes == 1)
                     {
                         SEE.Pin.Result = 0;
                         If WithPinFilter
                         {
-                            SEE.Pin.AttackerPiece = floor(Board[SEE.SourceIdx]);
+                            SEE.Pin.AttackerPiece = Board[SEE.SourceIdx];
                             If (SEE.Pin.AttackerPiece > 0)
                             {
                                 SEE.Pin.King = BlackKingIdx;
@@ -8208,7 +8626,7 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
                                 SEE.Pin.King = WhiteKingIdx;
                             }
                             SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.SourceIdx * 100)) + SEE.Pin.King);
-                            If (((SEE.Pin.AttackerPiece > 0) And (Not ((floor(MoveToHash[(60000 + SEE.Pin.Idx)]) == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((floor(MoveToHash[SEE.Pin.Idx]) == 0)))))
+                            If (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0)))))
                             {
                                 SEE.Pin.Move = ((SEE.Pin.King * 100) + SEE.SourceIdx);
                                 SEE.Pin.Inc = MoveToPathStepInc[SEE.Pin.Move];
@@ -8217,21 +8635,21 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
                                 Repeat ((MoveToPathDelta[SEE.Pin.Move] - 1))
                                 {
                                     SEE.Pin.Walk += SEE.Pin.Inc;
-                                    SEE.Pin.PathClear = (SEE.Pin.PathClear * (floor(Board[SEE.Pin.Walk]) == 0));
+                                    SEE.Pin.PathClear = (SEE.Pin.PathClear * (Board[SEE.Pin.Walk] == 0));
                                 }
                                 If (SEE.Pin.PathClear == 1)
                                 {
                                     List.ReplaceItem(Board, SEE.SourceIdx, 0);
                                     SEE.Pin.Walk = (SEE.SourceIdx + SEE.Pin.Inc);
                                     SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
-                                    SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((floor(MoveToHash[(60000 + SEE.Pin.Idx)]) == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((floor(MoveToHash[SEE.Pin.Idx]) == 0))))));
-                                    SEE.Pin.BlockerPiece = floor(Board[SEE.Pin.Walk]);
+                                    SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0))))));
+                                    SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
                                     Repeat Until ((Not ((SEE.Pin.OnLine == 1))) Or (Not ((SEE.Pin.BlockerPiece == 0))))
                                     {
                                         SEE.Pin.Walk += SEE.Pin.Inc;
                                         SEE.Pin.Idx = (((SEE.Pin.QIdx * 10000) + (SEE.Pin.Walk * 100)) + SEE.Pin.King);
-                                        SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((floor(MoveToHash[(60000 + SEE.Pin.Idx)]) == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((floor(MoveToHash[SEE.Pin.Idx]) == 0))))));
-                                        SEE.Pin.BlockerPiece = floor(Board[SEE.Pin.Walk]);
+                                        SEE.Pin.OnLine = (0 + (((SEE.Pin.AttackerPiece > 0) And (Not ((MoveToHash[(60000 + SEE.Pin.Idx)] == 0)))) Or ((SEE.Pin.AttackerPiece < 0) And (Not ((MoveToHash[SEE.Pin.Idx] == 0))))));
+                                        SEE.Pin.BlockerPiece = Board[SEE.Pin.Walk];
                                     }
                                     If ((SEE.Pin.OnLine == 1) And ((SEE.Pin.AttackerPiece * SEE.Pin.BlockerPiece) < 0))
                                     {
@@ -8800,6 +9218,14 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
     {
         Stop(this script);
     }
+    If (abs(Score) > AbsMinCheckmateEval)
+    {
+        Stop(this script);
+    }
+    If (ChebyshevDistance[((BlackKingIdx * 100) + WhiteKingIdx)] == 1)
+    {
+        Stop(this script);
+    }
     Call GetTTNodeHash(BoardHash)(Depth)((Horizon == -1));
     Call TTStoreNodeImpl(TTNodeHashResult)(Depth)(Score)(BestMove)(Type)(Checked)(Horizon)(QSMeta);
 }
@@ -8890,7 +9316,6 @@ Define UndoPrevMove (warp=false)
     If (List.Length(GameMovesAN) > 0)
     {
         List.DeleteItem(BoardHistory, List.Length(BoardHistory));
-        List.DeleteItem(BoardHistoryFiftyMoves, List.Length(BoardHistoryFiftyMoves));
         List.DeleteItem(BoardHistoryHash, List.Length(BoardHistoryHash));
         List.DeleteItem(BoardHistoryMetaState, List.Length(BoardHistoryMetaState));
         List.DeleteItem(BoardHistoryWasEngineMove, List.Length(BoardHistoryWasEngineMove));
