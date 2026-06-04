@@ -1048,22 +1048,23 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
                         {
                             If (abs(TTProbeNodeScoreRes) < AbsMinCheckmateEval)
                             {
-                                SE.BoundEval = TTProbeNodeScoreRes;
+                                List.ReplaceItem(TTEval, Depth, TTProbeNodeScoreRes);
+                                List.ReplaceItem(SingularAlphaBeta, Depth, TTProbeNodeScoreRes);
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), 0);
                                 Call ApplyMove(Depth);
                                 Call SkipSearchFrameEnter((Depth + 1))(Quiescence);
                                 If ((Depth % 2) == 1)
                                 {
-                                    SE.BoundEval += (0 - (Horizon * 2));
-                                    List.ReplaceItem(Alphas, (Depth + 2), (SE.BoundEval - 1));
-                                    List.ReplaceItem(Betas, (Depth + 2), SE.BoundEval);
+                                    List.ReplaceItem(SingularAlphaBeta, Depth, (SingularAlphaBeta[Depth] - (3 * Horizon)));
+                                    List.ReplaceItem(Alphas, (Depth + 2), (SingularAlphaBeta[Depth] - 1));
+                                    List.ReplaceItem(Betas, (Depth + 2), SingularAlphaBeta[Depth]);
                                 }
                                 Else
                                 {
-                                    SE.BoundEval += (Horizon * 2);
-                                    List.ReplaceItem(Alphas, (Depth + 2), SE.BoundEval);
-                                    List.ReplaceItem(Betas, (Depth + 2), (SE.BoundEval + 1));
+                                    List.ReplaceItem(SingularAlphaBeta, Depth, (SingularAlphaBeta[Depth] + (3 * Horizon)));
+                                    List.ReplaceItem(Alphas, (Depth + 2), SingularAlphaBeta[Depth]);
+                                    List.ReplaceItem(Betas, (Depth + 2), (SingularAlphaBeta[Depth] + 1));
                                 }
                                 Reduction = floor((Horizon / 2));
                                 Call ABSearch_NextPly((Depth + 1))(InitialDeepening)(QuiescenceHorizon)(Quiescence)(ShowProgress)(Horizon)(Reduction)(Cutnode)(HashMove[Depth]);
@@ -1071,31 +1072,29 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
                                 Call RevertMove(Depth);
                                 List.ReplaceItem(Moves, (((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth]), HashMove[Depth]);
                                 Call ApplyMove(Depth);
-                                If ((((Depth % 2) == 1) And (Not ((SE.BoundEval < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((SE.BoundEval > Alphas[Depth])))))
-                                {
-                                    List.ReplaceItem(MinMaxResults, Depth, SE.BoundEval);
-                                    List.ReplaceItem(PlyExtension, Depth, "*");
-                                    Stop(this script);
-                                }
-                                If ((((Depth % 2) == 1) And (MinMaxResults[(Depth + 2)] < Betas[(Depth + 2)])) Or (((Depth % 2) == 0) And (MinMaxResults[(Depth + 2)] > Alphas[(Depth + 2)])))
+                                If ((((Depth % 2) == 1) And (MinMaxResults[(Depth + 2)] < SingularAlphaBeta[Depth])) Or (((Depth % 2) == 0) And (MinMaxResults[(Depth + 2)] > SingularAlphaBeta[Depth])))
                                 {
                                     List.ReplaceItem(PlyExtension, Depth, 1);
                                     Stop(this script);
                                 }
-                                If ((((Depth % 2) == 1) And (Not ((TTProbeNodeScoreRes < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((TTProbeNodeScoreRes > Alphas[Depth])))))
+                                If ((((Depth % 2) == 1) And (Not ((SingularAlphaBeta[Depth] < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((SingularAlphaBeta[Depth] > Alphas[Depth])))))
                                 {
-                                    List.ReplaceItem(PlyExtension, Depth, -2);
+                                    List.ReplaceItem(MinMaxResults, Depth, SingularAlphaBeta[Depth]);
+                                    List.ReplaceItem(PlyExtension, Depth, "*");
                                     Stop(this script);
                                 }
-                                If Cutnode
+                                If (1 == 0)
                                 {
-                                    List.ReplaceItem(PlyExtension, Depth, -1);
-                                    Stop(this script);
-                                }
-                                If ((((Depth % 2) == 1) And (Not ((TTProbeNodeScoreRes > MinMaxResults[(Depth + 2)])))) Or (((Depth % 2) == 0) And (Not ((TTProbeNodeScoreRes < MinMaxResults[(Depth + 2)])))))
-                                {
-                                    List.ReplaceItem(PlyExtension, Depth, -1);
-                                    Stop(this script);
+                                    If ((((Depth % 2) == 1) And (Not ((TTEval[Depth] < Betas[Depth])))) Or (((Depth % 2) == 0) And (Not ((TTEval[Depth] > Alphas[Depth])))))
+                                    {
+                                        List.ReplaceItem(PlyExtension, Depth, -2);
+                                        Stop(this script);
+                                    }
+                                    If ((((Depth % 2) == 1) And ((Not ((TTEval[Depth] > MinMaxResults[(Depth + 2)]))) And (Not ((TTEval[Depth] > Alphas[Depth]))))) Or (((Depth % 2) == 0) And ((Not ((TTEval[Depth] < MinMaxResults[(Depth + 2)]))) And (Not ((TTEval[Depth] < Betas[Depth]))))))
+                                    {
+                                        List.ReplaceItem(PlyExtension, Depth, -1);
+                                        Stop(this script);
+                                    }
                                 }
                             }
                         }
@@ -8518,6 +8517,8 @@ Define InitBoard (warp=true)
     List.DeleteItem(HashMoveMetaData, all);
     List.DeleteItem(HashMove, all);
     List.DeleteItem(LMRState, all);
+    List.DeleteItem(TTEval, all);
+    List.DeleteItem(SingularAlphaBeta, all);
     Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(Alphas, "");
@@ -8569,6 +8570,8 @@ Define InitBoard (warp=true)
         List.Add(HashMoveMetaData, "");
         List.Add(HashMove, "");
         List.Add(LMRState, "");
+        List.Add(TTEval, "");
+        List.Add(SingularAlphaBeta, "");
     }
     List.DeleteItem(PersistedBoardAttackedSnapshot, all);
     List.DeleteItem(PersistedBoardAttackedSnapshot, all);
