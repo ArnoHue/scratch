@@ -3802,6 +3802,20 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             }
         }
     }
+    Call IsCheckingPieceImpl(ToIdx)(SourcePieceParam);
+    If (IsCheckingPieceRes == 1)
+    {
+        Call ClearMoveList((Depth + 2));
+        Call AddMoveToList(Move)((Depth + 2));
+        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+        Call ApplyMoveLight((Depth + 2));
+        Call SEE((Depth + 2))((1 == 0));
+        Call RevertMoveLight((Depth + 2));
+        If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
+        {
+            MoveScoreRes += (15000 * Factor);
+        }
+    }
 }
 
 Define GetNormalizedMove(string Move) (warp=true)
@@ -7572,36 +7586,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
         }
     }
-    If (MovesCount[Depth] == 0)
-    {
-        Search.Factor = (((Depth % 2) * 2) - 1);
-        If (CheckedState[Depth] == 1)
-        {
-            If (((Not (Quiescence)) And (ExcludedMove == "")) Or Quiescence)
-            {
-                Call //("Fast search checkmate detection (no check evasion found)");
-                List.ReplaceItem(NodeTypes, Depth, "E");
-                List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
-            }
-        }
-        Else
-        {
-            If ((Not (Quiescence)) And (ExcludedMove == ""))
-            {
-                List.ReplaceItem(NodeTypes, Depth, "E");
-                Call CalcBoardAttackedByMoveChecked((Depth + 1));
-                If ((((Depth % 2) == 1) And (IsBlackChecked == 1)) Or (((Depth % 2) == 0) And (IsWhiteChecked == 1)))
-                {
-                    List.ReplaceItem(SearchEvalResults, Depth, ((-100000 + List.Length(BoardHistoryFiftyMoves)) * Search.Factor));
-                }
-                Else
-                {
-                    List.ReplaceItem(SearchEvalResults, Depth, 0);
-                }
-            }
-        }
-    }
-    If ((Not (Quiescence)) And (IsSearchTimeout == 0))
+    If ((IsSearchTimeout == 0) And (ExcludedMove == ""))
     {
         If (SearchedMovesCount[Depth] == 0)
         {
@@ -7650,15 +7635,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                 Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(Horizon)("");
             }
         }
-        Call //("Collect statistics");
-        If (Quiescence[Depth] == 0)
-        {
-            MoveCount += MovesCount[Depth];
-        }
-        Else
-        {
-            MoveCountQ += MovesCount[Depth];
-        }
         If (BestMoveListIdx[Depth] > 0)
         {
             If Quiescence
@@ -7673,24 +7649,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
         }
     }
-    If ((Not (Quiescence)) And (Not ((BestMoves[Depth] == ""))))
-    {
-        Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon)((1 == 0))((1 == 0));
-        Call StoreKillerMoveMalus(Depth)(Horizon)(BestMoveListIdx[Depth]);
-    }
-    If (((IsSearchTimeout == 0) And (Depth > 1)) And (ExcludedMove == ""))
-    {
-        Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
-        If Quiescence
-        {
-            Call IsQuiescentCheckCond(Depth);
-            Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(-1)(IsQuiescentCheckRes);
-        }
-        Else
-        {
-            Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(Horizon)("");
-        }
-    }
     Call //("Collect statistics");
     If (Quiescence[Depth] == 0)
     {
@@ -7699,19 +7657,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     Else
     {
         MoveCountQ += MovesCount[Depth];
-    }
-    If (BestMoveListIdx[Depth] > 0)
-    {
-        If Quiescence
-        {
-            ProfBestMoveCountQ += 1;
-            ProfBestMoveIdxSumQ += BestMoveListIdx[Depth];
-        }
-        Else
-        {
-            ProfBestMoveCount += 1;
-            ProfBestMoveIdxSum += BestMoveListIdx[Depth];
-        }
     }
 }
 
