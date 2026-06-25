@@ -1786,7 +1786,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
                         }
                         If (Not (Quiescence))
                         {
-                            If ((LMRState[Depth] == 2) Or (LMRState[Depth] == 3))
+                            If (((LMRState[Depth] == 2) Or (LMRState[Depth] == 3)) And (1 == 0))
                             {
                                 Call GetCurrentMove(Depth);
                                 Call StoreKillerMove(Depth)(Horizon)(CurrentMove)((LMRState[Depth] == 3))((1 == 1));
@@ -3095,6 +3095,29 @@ Define ApplyMoveLight(string Depth) (warp=true)
             If (AML.TargetPiece < 0)
             {
                 CurrentBoardHash += MoveHashLookupOpp[((PieceIdxLookup[(0 - AML.TargetPiece)] * 10000) + (AML.TargetIdx * 100))];
+            }
+        }
+        If (((abs(AML.SourcePiece) == GoK_OwnPawn) And (AML.TargetPiece == 0)) And (Not ((IdxToFile[AML.SourceIdx] == IdxToFile[AML.TargetIdx]))))
+        {
+            If (AML.SourcePiece > 0)
+            {
+                AML.EnPassantSquare = (AML.TargetIdx - 8);
+            }
+            Else
+            {
+                AML.EnPassantSquare = (AML.TargetIdx + 8);
+            }
+            AML.EnPassantCaptured = Board[AML.EnPassantSquare];
+            List.ReplaceItem(TargetPiecesIdx, Depth, AML.EnPassantSquare);
+            List.ReplaceItem(TargetPieces, Depth, AML.EnPassantCaptured);
+            List.ReplaceItem(Board, AML.EnPassantSquare, 0);
+            If (AML.EnPassantCaptured > 0)
+            {
+                CurrentBoardHash = (CurrentBoardHash + MoveHashLookupOwn[((PieceIdxLookup[AML.EnPassantCaptured] * 10000) + (AML.EnPassantSquare * 100))]);
+            }
+            Else
+            {
+                CurrentBoardHash = (CurrentBoardHash + MoveHashLookupOpp[((PieceIdxLookup[(0 - AML.EnPassantCaptured)] * 10000) + (AML.EnPassantSquare * 100))]);
             }
         }
     }
@@ -7556,6 +7579,28 @@ Define GetHistoryStatScore(string SourcePieceParam)(string FromIdx)(string ToIdx
             }
         }
     }
+    If ((Depth > 4) And (AppliedMove[(Depth - 4)] > 0))
+    {
+        If ((Depth % 2) == 1)
+        {
+            HistoryStatScore = (HistoryStatScore + (1 * HistoryContinuation3Own[((((PieceIdxLookup[abs(SourcePieces[(Depth - 4)])] * 68) + floor((AppliedMove[(Depth - 4)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx))]));
+        }
+        Else
+        {
+            HistoryStatScore = (HistoryStatScore + (1 * HistoryContinuation3Opp[((((PieceIdxLookup[abs(SourcePieces[(Depth - 4)])] * 68) + floor((AppliedMove[(Depth - 4)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx))]));
+        }
+    }
+    If ((Depth > 6) And (AppliedMove[(Depth - 6)] > 0))
+    {
+        If ((Depth % 2) == 1)
+        {
+            HistoryStatScore = (HistoryStatScore + (1 * HistoryContinuation4Own[((((PieceIdxLookup[abs(SourcePieces[(Depth - 6)])] * 68) + floor((AppliedMove[(Depth - 6)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx))]));
+        }
+        Else
+        {
+            HistoryStatScore = (HistoryStatScore + (1 * HistoryContinuation4Opp[((((PieceIdxLookup[abs(SourcePieces[(Depth - 6)])] * 68) + floor((AppliedMove[(Depth - 6)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx))]));
+        }
+    }
 }
 
 Define GetImproving(string Depth) (warp=true)
@@ -7782,6 +7827,11 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     {
         Call //("Promotions");
         MoveScoreRes = ((7500005 - ((Move * 10) % 10)) * GMS.Factor);
+        Stop(this script);
+    }
+    If (((abs(SourcePieceParam) == GoK_OwnPawn) And (TargetPieceParam == 0)) And ((Not ((FromIdx == ""))) And (Not ((IdxToFile[FromIdx] == IdxToFile[ToIdx])))))
+    {
+        MoveScoreRes = (7100000 * GMS.Factor);
         Stop(this script);
     }
     If ((Not ((TargetPieceParam == 0))) And (Not ((TargetPieceParam == ""))))
@@ -8460,6 +8510,7 @@ Define InitBoard (warp=true)
     Call InitCoordLookup;
     Call FillBoard;
     List.DeleteAll(PieceIdxLookup);
+    List.DeleteAll(KSC.PieceOrder);
     Idx = 1;
     Repeat (GoK_OwnKing)
     {
@@ -11612,21 +11663,21 @@ Define StoreKillerMove(string Depth)(string Horizon)(string Move)(bool Malus)(bo
                     List.ReplaceItem(HistoryContinuation2Opp, Idx, (HistoryContinuation2Opp[Idx] + (HistoryBonus - floor((HistoryContinuation2Opp[Idx] * (abs(HistoryBonus) / 29952))))));
                 }
             }
-            If (Depth > 3)
+            If ((Depth > 4) And (CheckedState[Depth] == 0))
             {
-                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 3)])] * 68) + floor((AppliedMove[(Depth - 3)] % 100))) * 408) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 68) + floor((Move % 100))));
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 4)])] * 68) + floor((AppliedMove[(Depth - 4)] % 100))) * 408) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 68) + floor((Move % 100))));
                 If ((Depth % 2) == 1)
                 {
-                    List.ReplaceItem(HistoryContinuation3Own, Idx, (HistoryContinuation3Own[Idx] + ((HistoryBonus / 2) - floor((HistoryContinuation3Own[Idx] * (abs((HistoryBonus / 2)) / 29952))))));
+                    List.ReplaceItem(HistoryContinuation3Own, Idx, (HistoryContinuation3Own[Idx] + ((HistoryBonus / 1) - floor((HistoryContinuation3Own[Idx] * (abs((HistoryBonus / 1)) / 29952))))));
                 }
                 Else
                 {
-                    List.ReplaceItem(HistoryContinuation3Opp, Idx, (HistoryContinuation3Opp[Idx] + ((HistoryBonus / 2) - floor((HistoryContinuation3Opp[Idx] * (abs((HistoryBonus / 2)) / 29952))))));
+                    List.ReplaceItem(HistoryContinuation3Opp, Idx, (HistoryContinuation3Opp[Idx] + ((HistoryBonus / 1) - floor((HistoryContinuation3Opp[Idx] * (abs((HistoryBonus / 1)) / 29952))))));
                 }
             }
-            If (Depth > 4)
+            If ((Depth > 6) And (CheckedState[Depth] == 0))
             {
-                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 4)])] * 68) + floor((AppliedMove[(Depth - 4)] % 100))) * 408) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 68) + floor((Move % 100))));
+                Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 6)])] * 68) + floor((AppliedMove[(Depth - 6)] % 100))) * 408) + ((PieceIdxLookup[abs(Board[floor((Move / 100))])] * 68) + floor((Move % 100))));
                 If ((Depth % 2) == 1)
                 {
                     List.ReplaceItem(HistoryContinuation4Own, Idx, (HistoryContinuation4Own[Idx] + (HistoryBonus - floor((HistoryContinuation4Own[Idx] * (abs(HistoryBonus) / 29952))))));
