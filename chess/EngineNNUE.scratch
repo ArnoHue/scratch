@@ -91,7 +91,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (22.06.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (27.06.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1726,6 +1726,27 @@ Define ApplyMoveLight(string Depth) (warp=true)
                 AML.Idx += 60000;
             }
             CurrentBoardHash += MoveToHash[AML.Idx];
+        }
+        If (((abs(AML.SourcePiece) == GoK_BlackPawn) And (AML.TargetPiece == 0)) And (Not ((IdxToFile[AML.SourceIdx] == IdxToFile[AML.TargetIdx]))))
+        {
+            If (AML.SourcePiece > 0)
+            {
+                AML.EnPassantSquare = (AML.TargetIdx - 8);
+            }
+            Else
+            {
+                AML.EnPassantSquare = (AML.TargetIdx + 8);
+            }
+            AML.EnPassantCaptured = Board[AML.EnPassantSquare];
+            List.ReplaceItem(TargetPiecesIdx, Depth, AML.EnPassantSquare);
+            List.ReplaceItem(TargetPieces, Depth, AML.EnPassantCaptured);
+            List.ReplaceItem(Board, AML.EnPassantSquare, 0);
+            AML.Idx = ((PieceIdxLookup[abs(AML.EnPassantCaptured)] * 10000) + (AML.EnPassantSquare * 100));
+            If (AML.EnPassantCaptured > 0)
+            {
+                AML.Idx = (AML.Idx + 60000);
+            }
+            CurrentBoardHash = (CurrentBoardHash + MoveToHash[AML.Idx]);
         }
     }
     Else
@@ -3427,9 +3448,9 @@ Define GetBestMoveMedDiff (warp=false)
             QuiescenceDepth = ((MaxSearchDepthStackFrames - MaxSearchDepth) - 10);
         }
         ThinkTimeLimitSearch = ThinkTimeLimit;
-        If (((IdxDeepening > 6) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
+        If (((IdxDeepening > 4) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
-            AWDelta = Operator.Round((35 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 2400)));
+            AWDelta = Operator.Round((30 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 2400)));
             AWAlpha = Operator.Round((GBM.Evaluation - AWDelta));
             AWBeta = Operator.Round((GBM.Evaluation + AWDelta));
         }
@@ -3454,8 +3475,8 @@ Define GetBestMoveMedDiff (warp=false)
             Call Log(IdxDeepening)(": AW : ")(AWAlpha)(" : ")(AWBeta)(" : ")(Search.EvalRes)(Operator.Join(" : ", ((Not ((Search.EvalRes == ""))) And ((Not ((Search.EvalRes > AWAlpha))) Or (Not ((Search.EvalRes < AWBeta)))))));
             If (((IsSearchTimeout == 0) And (Not ((Search.EvalRes == "")))) And ((Not ((Search.EvalRes > AWAlpha))) Or (Not ((Search.EvalRes < AWBeta)))))
             {
-                AWDelta = Operator.Round((AWDelta * 2));
-                If ((AWDelta < 150) And (abs(Search.EvalRes) < AbsMinCheckmateEval))
+                AWDelta = Operator.Round((AWDelta * 1.5));
+                If ((AWDelta < 300) And (abs(Search.EvalRes) < AbsMinCheckmateEval))
                 {
                     If (Not ((Search.EvalRes > AWAlpha)))
                     {
@@ -3497,7 +3518,27 @@ Define GetBoardEval(string Depth) (warp=true)
     If (BoardEval[Depth] == "")
     {
         Call Evaluate((Depth - 1))((1 == 1));
-        List.ReplaceItem(BoardEval, Depth, EvaluationRes);
+        If (1 == 0)
+        {
+            List.ReplaceItem(BoardEval, Depth, Operator.Round(((EvaluationRes * (199 - BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)])) / 199)));
+        }
+        Else
+        {
+            List.ReplaceItem(BoardEval, (Depth + 0), EvaluationRes);
+            If (1 == 0)
+            {
+                CorrPawnKey = CurrentBoardHashKP;
+                Call GetPiecePosHash(Board[WhiteKingIdx])(WhiteKingIdx);
+                CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                Call GetPiecePosHash(Board[BlackKingIdx])(BlackKingIdx);
+                CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                CorrIdx = ((((Depth % 2) * 65536) + (CorrPawnKey % 65536)) + 1);
+                If (CorrHistKey[CorrIdx] == CorrPawnKey)
+                {
+                    List.ReplaceItem(BoardEval, (Depth + 0), (BoardEval[(Depth + 0)] + floor((CorrHistVal[CorrIdx] / 32))));
+                }
+            }
+        }
     }
 }
 
@@ -4148,6 +4189,13 @@ Define GetTargetIdx(num SourceIdx)(num DeltaX)(num DeltaY) (warp=true)
     }
 }
 
+Define GetTTBoardHash(string BoardHash)(string Depth) (warp=true)
+{
+    TTBoardHashResult = ((Depth % 2) + 1);
+    TTBoardHashResult = ((TTBoardHashResult * 97) + (CastlingState[Depth] + 1));
+    TTBoardHashResult = ((TTBoardHashResult * 97) + (BoardHash + 1));
+}
+
 Define GetTTNodeHash(string BoardHash)(string Depth)(bool Quiescence) (warp=true)
 {
     TTNodeHashResult = ((Depth % 2) + 1);
@@ -4520,6 +4568,16 @@ Define InitBoard (warp=true)
     Repeat (2500)
     {
         List.Add(HistoryCaptureScores, 0);
+    }
+    List.DeleteAll(CorrHistVal);
+    Repeat (131072)
+    {
+        List.Add(CorrHistVal, 0);
+    }
+    List.DeleteAll(CorrHistKey);
+    Repeat (131072)
+    {
+        List.Add(CorrHistKey, "");
     }
     List.DeleteItem(MaxHistoryMoveScore, all);
     Repeat (2)
@@ -6215,7 +6273,7 @@ Define NNUE_Evaluate(string Side)(string Depth) (warp=true)
         NNUE.Packed2 = floor(NNUE_Accumulator[(NNUE.Base2 + Idx)]);
         If (((floor(NNUE.Packed1) - (16777216 * floor((NNUE.Packed1 / 16777216)))) - 8388608) > 0)
         {
-            NNUE_EvalRes += (((floor(NNUE.Packed1) - (16777216 * floor((NNUE.Packed1 / 16777216)))) - 8388608) * floor(NNUE_HiddenWeights[((2 * Idx) + -1)]));
+            NNUE_EvalRes += (((floor(NNUE.Packed1) - (16777216 * floor((NNUE.Packed1 / 16777216)))) - 8388608) * floor(NNUE_HiddenWeights[((2 * Idx) - 1)]));
         }
         If ((floor((NNUE.Packed1 / 16777216)) - 8388608) > 0)
         {
@@ -6223,11 +6281,11 @@ Define NNUE_Evaluate(string Side)(string Depth) (warp=true)
         }
         If (((floor(NNUE.Packed2) - (16777216 * floor((NNUE.Packed2 / 16777216)))) - 8388608) > 0)
         {
-            NNUE_EvalRes += (((floor(NNUE.Packed2) - (16777216 * floor((NNUE.Packed2 / 16777216)))) - 8388608) * floor(NNUE_HiddenWeights[(512 + ((2 * Idx) + -1))]));
+            NNUE_EvalRes += (((floor(NNUE.Packed2) - (16777216 * floor((NNUE.Packed2 / 16777216)))) - 8388608) * floor(NNUE_HiddenWeights[(NNUE_HiddenSize + ((2 * Idx) - 1))]));
         }
         If ((floor((NNUE.Packed2 / 16777216)) - 8388608) > 0)
         {
-            NNUE_EvalRes += ((floor((NNUE.Packed2 / 16777216)) - 8388608) * floor(NNUE_HiddenWeights[(512 + ((2 * Idx) + 0))]));
+            NNUE_EvalRes += ((floor((NNUE.Packed2 / 16777216)) - 8388608) * floor(NNUE_HiddenWeights[(NNUE_HiddenSize + ((2 * Idx) + 0))]));
         }
         Idx += 1;
     }
@@ -7244,6 +7302,19 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         If ((TTProbeRes == 1) And (Not ((TTProbeBoard.EvalSumRes == ""))))
         {
             List.ReplaceItem(BoardEval, Depth, TTProbeBoard.EvalSumRes);
+            If (1 == 0)
+            {
+                CorrPawnKey = CurrentBoardHashKP;
+                Call GetPiecePosHash(Board[WhiteKingIdx])(WhiteKingIdx);
+                CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                Call GetPiecePosHash(Board[BlackKingIdx])(BlackKingIdx);
+                CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                CorrIdx = ((((Depth % 2) * 65536) + (CorrPawnKey % 65536)) + 1);
+                If (CorrHistKey[CorrIdx] == CorrPawnKey)
+                {
+                    List.ReplaceItem(BoardEval, (Depth + 0), (BoardEval[(Depth + 0)] + floor((CorrHistVal[CorrIdx] / 32))));
+                }
+            }
         }
     }
     If (Not (Quiescence))
@@ -7692,6 +7763,30 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
             Else
             {
+                If ((CheckedState[(Depth + 0)] == 0) And (((BestMoves[(Depth + 0)] == "") Or (Board[floor((BestMoves[(Depth + 0)] % 100))] == 0)) And ((Not (((Not ((SearchEvalResults[(Depth + 0)] < Betas[(Depth + 0)]))) And (Not ((SearchEvalResults[(Depth + 0)] > BoardEval[(Depth + 0)])))))) And (Not (((BestMoves[(Depth + 0)] == "") And (Not ((SearchEvalResults[(Depth + 0)] < BoardEval[(Depth + 0)])))))))))
+                {
+                    CorrPawnKey = CurrentBoardHashKP;
+                    Call GetPiecePosHash(Board[WhiteKingIdx])(WhiteKingIdx);
+                    CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                    Call GetPiecePosHash(Board[BlackKingIdx])(BlackKingIdx);
+                    CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                    CorrIdx = ((((Depth % 2) * 65536) + (CorrPawnKey % 65536)) + 1);
+                    If (Not ((CorrHistKey[CorrIdx] == CorrPawnKey)))
+                    {
+                        List.ReplaceItem(CorrHistVal, CorrIdx, 0);
+                        List.ReplaceItem(CorrHistKey, CorrIdx, CorrPawnKey);
+                    }
+                    CorrBonus = (((SearchEvalResults[(Depth + 0)] - BoardEval[(Depth + 0)]) * Horizon) / 8);
+                    If (CorrBonus > 256)
+                    {
+                        CorrBonus = 256;
+                    }
+                    If (CorrBonus < -256)
+                    {
+                        CorrBonus = -256;
+                    }
+                    List.ReplaceItem(CorrHistVal, CorrIdx, ((CorrHistVal[CorrIdx] + CorrBonus) - floor(((CorrHistVal[CorrIdx] * abs(CorrBonus)) / 1024))));
+                }
                 Call TTStoreNode(CurrentBoardHash)(Depth)(SearchEvalResults[Depth])(BestMoves[Depth])(NodeTypes[Depth])("")(Horizon)("");
             }
         }
@@ -8310,7 +8405,7 @@ Define Search_InternalIterativeDeepening(string Depth)(bool InitialDeepening)(st
 {
     If (((Not (Quiescence)) And (Horizon > 5)) And ((CheckedState[Depth] == 0) And (Not (((Betas[Depth] - Alphas[Depth]) == 1)))))
     {
-        If (1 == 1)
+        If (1 == 0)
         {
             Call //("IID");
             Call TTProbeNode(CurrentBoardHash)(Depth)(Quiescence);
@@ -9115,8 +9210,8 @@ Define StoreKillerMoveMalus(string Depth)(string Horizon)(string KillerMoveIdx) 
 
 Define TTProbeBoard(string BoardHash)(string Depth) (warp=true)
 {
-    Call GetTTNodeHash(BoardHash)(Depth)((1 == 0));
-    Call TTProbeBoardImpl(TTNodeHashResult);
+    Call GetTTBoardHash(BoardHash)(Depth);
+    Call TTProbeBoardImpl(TTBoardHashResult);
 }
 
 Define TTProbeBoardImpl(string BoardHash) (warp=true)
@@ -9200,8 +9295,8 @@ Define TTStoreBoard(string BoardHash)(string Depth)(string Eval) (warp=true)
     {
         Stop(this script);
     }
-    Call GetTTNodeHash(BoardHash)(Depth)((1 == 0));
-    Call TTStoreBoardImpl(TTNodeHashResult)(Eval)("");
+    Call GetTTBoardHash(BoardHash)(Depth);
+    Call TTStoreBoardImpl(TTBoardHashResult)(Eval)("");
 }
 
 Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum)(string PawnHist) (warp=true)
