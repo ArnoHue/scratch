@@ -2297,11 +2297,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         }
         If (IsClassicEndgameEval == 0)
         {
-            If (NNUE_AccDirty[Depth] == 1)
-            {
-                Call UpdateNNUEPostApplyMove(Depth);
-                List.ReplaceItem(NNUE_AccDirty, Depth, 0);
-            }
+            Call NNUE_EnsureComputed(Depth);
             Call NNUE_Public_Evaluate((Depth + 1));
             EvaluationRes = Operator.Round(NNUE_EvalRes);
         }
@@ -6276,6 +6272,19 @@ Define NNUE_DecToHex(string CSV) (warp=true)
     }
 }
 
+Define NNUE_EnsureComputed(string Depth) (warp=true)
+{
+    If (Depth > 0)
+    {
+        If (NNUE_AccDirty[Depth] == 1)
+        {
+            Call NNUE_EnsureComputed((Depth - 1));
+            Call UpdateNNUEPostApplyMove(Depth);
+            List.ReplaceItem(NNUE_AccDirty, Depth, 0);
+        }
+    }
+}
+
 Define NNUE_Evaluate(string Side)(string Depth) (warp=true)
 {
     NNUE_EvalRes = (NNUE_OutputBias[1] + 0);
@@ -7425,11 +7434,6 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
     List.ReplaceItem(SearchedMovesCountQuiet, Depth, 0);
     List.ReplaceItem(SearchedMovesCount, Depth, 0);
     List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
-    If ((Depth > 1) And (NNUE_AccDirty[(Depth - 1)] == 1))
-    {
-        Call UpdateNNUEPostApplyMove((Depth - 1));
-        List.ReplaceItem(NNUE_AccDirty, (Depth - 1), 0);
-    }
     Call //("Move generation and move loop");
     Repeat Until (PickMoveRes[Depth] == 0)
     {
@@ -7546,6 +7550,12 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             Else
             {
                 List.ReplaceItem(NNUE_AccDirty, Depth, 1);
+                If ((floor((AppliedMove[Depth] / 100)) == 0) Or ((Not ((PromotionPieces[Depth] == 0))) Or ((abs(SourcePieces[Depth]) == GoK_BlackPawn) And ((Not ((TargetPieces[Depth] == 0))) And (Not ((TargetPiecesIdx[Depth] == floor((AppliedMove[Depth] % 100)))))))))
+                {
+                    Call NNUE_EnsureComputed((Depth - 1));
+                    Call UpdateNNUEPostApplyMove(Depth);
+                    List.ReplaceItem(NNUE_AccDirty, Depth, 0);
+                }
                 Call Search_DetectExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
                 If (SearchExtension[Depth] == "*")
                 {
