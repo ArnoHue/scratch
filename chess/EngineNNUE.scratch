@@ -91,7 +91,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (27.06.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (05.07.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -2153,11 +2153,11 @@ Define ClearTT (warp=true)
 {
     If (IsScratch3 == 1)
     {
-        Call ClearTTImpl(262144);
+        Call ClearTTImpl(65536);
     }
     Else
     {
-        Call ClearTTImpl(262144);
+        Call ClearTTImpl(1048576);
     }
 }
 
@@ -6819,12 +6819,52 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
     }
     If (PickPhase[Depth] == 2)
     {
+        If (Quiescence Or (((Depth < 4) Or (CheckedState[Depth] == 1)) Or ((((WhiteQueenCountLocal + WhiteRookCountLocal) + WhiteMinorCountLocal) + ((BlackQueenCountLocal + BlackRookCountLocal) + BlackMinorCountLocal)) < 5)))
+        {
+            List.ReplaceItem(PickPhase, Depth, 4);
+        }
+        Else
+        {
+            Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(0);
+            Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 1));
+            If (Not ((HashMove[Depth] == "")))
+            {
+                If (Not (List.ContainsItem(CalcMovesMoveList, HashMove[Depth])))
+                {
+                    List.Add(CalcMovesMoveList, HashMove[Depth]);
+                    List.Add(CalcMovesScoreList, (9100000 * (1 - (2 * ((Depth % 2) == 0)))));
+                }
+            }
+            Idx = 1;
+            Repeat (List.Length(CalcMovesScoreList))
+            {
+                If ((((Depth % 2) == 1) And (CalcMovesScoreList[Idx] < 7000000)) Or (((Depth % 2) == 0) And (CalcMovesScoreList[Idx] > -7000000)))
+                {
+                    List.DeleteItem(CalcMovesMoveList, Idx);
+                    List.DeleteItem(CalcMovesScoreList, Idx);
+                }
+                Else
+                {
+                    Idx += 1;
+                }
+            }
+            Call SortMoveList(Depth);
+            List.ReplaceItem(MovesIdx, Depth, 0);
+            List.ReplaceItem(PickPhase, Depth, 3);
+        }
+    }
+    If (PickPhase[Depth] == 3)
+    {
+        Call PickMove.Iterate(Depth)(4)(UpdateNNUE);
+    }
+    If (PickPhase[Depth] == 4)
+    {
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
         Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((CheckedState[Depth] == 1) And (BoardAttackedCalculated[Depth] == 1))));
         List.ReplaceItem(MovesIdx, Depth, 0);
-        List.ReplaceItem(PickPhase, Depth, 3);
+        List.ReplaceItem(PickPhase, Depth, 5);
     }
-    If (PickPhase[Depth] == 3)
+    If (PickPhase[Depth] == 5)
     {
         Call PickMove.Iterate(Depth)("*")(UpdateNNUE);
     }
@@ -9342,32 +9382,23 @@ Define TTStoreBoard(string BoardHash)(string Depth)(string Eval) (warp=true)
 
 Define TTStoreBoardImpl(string BoardHash)(string BoardScoreSum)(string PawnHist) (warp=true)
 {
-    HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
-    Hash = TTBoardHash[(HashBucket + 0)];
-    Idx = 1;
-    Repeat Until (((Hash == BoardHash) Or (Hash == 0)) Or (Idx > 4))
+    FirstBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
+    HashBucket = (FirstBucket - 1);
+    Idx = 0;
+    Found = 0;
+    Repeat Until ((Found == 1) Or (Idx > 4))
     {
         Idx += 1;
         HashBucket += 1;
         Hash = TTBoardHash[(HashBucket + 0)];
-    }
-    If ((Not ((Hash == BoardHash))) And (Not ((Hash == 0))))
-    {
-        HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
-        Idx = 1;
-        HorizonLoc = HashBucket;
-        Hash = TTBoardAge[(HashBucket + 0)];
-        Repeat Until (Idx > 4)
+        If (((Hash == BoardHash) Or (Hash == 0)) Or (TTBoardAge[(HashBucket + 0)] < (TT.CurrentAge - 1)))
         {
-            Idx += 1;
-            HashBucket += 1;
-            If (TTBoardAge[(HashBucket + 0)] < Hash)
-            {
-                Hash = TTBoardAge[(HashBucket + 0)];
-                HorizonLoc = HashBucket;
-            }
+            Found = 1;
         }
-        HashBucket = HorizonLoc;
+    }
+    If (Found == 0)
+    {
+        HashBucket = FirstBucket;
     }
     List.ReplaceItem(TTBoardAge, (HashBucket + 0), TT.CurrentAge);
     List.ReplaceItem(TTBoardHash, (HashBucket + 0), BoardHash);
@@ -9402,32 +9433,23 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
 
 Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string QSMeta) (warp=true)
 {
-    HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
-    Hash = TTNodeHash[(HashBucket + 0)];
-    Idx = 1;
-    Repeat Until (((Hash == NodeHash) Or (Hash == 0)) Or (Idx > 4))
+    FirstBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
+    HashBucket = (FirstBucket - 1);
+    Idx = 0;
+    Found = 0;
+    Repeat Until ((Found == 1) Or (Idx > 4))
     {
         Idx += 1;
         HashBucket += 1;
         Hash = TTNodeHash[(HashBucket + 0)];
-    }
-    If ((Not ((Hash == NodeHash))) And (Not ((Hash == 0))))
-    {
-        HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
-        Idx = 1;
-        HorizonLoc = HashBucket;
-        Hash = (TTNodeHorizon[(HashBucket + 0)] + (TTNodeAge[(HashBucket + 0)] * 2));
-        Repeat Until (Idx > 4)
+        If (((Hash == NodeHash) Or (Hash == 0)) Or (TTNodeAge[(HashBucket + 0)] < (TT.CurrentAge - 1)))
         {
-            Idx += 1;
-            HashBucket += 1;
-            If ((TTNodeHorizon[(HashBucket + 0)] + (TTNodeAge[(HashBucket + 0)] * 2)) < Hash)
-            {
-                Hash = (TTNodeHorizon[(HashBucket + 0)] + (TTNodeAge[(HashBucket + 0)] * 2));
-                HorizonLoc = HashBucket;
-            }
+            Found = 1;
         }
-        HashBucket = HorizonLoc;
+    }
+    If (Found == 0)
+    {
+        HashBucket = FirstBucket;
     }
     If (TTNodeHash[(HashBucket + 0)] == NodeHash)
     {
@@ -9597,3 +9619,4 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
         }
     }
 }
+
