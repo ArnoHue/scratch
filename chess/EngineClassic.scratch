@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (04.07.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (05.07.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3779,11 +3779,11 @@ Define ClearTT (warp=true)
 {
     If (IsScratch3 == 1)
     {
-        Call ClearTTImpl(262144);
+        Call ClearTTImpl(65536);
     }
     Else
     {
-        Call ClearTTImpl(262144);
+        Call ClearTTImpl(1048576);
     }
 }
 
@@ -3799,6 +3799,7 @@ Define ClearTTImpl(string Size) (warp=true)
     List.DeleteItem(TTNodeHorizon, all);
     List.DeleteItem(TTBoardHash, all);
     List.DeleteItem(TTBoardScore1, all);
+    List.DeleteItem(TTBoardScore2, all);
     List.DeleteItem(TTBoardScore3, all);
     List.DeleteItem(TTBoardScoreSum, all);
     List.DeleteItem(TTBoardAge, all);
@@ -3813,10 +3814,11 @@ Define ClearTTImpl(string Size) (warp=true)
         List.Add(TTNodeChecked, "");
         List.Add(TTNodeHorizon, "");
     }
-    Repeat (262144)
+    Repeat (Size)
     {
         List.Add(TTBoardHash, 0);
         List.Add(TTBoardScore1, "");
+        List.Add(TTBoardScore2, "");
         List.Add(TTBoardScore3, "");
         List.Add(TTBoardScoreSum, "");
         List.Add(TTBoardAge, 0);
@@ -11980,6 +11982,7 @@ Define TTProbeBoardImpl(string BoardHash) (warp=true)
     }
     TTProbeRes = 1;
     TTProbeBoardScore1Res = TTBoardScore1[(HashBucket + 0)];
+    TTProbeBoardScore2Res = TTBoardScore2[(HashBucket + 0)];
     TTProbeBoardScore3Res = TTBoardScore3[HashBucket];
     TTProbeBoardScoreSumRes = TTBoardScoreSum[(HashBucket + 0)];
     List.ReplaceItem(TTBoardAge, (HashBucket + 0), TTCurrentAge);
@@ -12038,38 +12041,33 @@ Define TTStoreBoard(string BoardHash)(string Depth)(string BoardScore1)(string B
 
 Define TTStoreBoardImpl(string BoardHash)(string BoardScore1)(string BoardScore2)(string BoardScore3)(string BoardScoreSum) (warp=true)
 {
-    HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
-    Hash = TTBoardHash[(HashBucket + 0)];
-    Idx = 1;
-    Repeat Until (((Hash == BoardHash) Or (Hash == 0)) Or (Idx > 4))
+    FirstBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
+    HashBucket = (FirstBucket - 1);
+    Idx = 0;
+    Found = 0;
+    Repeat Until ((Found == 1) Or (Idx > 4))
     {
         Idx += 1;
         HashBucket += 1;
         Hash = TTBoardHash[(HashBucket + 0)];
-    }
-    If ((Not ((Hash == BoardHash))) And (Not ((Hash == 0))))
-    {
-        HashBucket = ((BoardHash % (List.Length(TTBoardHash) - 5)) + 1);
-        Idx = 1;
-        HorizonLoc = HashBucket;
-        Hash = TTBoardAge[(HashBucket + 0)];
-        Repeat Until (Idx > 4)
+        If (((Hash == BoardHash) Or (Hash == 0)) Or (TTBoardAge[(HashBucket + 0)] < (TTCurrentAge - 1)))
         {
-            Idx += 1;
-            HashBucket += 1;
-            If (TTBoardAge[(HashBucket + 0)] < Hash)
-            {
-                Hash = TTBoardAge[(HashBucket + 0)];
-                HorizonLoc = HashBucket;
-            }
+            Found = 1;
         }
-        HashBucket = HorizonLoc;
+    }
+    If (Found == 0)
+    {
+        HashBucket = FirstBucket;
     }
     If (TTBoardHash[(HashBucket + 0)] == BoardHash)
     {
         If (Not ((BoardScore1 == "")))
         {
             List.ReplaceItem(TTBoardScore1, (HashBucket + 0), BoardScore1);
+        }
+        If (Not ((BoardScore2 == "")))
+        {
+            List.ReplaceItem(TTBoardScore2, (HashBucket + 0), BoardScore2);
         }
         If (Not ((BoardScore3 == "")))
         {
@@ -12085,6 +12083,8 @@ Define TTStoreBoardImpl(string BoardHash)(string BoardScore1)(string BoardScore2
     {
         List.ReplaceItem(TTBoardHash, (HashBucket + 0), BoardHash);
         List.ReplaceItem(TTBoardScore1, (HashBucket + 0), BoardScore1);
+        List.ReplaceItem(TTBoardScore2, (HashBucket + 0), BoardScore2);
+        List.ReplaceItem(TTBoardScore3, (HashBucket + 0), BoardScore3);
         List.ReplaceItem(TTBoardScoreSum, (HashBucket + 0), BoardScoreSum);
         List.ReplaceItem(TTBoardAge, (HashBucket + 0), TTCurrentAge);
     }
@@ -12106,32 +12106,23 @@ Define TTStoreNode(string BoardHash)(string Depth)(string Score)(string BestMove
 
 Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string CheckedAttackLines)(string QSMeta) (warp=true)
 {
-    HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
-    Hash = TTNodeHash[(HashBucket + 0)];
-    Idx = 1;
-    Repeat Until (((Hash == NodeHash) Or (Hash == 0)) Or (Idx > 4))
+    FirstBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
+    HashBucket = (FirstBucket - 1);
+    Idx = 0;
+    Found = 0;
+    Repeat Until ((Found == 1) Or (Idx > 4))
     {
         Idx += 1;
         HashBucket += 1;
         Hash = TTNodeHash[(HashBucket + 0)];
-    }
-    If ((Not ((Hash == NodeHash))) And (Not ((Hash == 0))))
-    {
-        HashBucket = ((NodeHash % (List.Length(TTNodeHash) - 5)) + 1);
-        Idx = 1;
-        HorizonLoc = HashBucket;
-        Hash = (TTNodeHorizon[(HashBucket + 0)] + (TTNodeAge[(HashBucket + 0)] * 2));
-        Repeat Until (Idx > 4)
+        If (((Hash == NodeHash) Or (Hash == 0)) Or (TTNodeAge[(HashBucket + 0)] < (TTCurrentAge - 1)))
         {
-            Idx += 1;
-            HashBucket += 1;
-            If ((TTNodeHorizon[(HashBucket + 0)] + (TTNodeAge[(HashBucket + 0)] * 2)) < Hash)
-            {
-                Hash = (TTNodeHorizon[(HashBucket + 0)] + (TTNodeAge[(HashBucket + 0)] * 2));
-                HorizonLoc = HashBucket;
-            }
+            Found = 1;
         }
-        HashBucket = HorizonLoc;
+    }
+    If (Found == 0)
+    {
+        HashBucket = FirstBucket;
     }
     If (TTNodeHash[(HashBucket + 0)] == NodeHash)
     {
@@ -12432,3 +12423,4 @@ Define _ClearLists (warp=true)
     List.DeleteItem(HistoryContinuation4Opp, all);
     List.DeleteItem(HistoryContinuation2Opp, all);
 }
+
