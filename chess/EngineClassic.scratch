@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (05.07.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (13.07.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -10011,6 +10011,39 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     }
 }
 
+Define IsReachable(string SourcePieceAbs)(string SourceIdx)(string TargetIdx) (warp=true)
+{
+    IsReachableRes = 0;
+    If ((SourcePieceAbs == GoK_OwnKing) Or (SourcePieceAbs == GoK_OwnKnight))
+    {
+        IsReachableRes = 1;
+        Stop(this script);
+    }
+    If (SourcePieceAbs == GoK_OwnPawn)
+    {
+        If (Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx])))
+        {
+            IsReachableRes = 1;
+        }
+        Else
+        {
+            IsReachableRes = ((abs((TargetIdx - SourceIdx)) == 8) Or (Board[((SourceIdx + TargetIdx) / 2)] == 0));
+        }
+        Stop(this script);
+    }
+    SEECC.Idx = ((SourceIdx * 100) + TargetIdx);
+    SEECC.SourceIdx = SourceIdx;
+    Repeat ((MovePathDelta[SEECC.Idx] - 1))
+    {
+        SEECC.SourceIdx = (SEECC.SourceIdx + MovePathStepInc[SEECC.Idx]);
+        If (Not ((Board[SEECC.SourceIdx] == 0)))
+        {
+            Stop(this script);
+        }
+    }
+    IsReachableRes = 1;
+}
+
 Define KingSafeChecks(string KSCSide)(string KSCTargetIdx)(string KSCFoundMask)(string KSCAttacked)(string KSCDefended)(string KSCDefenderPieceAbs) (warp=true)
 {
     TE.RookFired = 0;
@@ -10681,7 +10714,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     {
         If (Quiescence Or (((Depth < 4) Or (CheckedState[Depth] == 1)) Or (((QueenCountOppLocal + RookMinorCountOppLocal) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) < 5)))
         {
-            List.ReplaceItem(PickPhase, Depth, 4);
+            List.ReplaceItem(PickPhase, Depth, 6);
         }
         Else
         {
@@ -10718,16 +10751,47 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     {
         Call PickMove.Iterate(Depth)(4);
     }
+    If (PickPhase[Depth] == 4)
+    {
+        Call PrepareCurrentKillerMoves(Depth);
+        CounterMove = "";
+        If (Depth > 1)
+        {
+            CounterMove = HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))];
+        }
+        If ((((Not ((CurrentKillerMoves[1] == ""))) And (floor((CurrentKillerMoves[1] / 100)) == 0)) Or ((Not ((CurrentKillerMoves[2] == ""))) And (floor((CurrentKillerMoves[2] / 100)) == 0))) Or ((Not ((CounterMove == ""))) And (floor((CounterMove / 100)) == 0)))
+        {
+            List.ReplaceItem(PickPhase, Depth, 6);
+        }
+        If (PickPhase[Depth] == 4)
+        {
+            List.DeleteAll(CalcMovesMoveList);
+            List.DeleteAll(CalcMovesScoreList);
+            Call PickMove.TryKCMove(CurrentKillerMoves[1])(6000000)(Depth);
+            Call PickMove.TryKCMove(CurrentKillerMoves[2])(5000000)(Depth);
+            If (Depth > 1)
+            {
+                Call PickMove.TryKCMove(HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))])(4000000)(Depth);
+            }
+            Call SortMoveList(Depth);
+            List.ReplaceItem(MovesIdx, Depth, 0);
+            List.ReplaceItem(PickPhase, Depth, 5);
+        }
+    }
+    If (PickPhase[Depth] == 5)
+    {
+        Call PickMove.Iterate(Depth)(6);
+    }
     Call //("Phase 6: Full move generator for all moves not found yet");
-    If (PickPhase[(Depth + 0)] == 4)
+    If (PickPhase[(Depth + 0)] == 6)
     {
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(4);
         Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((CheckedState[(Depth + 0)] == 1) And (BoardAttackedCalculated[(Depth + 0)] == 1))));
         List.ReplaceItem(MovesIdx, Depth, 0);
-        List.ReplaceItem(PickPhase, Depth, 5);
+        List.ReplaceItem(PickPhase, Depth, 7);
     }
     Call //("Pick next move detected in phase 6, skip those applied in earlier stages");
-    If (PickPhase[(Depth + 0)] == 5)
+    If (PickPhase[(Depth + 0)] == 7)
     {
         Call PickMove.Iterate(Depth)("*");
     }
@@ -10768,6 +10832,37 @@ Define PickMove.Iterate(string Depth)(string NextPhase) (warp=true)
         }
     }
     List.ReplaceItem(PickPhase, Depth, NextPhase);
+}
+
+Define PickMove.TryKCMove(string Move)(string Score)(string Depth) (warp=true)
+{
+    KCSrc = floor((Move / 100));
+    KCTgt = floor((Move % 100));
+    If (KCSrc == 0)
+    {
+        Stop(this script);
+    }
+    If ((Depth % 2) == 1)
+    {
+        KCLegal = MovePosLookupOwnLegal[((PieceIdxLookup[abs(Board[KCSrc])] * 10000) + Move)];
+    }
+    Else
+    {
+        KCLegal = MovePosLookupOppLegal[((PieceIdxLookup[abs(Board[KCSrc])] * 10000) + Move)];
+    }
+    If ((KCSrc > 0) And ((((Board[KCSrc] * (((Depth % 2) * 2) - 1)) > 0) And (Board[KCTgt] == 0)) And (KCLegal == 1)))
+    {
+        Call IsReachable(abs(Board[KCSrc]))(KCSrc)(KCTgt);
+        If (IsReachableRes == 1)
+        {
+            Call GetNormalizedMove(Move);
+            If (Not (Operator.Contains(PickedMoves[Depth], NormalizedMoveRes)))
+            {
+                List.Add(CalcMovesMoveList, Move);
+                List.Add(CalcMovesScoreList, (Score * (1 - (2 * ((Depth % 2) == 0)))));
+            }
+        }
+    }
 }
 
 Define PrepareCurrentKillerMoves(string Depth) (warp=true)
@@ -11302,11 +11397,6 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
 {
     SEE.Depth = MoveDepth;
     SEE.TargetIdx = floor((AppliedMove[SEE.Depth] % 100));
-    If ((abs(SourcePieces[SEE.Depth]) == GoK_OwnPawn) And ((IdxToRank[SEE.TargetIdx] == 1) Or (IdxToRank[SEE.TargetIdx] == 8)))
-    {
-        SEE.Result = 0;
-        Stop(this script);
-    }
     SEE.Result = (0 - TargetPieces[SEE.Depth]);
     List.DeleteAll(SEE.TmpList3);
     List.DeleteAll(SEE.TmpList4);
@@ -11698,7 +11788,29 @@ Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
 
 Define StoreKillerMove(string Depth)(string Horizon)(string Move)(bool Malus)(bool ContinuationOnly) (warp=true)
 {
-    If ((floor((Move / 100)) == 0) Or (Board[floor((Move % 100))] == 0))
+    HistoryBonusA = ((190 * Horizon) - 108);
+    HistoryBonus = ((((HistoryBonusA + 1596) - abs((HistoryBonusA - 1596))) / 2) * (1 - (2 * Malus)));
+    If (floor((Move / 100)) == 0)
+    {
+        If ((((Move == GoK_OwnKingsideCastling) Or (Move == GoK_OwnQueensideCastling)) Or (Move == GoK_OppKingsideCastling)) Or (Move == GoK_OppQueensideCastling))
+        {
+            If ((Not (ContinuationOnly)) And (Not (Malus)))
+            {
+                IdxSub = (((Depth - 1) * 2) + 1);
+                If (Not ((KillerMoves[IdxSub] == Move)))
+                {
+                    List.ReplaceItem(KillerMoves, (IdxSub + 1), KillerMoves[IdxSub]);
+                    List.ReplaceItem(KillerMoves, IdxSub, Move);
+                }
+                If (Depth > 1)
+                {
+                    List.ReplaceItem(HistoryCounterMoves, (((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100)))), Move);
+                }
+            }
+        }
+        Stop(this script);
+    }
+    If ((((floor((Move / 100)) == 0) Or (Board[floor((Move % 100))] == 0)) And (Move == floor(Move))) And (Not (((abs(Board[floor((Move / 100))]) == GoK_OwnPawn) And (Not ((IdxToFile[floor((Move / 100))] == IdxToFile[floor((Move % 100))])))))))
     {
         If (Not (ContinuationOnly))
         {
@@ -11709,7 +11821,6 @@ Define StoreKillerMove(string Depth)(string Horizon)(string Move)(bool Malus)(bo
                 List.ReplaceItem(KillerMoves, IdxSub, Move);
             }
             Idx = (((Depth % 2) * 4200) + ((floor((Move / 100)) * 64) + floor((Move % 100))));
-            HistoryBonus = ((((((190 * Horizon) - 108) + 1596) - abs((((190 * Horizon) - 108) - 1596))) / 2) * (1 - (2 * Malus)));
             List.ReplaceItem(HistoryMoveScores, Idx, (HistoryMoveScores[Idx] + (HistoryBonus - floor((HistoryMoveScores[Idx] * (abs(HistoryBonus) / 7183))))));
             Call ProbePawnHist(Board[floor((Move / 100))])(floor((Move % 100)));
             List.ReplaceItem(HistoryPawnHist, PawnHistIdx, (HistoryPawnHist[PawnHistIdx] + ((HistoryBonus / 2) - floor((HistoryPawnHist[PawnHistIdx] * (abs((HistoryBonus / 2)) / 8192))))));
@@ -11721,7 +11832,6 @@ Define StoreKillerMove(string Depth)(string Horizon)(string Move)(bool Malus)(bo
                 }
             }
         }
-        HistoryBonus = ((((((190 * Horizon) - 108) + 1596) - abs((((190 * Horizon) - 108) - 1596))) / 2) * (1 - (2 * Malus)));
         If (floor((Move / 100)) == 0)
         {
             IdxSub = ((PieceIdxLookup[GoK_OwnKing] * 68) + floor((Move % 100)));
@@ -11796,7 +11906,6 @@ Define StoreKillerMove(string Depth)(string Horizon)(string Move)(bool Malus)(bo
     }
     If ((Not ((floor((Move / 100)) == 0))) And (Not ((Board[floor((Move % 100))] == 0))))
     {
-        HistoryBonus = ((((((190 * Horizon) - 108) + 1596) - abs((((190 * Horizon) - 108) - 1596))) / 2) * (1 - (2 * Malus)));
         Idx = (((PieceIdxLookup[abs(Board[floor((Move / 100))])] - 1) * 384) + (((PieceIdxLookup[abs(Board[floor((Move % 100))])] - 1) * 64) + floor((Move % 100))));
         List.ReplaceItem(HistoryCaptureScores, Idx, (HistoryCaptureScores[Idx] + (HistoryBonus - floor(((HistoryCaptureScores[Idx] * abs(HistoryBonus)) / 10692)))));
     }
