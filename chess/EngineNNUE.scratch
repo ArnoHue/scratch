@@ -91,7 +91,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.338 (14.07.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.340 (14.07.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -5888,39 +5888,6 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     }
 }
 
-Define IsReachable(string SourcePieceAbs)(string SourceIdx)(string TargetIdx) (warp=true)
-{
-    IsReachableRes = 0;
-    If ((SourcePieceAbs == GoK_BlackKing) Or (SourcePieceAbs == GoK_BlackKnight))
-    {
-        IsReachableRes = 1;
-        Stop(this script);
-    }
-    If (SourcePieceAbs == GoK_BlackPawn)
-    {
-        If (Not ((IdxToFile[SourceIdx] == IdxToFile[TargetIdx])))
-        {
-            IsReachableRes = 1;
-        }
-        Else
-        {
-            IsReachableRes = ((abs((TargetIdx - SourceIdx)) == 8) Or (Board[((SourceIdx + TargetIdx) / 2)] == 0));
-        }
-        Stop(this script);
-    }
-    SEECC.Idx = ((SourceIdx * 100) + TargetIdx);
-    SEECC.SourceIdx = SourceIdx;
-    Repeat ((MoveToPathDelta[SEECC.Idx] - 1))
-    {
-        SEECC.SourceIdx = (SEECC.SourceIdx + MoveToPathStepInc[SEECC.Idx]);
-        If (Not ((Board[SEECC.SourceIdx] == 0)))
-        {
-            Stop(this script);
-        }
-    }
-    IsReachableRes = 1;
-}
-
 Define IsWhiteKingCheckMate (warp=true)
 {
     IsWhiteKingCheckMateRes = 0;
@@ -6884,7 +6851,7 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
     }
     If (PickPhase[Depth] == 2)
     {
-        If (Quiescence Or (((Depth < 4) Or (CheckedState[Depth] == 1)) Or ((((WhiteQueenCountLocal + WhiteRookCountLocal) + WhiteMinorCountLocal) + ((BlackQueenCountLocal + BlackRookCountLocal) + BlackMinorCountLocal)) < 5)))
+        If (Quiescence Or ((Depth < 4) Or (CheckedState[Depth] == 1)))
         {
             List.ReplaceItem(PickPhase, Depth, 6);
         }
@@ -6936,11 +6903,11 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
         }
         If (PickPhase[Depth] == 4)
         {
-            Call PickMove.TryKCMove(CurrentKillerMoves[1])(6000000)(Depth);
-            Call PickMove.TryKCMove(CurrentKillerMoves[2])(5000000)(Depth);
-            If (Depth > 1)
+            Call PickMove.TryKCMove(CurrentKillerMoves[1])(Depth);
+            Call PickMove.TryKCMove(CurrentKillerMoves[2])(Depth);
+            If ((Depth > 1) And ((Not ((CounterMove == CurrentKillerMoves[1]))) And (Not ((CounterMove == CurrentKillerMoves[2])))))
             {
-                Call PickMove.TryKCMove(HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))])(4000000)(Depth);
+                Call PickMove.TryKCMove(HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))])(Depth);
             }
             List.ReplaceItem(PickPhase, Depth, 5);
         }
@@ -6999,31 +6966,32 @@ Define PickMove.Iterate(string Depth)(string NextPhase)(bool UpdateNNUE) (warp=t
     List.ReplaceItem(PickPhase, Depth, NextPhase);
 }
 
-Define PickMove.TryKCMove(string Move)(string Score)(string Depth) (warp=true)
+Define PickMove.TryKCMove(string Move)(string Depth) (warp=true)
 {
+    If (Move == "")
+    {
+        Stop(this script);
+    }
     KCSrc = floor((Move / 100));
-    KCTgt = floor((Move % 100));
     If (KCSrc == 0)
     {
         Stop(this script);
     }
-    If ((Depth % 2) == 1)
+    If ((Board[KCSrc] * (((Depth % 2) * 2) - 1)) > 0)
     {
-        KCLegal = MoveToHash[(60000 + ((PieceIdxLookup[abs(Board[KCSrc])] * 10000) + Move))];
-    }
-    Else
-    {
-        KCLegal = MoveToHash[((PieceIdxLookup[abs(Board[KCSrc])] * 10000) + Move)];
-    }
-    If ((KCSrc > 0) And (((Board[KCSrc] * (((Depth % 2) * 2) - 1)) > 0) And ((Board[KCTgt] == 0) And (Not ((KCLegal == 0))))))
-    {
-        Call IsReachable(abs(Board[KCSrc]))(KCSrc)(KCTgt);
-        If (IsReachableRes == 1)
+        KCLegal = MoveToHash[((60000 * (Depth % 2)) + ((PieceIdxLookup[abs(Board[KCSrc])] * 10000) + Move))];
+        If (Not ((KCLegal == 0)))
         {
             Call GetNormalizedMove(Move);
             If (Not (Operator.Contains(PickedMoves[Depth], NormalizedMoveRes)))
             {
-                Call AddMoveToList(Move)(Depth);
+                List.DeleteAll(CalcMovesMoveList);
+                List.DeleteAll(CalcMovesScoreList);
+                Call GenerateMovesForSource(Depth)(KCSrc)((1 == 0))((1 == 0));
+                If List.ContainsItem(CalcMovesMoveList, Move)
+                {
+                    Call AddMoveToList(Move)(Depth);
+                }
             }
         }
     }
@@ -8053,7 +8021,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
             {
                 CurrentValue = 1;
             }
-            If (SearchedMovesCount[Depth] > 1)
+            If (SearchedMovesCount[Depth] > CurrentValue)
             {
                 Reduction = floor(((1 + ((ln(SearchedMovesCount[Depth]) * ln((Horizon + SearchExtension[Depth]))) / 2)) * 128));
                 If (1 == 1)
@@ -9766,3 +9734,4 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
         }
     }
 }
+
