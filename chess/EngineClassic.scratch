@@ -90,7 +90,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9250 (14.07.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (15.07.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -872,7 +872,7 @@ Define ABSearch_DetectCheckmatesAndDraws(string Depth)(bool Quiescence)(string H
             Stop(this script);
         }
     }
-    If ((Depth > 1) And (IsInNullMove == 0))
+    If ((Depth > 1) And (Not ((AppliedMove[(Depth - 1)] == 0))))
     {
         Call //("Rule of 50 moves");
         If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > (99 - 0))
@@ -885,16 +885,11 @@ Define ABSearch_DetectCheckmatesAndDraws(string Depth)(bool Quiescence)(string H
         If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 5)
         {
             Count1 = 1;
-            Count2 = 0;
             If List.ContainsItem(PreviousBoardHash, CurrentBoardHash)
             {
                 Idx = (Depth - 2);
-                Repeat Until ((Idx < 1) Or ((Count1 > 2) Or (Count2 > 0)))
+                Repeat Until ((Idx < 1) Or (Count1 > 2))
                 {
-                    If (AppliedMove[Idx] == 0)
-                    {
-                        Count2 += 1;
-                    }
                     If (CurrentBoardHash == PreviousBoardHash[Idx])
                     {
                         Count1 += 1;
@@ -905,7 +900,7 @@ Define ABSearch_DetectCheckmatesAndDraws(string Depth)(bool Quiescence)(string H
             If List.ContainsItem(BoardHistoryHash, CurrentBoardHash)
             {
                 Idx = ((List.Length(BoardHistoryHash) - 1) + (Depth % 2));
-                Repeat Until ((Idx < 1) Or ((Count1 > 2) Or (Count2 > 0)))
+                Repeat Until ((Idx < 1) Or (Count1 > 2))
                 {
                     If (CurrentBoardHash == BoardHistoryHash[Idx])
                     {
@@ -1150,7 +1145,7 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
                     Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
                     If (((Not ((SourcePieces[Depth] == GoK_OwnPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_OppPawn))) Or (Rank > 3)))
                     {
-                        FutilityMargin = (Horizon * 150);
+                        FutilityMargin = (Horizon * 120);
                     }
                 }
             }
@@ -2021,6 +2016,7 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                 {
                     If (QuiescenceHorizon > 0)
                     {
+                        IsInNullMove += 1;
                         Call ClearMoveList((Depth + 0));
                         Call AddMoveToList(0)((Depth + 0));
                         List.ReplaceItem(MovesIdx, (Depth + 0), 1);
@@ -2031,6 +2027,7 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHo
                         Call ABSearch_Main((Depth + 2))(InitialDeepening)((QuiescenceHorizon - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
                         Call SkipSearchFrameExit((Depth + 1));
                         Call RevertMove(Depth);
+                        IsInNullMove += -1;
                         If (Not ((MinMaxResults[(Depth + 2)] == DrawByRepetitionEval)))
                         {
                             If ((((Depth % 2) == 1) And (MinMaxResults[(Depth + 2)] < Alphas[Depth])) Or (((Depth % 2) == 0) And (MinMaxResults[(Depth + 2)] > Betas[Depth])))
@@ -2237,12 +2234,12 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
         If ((((Horizon + PlyExtension[Depth]) > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And ((1 == 0) Or (((QueenCountOppLocal + RookMinorCountOppLocal) + (QueenCounttOwnLocal + RookMinorCounttOwnLocal)) > 0)))
         {
             Reduction = 0;
-            CurrentValue = ((Depth == 1) + (((Betas[Depth] - Alphas[Depth]) == 1) + (HashMove[Depth] == "")));
+            CurrentValue = ((Depth == 1) + ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) + (HashMove[Depth] == "")));
             If (CurrentValue == 0)
             {
                 CurrentValue = 1;
             }
-            If (SearchedMovesCount[Depth] > CurrentValue)
+            If (SearchedMovesCount[Depth] > 1)
             {
                 Reduction = floor((128 * (1 + ((ln((Horizon + PlyExtension[Depth])) * ln(SearchedMovesCount[Depth])) / 2))));
                 If (1 == 1)
@@ -2436,9 +2433,10 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
         }
         AttackMask = 0;
         CurrentPieceAbs = abs(AMI.SourcePiece);
+        AMI.PieceIdx = PieceIdxLookup[CurrentPieceAbs];
         If ((CurrentPieceAbs > 0) And (CurrentPieceAbs < GoK_OwnKing))
         {
-            AttackMask = AttackTypeMaskWeights[PieceIdxLookup[CurrentPieceAbs]];
+            AttackMask = AttackTypeMaskWeights[AMI.PieceIdx];
         }
         If (AMI.SourcePiece > 0)
         {
@@ -2447,9 +2445,9 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             {
                 List.ReplaceItem(BoardAttackedByOwnPiece, (TargetIdx + 0), SourceIdx);
             }
-            If (BoardAttackerByOwnType[(((PieceIdxLookup[CurrentPieceAbs] - 1) * 64) + TargetIdx)] == 0)
+            If (BoardAttackerByOwnType[(((AMI.PieceIdx - 1) * 64) + TargetIdx)] == 0)
             {
-                List.ReplaceItem(BoardAttackerByOwnType, (((PieceIdxLookup[CurrentPieceAbs] - 1) * 64) + TargetIdx), SourceIdx);
+                List.ReplaceItem(BoardAttackerByOwnType, (((AMI.PieceIdx - 1) * 64) + TargetIdx), SourceIdx);
             }
             If (AMI.Attacked < 9)
             {
@@ -2474,9 +2472,9 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
                 {
                     List.ReplaceItem(BoardAttackedByOppPiece, (TargetIdx + 0), SourceIdx);
                 }
-                If (BoardAttackerByOppType[(((PieceIdxLookup[CurrentPieceAbs] - 1) * 64) + TargetIdx)] == 0)
+                If (BoardAttackerByOppType[(((AMI.PieceIdx - 1) * 64) + TargetIdx)] == 0)
                 {
-                    List.ReplaceItem(BoardAttackerByOppType, (((PieceIdxLookup[CurrentPieceAbs] - 1) * 64) + TargetIdx), SourceIdx);
+                    List.ReplaceItem(BoardAttackerByOppType, (((AMI.PieceIdx - 1) * 64) + TargetIdx), SourceIdx);
                 }
                 If (AMI.Attacked < 9)
                 {
@@ -4559,6 +4557,8 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                         }
                     }
                 }
+                Rank = IdxToRank[TE.Idx];
+                File = IdxToFile[TE.Idx];
                 XRayCount = 0;
                 BXi = 1;
                 Repeat (List.Length(EvalPiecesIdx_Pawns))
@@ -6255,9 +6255,9 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                         If (Defended > 0)
                         {
                             EvalThreatsResult += (3 * Factor);
-                            If (1 == 0)
+                            If (Eval.DebugLog == 1)
                             {
-                                Call TaperedEval.AddIdentical(3)("Eval.Threats.MobilityRestrictions")(TE.Idx)(Side)("");
+                                Call LogPVEvalLine("Eval.Threats.MobilityRestrictions")((3 * Factor))((3 * Factor))(TE.Idx)(Side)("");
                             }
                         }
                     }
@@ -6416,8 +6416,8 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                 Call LogPVEvalLine("Eval.Threats.KingDanger.AttacksOnWeakSquareCount .PreScale")((86 * KingRingAttacksOnWeakCount[(Side + 0)]))("")("")(Side)("");
                 Call LogPVEvalLine("Eval.Threats.KingDanger.KnightDefenders.PreScale")((-47 * (KingRingAttacksKnightDefenders[(Side + 0)] > 0)))("")("")(Side)("");
                 Call LogPVEvalLine("Eval.Threats.KingDanger.BishopDefenders.PreScale")((-18 * KingRingAttacksBishopDefenders[(Side + 0)]))("")("")(Side)("");
-                Call LogPVEvalLine("Eval.Threats.KingDanger.UnsafeChecks.PreScale")((65 * KingAttackUnsafeChecks[(Side + 0)]))("")("")(Side)("");
-                Call LogPVEvalLine("Eval.Threats.KingDanger.SliderBlockers.PreScale")((65 * KingSliderBlockers[(Side + 0)]))("")("")(Side)("");
+                Call LogPVEvalLine("Eval.Threats.KingDanger.UnsafeChecks.PreScale")((74 * KingAttackUnsafeChecks[(Side + 0)]))("")("")(Side)("");
+                Call LogPVEvalLine("Eval.Threats.KingDanger.SliderBlockers.PreScale")((49 * KingSliderBlockers[(Side + 0)]))("")("")(Side)("");
                 Call LogPVEvalLine("Eval.Threats.KingDanger.SafeChecks.MetaData.QRBK")(MoveToZeroPadStr[(KingAttackSafeChecks[(Side + 0)] + 1)])("")("")(Side)("");
             }
             If (KingDanger > 50)
@@ -12512,4 +12512,3 @@ Define _ClearLists (warp=true)
     List.DeleteItem(HistoryContinuation4Opp, all);
     List.DeleteItem(HistoryContinuation2Opp, all);
 }
-
