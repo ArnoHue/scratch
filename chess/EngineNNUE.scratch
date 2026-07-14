@@ -91,7 +91,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.340 (14.07.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (15.07.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -3572,6 +3572,7 @@ Define GetBoardEval(string Depth) (warp=true)
             }
             List.ReplaceItem(BoardEval, (Depth + 0), (BoardEval[(Depth + 0)] + Operator.Round((CorrSum / 512))));
         }
+        List.ReplaceItem(BoardEval, Depth, Operator.Round(((BoardEval[Depth] * (199 - BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)])) / 199)));
     }
 }
 
@@ -6413,7 +6414,7 @@ Define NNUE_Init (warp=true)
     NNUE_HiddenSize = 512;
     NNUE_HiddenPackedSize = 256;
     List.DeleteAll(NNUE_Accumulator);
-    Repeat (((NNUE_HiddenPackedSize * 2) * 50))
+    Repeat (((NNUE_HiddenPackedSize * 2) * MaxSearchDepthStackFrames))
     {
         List.Add(NNUE_Accumulator, 0);
     }
@@ -8042,7 +8043,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
                 {
                     If Cutnode
                     {
-                        Reduction += 64;
+                        Reduction += 128;
                     }
                 }
                 If (1 == 1)
@@ -8059,7 +8060,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
                     Call GetImproving(Depth);
                     If (Not ((IsImproving == 0)))
                     {
-                        Reduction += -64;
+                        Reduction += -128;
                     }
                 }
                 Reduction = floor((Reduction / 128));
@@ -8293,20 +8294,20 @@ Define Search_DetectDraw(string Depth)(string Horizon) (warp=true)
 
 Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
 {
-    If ((Depth > 1) And (IsInNullMove == 0))
+    If ((Depth > 1) And (Not ((AppliedMove[(Depth - 1)] == 0))))
     {
+        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 99)
+        {
+            List.ReplaceItem(SearchEvalResults, Depth, DrawByRepetitionEval);
+            Stop(this script);
+        }
         Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures. When repetition is possible, history tables are searched for same board hash, when found we verify if the occurred for the same side.");
         Count = 1;
-        Count2 = 0;
         If List.ContainsItem(PreviousBoardHash, (CurrentBoardHash + 0))
         {
             Idx = (Depth - 2);
             Repeat Until ((Idx < 1) Or (Count > 2))
             {
-                If (AppliedMove[(Idx + 0)] == 0)
-                {
-                    Count2 += 1;
-                }
                 If ((CurrentBoardHash + 0) == PreviousBoardHash[(Idx + 0)])
                 {
                     Count += 1;
@@ -8452,7 +8453,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                     Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
                     If (((Not ((SourcePieces[Depth] == GoK_BlackPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_WhitePawn))) Or (Rank > 3)))
                     {
-                        FutilityMargin = (Horizon * 150);
+                        FutilityMargin = (Horizon * 120);
                     }
                 }
             }
@@ -8730,6 +8731,7 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
                     {
                         If ((((Depth % 2) == 1) And ((CalibratedEvalResult + Margin) < Alphas[Depth])) Or (((Depth % 2) == 0) And ((CalibratedEvalResult - Margin) > Betas[Depth])))
                         {
+                            IsInNullMove += 1;
                             Call ClearMoveList(Depth);
                             Call AddMoveToList(0)(Depth);
                             List.ReplaceItem(MovesIdx, Depth, 1);
@@ -8740,6 +8742,7 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(string QuiescenceDep
                             Call SearchImpl((Depth + 2))(InitialDeepening)((QuiescenceDepth - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
                             Call SkipSearchFrameExit((Depth + 1));
                             Call RevertMove(Depth);
+                            IsInNullMove += -1;
                             If (Not ((SearchEvalResults[(Depth + 2)] == DrawByRepetitionEval)))
                             {
                                 If ((((Depth % 2) == 1) And (SearchEvalResults[(Depth + 2)] < Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchEvalResults[(Depth + 2)] > Betas[Depth])))
@@ -9734,4 +9737,3 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
         }
     }
 }
-
