@@ -3854,6 +3854,21 @@ Define EnterExecution (warp=false)
 Define Evaluate(string Depth)(bool FullEval) (warp=true)
 {
     EvaluateRes = "";
+    If ((KingIdxOpp == "") And (KingIdxtOwn == ""))
+    {
+        EvaluateRes = 0;
+        Stop(this script);
+    }
+    If (KingIdxOpp == "")
+    {
+        EvaluateRes = (100000 - (List.Length(BoardHistoryFiftyMoves) - 1));
+        Stop(this script);
+    }
+    If (KingIdxtOwn == "")
+    {
+        EvaluateRes = (-100000 + (List.Length(BoardHistoryFiftyMoves) - 1));
+        Stop(this script);
+    }
     If (Depth == 0)
     {
         Call EvaluateBoard;
@@ -4600,6 +4615,18 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                 Count1 = PawnCountOpp[(File + 0)];
                 Count2 = PawnCountOwn[(File + 0)];
                 KingFile = IdxToFile[KingIdxOpp];
+            }
+            If (CurrentPiece > 0)
+            {
+                ME.OppKingFile = IdxToFile[KingIdxOpp];
+            }
+            Else
+            {
+                ME.OppKingFile = IdxToFile[KingIdxtOwn];
+            }
+            If (abs((File - ME.OppKingFile)) < 2)
+            {
+                Call TaperedEval.Add((8 * Factor))(0)("Eval.MajorsMinors.RookOnKingRing")(TE.Idx)("")("");
             }
             If ((Count1 == 0) And (Count2 == 0))
             {
@@ -6121,11 +6148,24 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                 EvalPieceIdx += 1;
             }
             IdxOuter = (((KingIdx - 1) * 10) + 1);
+            TE.KnightDefendsKing = 0;
             Repeat (9)
             {
                 Idx = KingRings[(IdxOuter + 0)];
                 If (Not ((Idx == -1)))
                 {
+                    If (Side == 1)
+                    {
+                        TE.KDK.Attacker = BoardAttackerByOwnType[(64 + Idx)];
+                    }
+                    Else
+                    {
+                        TE.KDK.Attacker = BoardAttackerByOppType[(64 + Idx)];
+                    }
+                    If (TE.KDK.Attacker > 0)
+                    {
+                        TE.KnightDefendsKing = 1;
+                    }
                     If (((Side == 1) And ((BoardAttackedByOwnTypeMask[(Idx + 0)] % 10) < 2)) Or ((Side == 2) And ((BoardAttackedByOppTypeMask[(Idx + 0)] % 10) < 2)))
                     {
                         If (Side == 1)
@@ -6182,13 +6222,13 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                                 }
                                 TE.TypeIdx += 1;
                             }
-                            If (DefenderPieceAbs == GoK_OwnBishop)
+                            If ((floor(((((Side == 1) * BoardAttackedByOwnTypeMask[Idx]) + ((Side == 2) * BoardAttackedByOppTypeMask[Idx])) / 100)) % 10) > 0)
                             {
                                 List.ReplaceItem(KingRingAttacksBishopDefenders, (Side + 0), (KingRingAttacksBishopDefenders[(Side + 0)] + 1));
                             }
                             Else
                             {
-                                If (DefenderPieceAbs == GoK_OwnKnight)
+                                If ((floor(((((Side == 1) * BoardAttackedByOwnTypeMask[Idx]) + ((Side == 2) * BoardAttackedByOppTypeMask[Idx])) / 10)) % 10) > 0)
                                 {
                                     List.ReplaceItem(KingRingAttacksKnightDefenders, (Side + 0), (KingRingAttacksKnightDefenders[(Side + 0)] + 1));
                                 }
@@ -6198,6 +6238,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                 }
                 IdxOuter += 1;
             }
+            KingDanger += (-50 * TE.KnightDefendsKing);
             TE.Idx = 1;
             Repeat (64)
             {
@@ -6236,17 +6277,6 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                 }
                 If (Attacked > 0)
                 {
-                    If (Not (((AttackerPieceAbs == GoK_OwnPawn) Or ((Attacked > 1) And (Defended < 2)))))
-                    {
-                        If (Defended > 0)
-                        {
-                            EvalThreatsResult += (3 * Factor);
-                            If (Eval.DebugLog == 1)
-                            {
-                                Call LogPVEvalLine("Eval.Threats.MobilityRestrictions")((3 * Factor))((3 * Factor))(TE.Idx)(Side)("");
-                            }
-                        }
-                    }
                     Call KingSafeChecks(Side)(TE.Idx)(AttackMask)(Attacked)(Defended)(abs(DefenderPiece));
                 }
                 TE.Idx += 1;
@@ -7996,7 +8026,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
                 If (PersistedBoardAttackedSnapshot[(IdxSub + 0)] > 0)
                 {
                     ThreatenedByPieceAbs = abs(Board[PersistedBoardAttackerSnapshot[(IdxSub + 0)]]);
-                    If (((CurrentPieceAbs == GoK_OwnQueen) And (ThreatenedByPieceAbs < GoK_OwnQueen)) Or (((CurrentPieceAbs == GoK_OwnRook) And (ThreatenedByPieceAbs < GoK_OwnRook)) Or (ThreatenedByPieceAbs == GoK_OwnPawn)))
+                    If (((CurrentPieceAbs == GoK_OwnQueen) And (ThreatenedByPieceAbs < GoK_OwnQueen)) Or (((CurrentPieceAbs == GoK_OwnRook) And (ThreatenedByPieceAbs < GoK_OwnRook)) Or (((CurrentPieceAbs == GoK_OwnKnight) Or (CurrentPieceAbs == GoK_OwnBishop)) And (ThreatenedByPieceAbs == GoK_OwnPawn))))
                     {
                         ThreatenedByPieceAbs = 0;
                         IdxSub = (((Depth - 1) * 100) + ToIdx);
