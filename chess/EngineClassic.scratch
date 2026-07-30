@@ -76,7 +76,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (29.07.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (30.07.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -837,12 +837,6 @@ Define ABSearch_DetectCheckmatesAndDraws(string Depth)(bool Quiescence)(string H
     If ((Depth > 1) And (IsInNullMove == 0))
     {
         Call //("Rule of 50 moves");
-        If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > (99 - 0))
-        {
-            List.ReplaceItem(MinMaxResults, (Depth + 0), DrawByRepetitionEval);
-            List.ReplaceItem(ScoreTypes, (Depth + 0), "E");
-            Stop(this script);
-        }
         Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures, and the history tables for board hash. Only then we count hash occurrences for same side.");
         If (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 5)
         {
@@ -1071,12 +1065,8 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
         {
             If ((Depth > 1) And (CheckedState[Depth] == 1))
             {
-                Call SEE(Depth)((IsScratch3 == 0));
-                If ((((Depth % 2) == 1) And (Not ((SEE.Result < 0)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 0)))))
-                {
-                    List.ReplaceItem(PlyExtension, Depth, 1);
-                    Profile_Ext += 1;
-                }
+                List.ReplaceItem(PlyExtension, Depth, 1);
+                Profile_Ext += 1;
             }
         }
     }
@@ -1842,50 +1832,58 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         If (((IsMinMaxTimeout == 0) And (Depth > 1)) And (ExcludedMove == ""))
         {
             Call //("Store evaluations, hash moves, attack tables, check state, mobility, ... to transposition table");
+            TT.BestMoveStore = BestMoves[Depth];
+            If (TT.BestMoveStore == "")
+            {
+                TT.BestMoveStore = TTEmptyVal;
+            }
             If Quiescence
             {
                 Call IsQuiescentCheckCond(Depth);
-                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(TTEmptyVal)(-1)(IsQuiescentCheckRes);
+                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(TT.BestMoveStore)(ScoreTypes[Depth])(TTEmptyVal)(-1)(IsQuiescentCheckRes);
             }
             Else
             {
-                CorrDelta = (MinMaxResults[(Depth + 0)] - BoardEval[(Depth + 0)]);
-                CorrF = ((2 * (Depth % 2)) - 1);
-                ImpVal = (CorrDelta * CorrF);
-                BM = BestMoves[(Depth + 0)];
-                If ((CheckedState[(Depth + 0)] == 0) And (((BM == "") And (Not ((ImpVal > 0)))) Or ((Not ((BM == ""))) And ((Board[floor((BM % 100))] == 0) And (ImpVal > 0)))))
+                If (Not ((BoardEval[(Depth + 0)] == "")))
                 {
-                    CorrPawnKey = CurrentBoardHash2;
-                    Call GetPiecePosHash(GoK_OwnKing)(KingIdxtOwn);
-                    CorrPawnKey = (CorrPawnKey - PiecePosHash);
-                    Call GetPiecePosHash(GoK_OppKing)(KingIdxOpp);
-                    CorrPawnKey = (CorrPawnKey - PiecePosHash);
-                    CorrIdx = ((((Depth % 2) * 100000) + (CorrPawnKey % 100000)) + 1);
-                    CorrNPKey = (CurrentBoardHash - CurrentBoardHash2);
-                    CorrNPIdx = ((((Depth % 2) * 100000) + (CorrNPKey % 100000)) + 1);
-                    CorrBonus = ((CorrDelta * Horizon) / 4);
-                    If (CorrBonus > 249)
+                    CorrDelta = (MinMaxResults[(Depth + 0)] - BoardEval[(Depth + 0)]);
+                    CorrF = ((2 * (Depth % 2)) - 1);
+                    ImpVal = (CorrDelta * CorrF);
+                    BM = BestMoves[(Depth + 0)];
+                    If ((CheckedState[(Depth + 0)] == 0) And (((BM == "") And (Not ((ImpVal > 0)))) Or ((Not ((BM == ""))) And ((Board[floor((BM % 100))] == 0) And (ImpVal > 0)))))
                     {
-                        CorrBonus = 249;
+                        CorrPawnKey = CurrentBoardHash2;
+                        Call GetPiecePosHash(GoK_OwnKing)(KingIdxtOwn);
+                        CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                        Call GetPiecePosHash(GoK_OppKing)(KingIdxOpp);
+                        CorrPawnKey = (CorrPawnKey - PiecePosHash);
+                        CorrIdx = ((((Depth % 2) * 100000) + (CorrPawnKey % 100000)) + 1);
+                        CorrNPKey = (CurrentBoardHash - CurrentBoardHash2);
+                        CorrNPIdx = ((((Depth % 2) * 100000) + (CorrNPKey % 100000)) + 1);
+                        CorrBonus = ((CorrDelta * Horizon) / 4);
+                        If (CorrBonus > 249)
+                        {
+                            CorrBonus = 249;
+                        }
+                        If (CorrBonus < -249)
+                        {
+                            CorrBonus = -249;
+                        }
+                        If (Not ((CorrHistKey[CorrIdx] == CorrPawnKey)))
+                        {
+                            List.ReplaceItem(CorrHistVal, CorrIdx, 0);
+                            List.ReplaceItem(CorrHistKey, CorrIdx, CorrPawnKey);
+                        }
+                        List.ReplaceItem(CorrHistVal, CorrIdx, ((CorrHistVal[CorrIdx] + CorrBonus) - floor(((CorrHistVal[CorrIdx] * abs(CorrBonus)) / 1024))));
+                        If (Not ((CorrHistNPKey[CorrNPIdx] == CorrNPKey)))
+                        {
+                            List.ReplaceItem(CorrHistNP, CorrNPIdx, 0);
+                            List.ReplaceItem(CorrHistNPKey, CorrNPIdx, CorrNPKey);
+                        }
+                        List.ReplaceItem(CorrHistNP, CorrNPIdx, ((CorrHistNP[CorrNPIdx] + CorrBonus) - floor(((CorrHistNP[CorrNPIdx] * abs(CorrBonus)) / 1024))));
                     }
-                    If (CorrBonus < -249)
-                    {
-                        CorrBonus = -249;
-                    }
-                    If (Not ((CorrHistKey[CorrIdx] == CorrPawnKey)))
-                    {
-                        List.ReplaceItem(CorrHistVal, CorrIdx, 0);
-                        List.ReplaceItem(CorrHistKey, CorrIdx, CorrPawnKey);
-                    }
-                    List.ReplaceItem(CorrHistVal, CorrIdx, ((CorrHistVal[CorrIdx] + CorrBonus) - floor(((CorrHistVal[CorrIdx] * abs(CorrBonus)) / 1024))));
-                    If (Not ((CorrHistNPKey[CorrNPIdx] == CorrNPKey)))
-                    {
-                        List.ReplaceItem(CorrHistNP, CorrNPIdx, 0);
-                        List.ReplaceItem(CorrHistNPKey, CorrNPIdx, CorrNPKey);
-                    }
-                    List.ReplaceItem(CorrHistNP, CorrNPIdx, ((CorrHistNP[CorrNPIdx] + CorrBonus) - floor(((CorrHistNP[CorrNPIdx] * abs(CorrBonus)) / 1024))));
                 }
-                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(BestMoves[Depth])(ScoreTypes[Depth])(TTEmptyVal)(Horizon)(TTEmptyVal);
+                Call TTStoreNode(CurrentBoardHash)(Depth)(MinMaxResults[Depth])(TT.BestMoveStore)(ScoreTypes[Depth])(TTEmptyVal)(Horizon)(TTEmptyVal);
             }
         }
         If (MovesIdxBestMove[Depth] > 0)
@@ -4065,11 +4063,11 @@ Define EvaluateDrawScaling(string Depth) (warp=true)
         }
         PT.Side += 1;
     }
-    If (1 == 0)
+    If (1 == 1)
     {
         If (PT.FiftyMoveCount > 0)
         {
-            EvaluateRes = Operator.Round(((EvaluateRes * (199 - PT.FiftyMoveCount)) / 199));
+            EvaluateRes = Operator.Round(((EvaluateRes * (211 - PT.FiftyMoveCount)) / 211));
         }
     }
     If (((PT.PiecesNPOwn + PawnCounttOwnLocal) == 0) And (PT.NonPawnMat > 450))
@@ -11891,7 +11889,7 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
         SEE.Depth += -1;
     }
     SEE.SwapValue = (abs(TargetPieces[MoveDepth]) - SEE.RunningGain);
-    If (TargetPieces[MoveDepth] < 0)
+    If ((MoveDepth % 2) == 1)
     {
         SEE.Result = SEE.SwapValue;
     }
