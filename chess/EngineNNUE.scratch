@@ -77,7 +77,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (30.07.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (01.08.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -2285,7 +2285,7 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         }
         If (IsClassicEndgameEval == 0)
         {
-            Call NNUE_EnsureComputed(Depth);
+            Call NNUE_OnEvaluate(Depth);
             Call NNUE_Public_Evaluate((Depth + 1));
             EvaluationRes = Operator.Round(NNUE_EvalRes);
         }
@@ -3434,7 +3434,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         If (((IdxDeepening > 4) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
-            AWDelta = Operator.Round((20 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 2400)));
+            AWDelta = Operator.Round((40 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 2400)));
             AWAlpha = Operator.Round((GBM.Evaluation - AWDelta));
             AWBeta = Operator.Round((GBM.Evaluation + AWDelta));
         }
@@ -3814,30 +3814,9 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         {
             GMS.TargetPiece = (0 - SourcePieceParam);
         }
-        MvvLvaScore = ((PieceIdxLookup[abs(GMS.TargetPiece)] * 100000) + ((7 - PieceIdxLookup[abs(SourcePieceParam)]) * 1000));
-        If (IsScratch3 == 1)
-        {
-            Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((PieceIdxLookup[abs(GMS.TargetPiece)] - 1) * 64) + ToIdx));
-            MoveScoreRes = (((7000000 + (100000 * PieceIdxLookup[abs(GMS.TargetPiece)])) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
-        }
-        Call ClearMoveList((Depth + 2));
-        Call AddMoveToList(Move)((Depth + 2))(0);
-        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-        Call ApplyMoveLight((Depth + 2));
-        Call SEE((Depth + 2))((1 == 0));
-        Call RevertMoveLight((Depth + 2));
         Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((PieceIdxLookup[abs(GMS.TargetPiece)] - 1) * 64) + ToIdx));
-        If ((((Depth % 2) == 1) And (Not ((SEE.Result < -50)))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > 50)))))
-        {
-            MoveScoreRes = (((7000000 + (100000 * PieceIdxLookup[abs(GMS.TargetPiece)])) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
-        }
-        Else
-        {
-            MoveScoreRes = (((1000000 + (100000 * PieceIdxLookup[abs(GMS.TargetPiece)])) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
-        }
+        MoveScoreRes = (((7000000 + (6 * abs(GMS.TargetPiece))) + HistoryCaptureScores[Idx2]) * Factor);
+        Stop(this script);
     }
     Call //("4: Killer moves");
     Call PrepareCurrentKillerMoves(Depth);
@@ -6564,19 +6543,6 @@ Define NNUE_DecToHex(string CSV) (warp=true)
     }
 }
 
-Define NNUE_EnsureComputed(string Depth) (warp=true)
-{
-    If (Depth > 0)
-    {
-        If (NNUE_AccDirty[Depth] == 1)
-        {
-            Call NNUE_EnsureComputed((Depth - 1));
-            Call UpdateNNUEPostApplyMove(Depth);
-            List.ReplaceItem(NNUE_AccDirty, Depth, 0);
-        }
-    }
-}
-
 Define NNUE_Evaluate(string Side)(string Depth) (warp=true)
 {
     NNUE_EvalRes = (NNUE_OutputBias[1] + 0);
@@ -6684,11 +6650,11 @@ Define NNUE_Init (warp=true)
         List.Add(NNUE_Accumulator, 0);
     }
     List.DeleteAll(NNUE_Accumulator_MetaState);
-    List.DeleteAll(NNUE_AccDirty);
+    List.DeleteAll(NNUE_AccStackState);
     Repeat (MaxSearchDepthStackFrames)
     {
         List.Add(NNUE_Accumulator_MetaState, 0);
-        List.Add(NNUE_AccDirty, 0);
+        List.Add(NNUE_AccStackState, 0);
     }
     Idx = 1;
     Repeat (NNUE_HiddenPackedSize)
@@ -6754,6 +6720,15 @@ Define NNUE_Init (warp=true)
     Call NNUE_Public_Evaluate(1);
 }
 
+Define NNUE_IsSpecialMove(string Depth) (warp=true)
+{
+    NNUE_IsSpecialMoveRes = 0;
+    If ((floor((AppliedMove[Depth] / 100)) == 0) Or ((Not ((PromotionPieces[Depth] == 0))) Or ((abs(SourcePieces[Depth]) == GoK_BlackPawn) And ((Not ((TargetPieces[Depth] == 0))) And (Not ((TargetPiecesIdx[Depth] == floor((AppliedMove[Depth] % 100)))))))))
+    {
+        NNUE_IsSpecialMoveRes = 1;
+    }
+}
+
 Define NNUE_LoadList(string Data) (warp=true)
 {
     List.DeleteAll(NNUE_ListRes_1);
@@ -6782,20 +6757,51 @@ Define NNUE_LoadList(string Data) (warp=true)
     }
 }
 
+Define NNUE_OnApplyMove(string Depth) (warp=true)
+{
+    Call NNUE_IsSpecialMove(Depth);
+    If (NNUE_IsSpecialMoveRes == 1)
+    {
+        Call NNUE_OnEvaluate((Depth - 1));
+        Call UpdateNNUEPostApplyMove(Depth);
+        List.ReplaceItem(NNUE_AccStackState, Depth, 0);
+    }
+    Else
+    {
+        List.ReplaceItem(NNUE_AccStackState, Depth, 1);
+    }
+}
+
+Define NNUE_OnEvaluate(string Depth) (warp=true)
+{
+    If (Depth > 0)
+    {
+        If (NNUE_AccStackState[Depth] == 1)
+        {
+            Call NNUE_OnEvaluate((Depth - 1));
+            Call UpdateNNUEPostApplyMove(Depth);
+            List.ReplaceItem(NNUE_AccStackState, Depth, 0);
+        }
+    }
+}
+
+Define NNUE_OnInitStack(string Depth) (warp=true)
+{
+    List.ReplaceItem(NNUE_AccStackState, Depth, 1);
+}
+
 Define NNUE_Public_Evaluate(string Depth) (warp=true)
 {
     Call NNUE_Evaluate((Depth % 2))((Depth - 1));
     If (NNUE_EvalRes > AbsMinCheckmateEval)
     {
         NNUE_EvalRes = AbsMinCheckmateEval;
-        Stop(this script);
     }
     Else
     {
         If (NNUE_EvalRes < (0 - AbsMinCheckmateEval))
         {
             NNUE_EvalRes = (0 - AbsMinCheckmateEval);
-            Stop(this script);
         }
     }
     If ((Depth % 2) == 0)
@@ -6826,6 +6832,7 @@ Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)
     }
     If (AppliedMove[Depth] == 0)
     {
+        Call NNUE_OnEvaluate((Depth - 1));
         NNUE.Idx1 = ((NNUE_HiddenPackedSize * 2) * (Depth - 1));
         NNUE.TargetIdx = ((NNUE_HiddenPackedSize * 2) * Depth);
         NNUE_Idx = 1;
@@ -6834,6 +6841,7 @@ Define NNUE_Public_OnMakeMoveStop(string Depth)(string Move)(string SourcePiece)
             List.ReplaceItem(NNUE_Accumulator, (NNUE.TargetIdx + NNUE_Idx), NNUE_Accumulator[(NNUE.Idx1 + NNUE_Idx)]);
             NNUE_Idx += 1;
         }
+        List.ReplaceItem(NNUE_AccStackState, Depth, 0);
         Stop(this script);
     }
     Call NNUE_StartBulkActivation(Depth);
@@ -8096,13 +8104,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
             }
             Else
             {
-                List.ReplaceItem(NNUE_AccDirty, Depth, 1);
-                If ((floor((AppliedMove[Depth] / 100)) == 0) Or ((Not ((PromotionPieces[Depth] == 0))) Or ((abs(SourcePieces[Depth]) == GoK_BlackPawn) And ((Not ((TargetPieces[Depth] == 0))) And (Not ((TargetPiecesIdx[Depth] == floor((AppliedMove[Depth] % 100)))))))))
-                {
-                    Call NNUE_EnsureComputed((Depth - 1));
-                    Call UpdateNNUEPostApplyMove(Depth);
-                    List.ReplaceItem(NNUE_AccDirty, Depth, 0);
-                }
+                Call NNUE_OnApplyMove(Depth);
                 Call Search_DetectExtensions(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Cutnode)(ExcludedMove);
                 If (SearchExtension[Depth] == "*")
                 {
@@ -8453,7 +8455,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
         {
             Call //("LMR search");
             Reduction = 0;
-            CurrentValue = (3 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1)))));
+            CurrentValue = (1 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1)))));
             If (CurrentValue == 0)
             {
                 CurrentValue = 1;
@@ -8979,6 +8981,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
 
 Define Search_InitStack(string Depth)(bool Quiescence) (warp=true)
 {
+    Call NNUE_OnInitStack(Depth);
     Call //("Initialize local variables or forward state from previous ply");
     If (Depth == 1)
     {
@@ -10037,7 +10040,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Checked), Checked);
         }
         HorizonLoc = TTNodeEntry[(HashBucket + TTNodeColIdx.Horizon)];
-        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And (((Not ((Horizon < HorizonLoc))) Or (HorizonLoc == EmptyVal)) Or (TTNodeEntry[(HashBucket + TTNodeColIdx.Eval)] == EmptyVal)))
+        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And ((((Not ((Horizon < (HorizonLoc - 3)))) Or (HorizonLoc == EmptyVal)) Or (TTNodeEntry[(HashBucket + TTNodeColIdx.Eval)] == EmptyVal)) Or (Type == "E")))
         {
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Type), List.IndexOf(NodeTypeLookup, Type));
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Eval), Score);
@@ -10146,7 +10149,8 @@ Define UpdateMoveNotationPV (warp=true)
 
 Define UpdateNNUEPostApplyMove(string Depth) (warp=true)
 {
-    If ((floor((AppliedMove[Depth] / 100)) == 0) Or ((Not ((PromotionPieces[Depth] == 0))) Or ((abs(SourcePieces[Depth]) == GoK_BlackPawn) And ((Not ((TargetPieces[Depth] == 0))) And (Not ((TargetPiecesIdx[Depth] == floor((AppliedMove[Depth] % 100)))))))))
+    Call NNUE_IsSpecialMove(Depth);
+    If (NNUE_IsSpecialMoveRes == 1)
     {
         Call NNUE_Public_OnMakeMoveStop(Depth)("")("")("");
     }
@@ -10198,3 +10202,4 @@ Define UpdatePV(string Depth)(string BestMove) (warp=true)
         }
     }
 }
+
