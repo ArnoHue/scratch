@@ -1761,7 +1761,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         }
         Else
         {
-            If ((Not (((BetasOld[Depth] - AlphasOld[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] > AlphasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
+            If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] > AlphasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
             {
                 List.ReplaceItem(ScoreTypes, Depth, "E");
             }
@@ -1779,7 +1779,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         }
         Else
         {
-            If ((Not (((BetasOld[Depth] - AlphasOld[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] < BetasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
+            If ((Not (((Betas[Depth] - Alphas[Depth]) == 1))) And (((Not (Quiescence)) Or (MinMaxResults[Depth] < BetasOld[Depth])) And (Not ((BestMoves[Depth] == "")))))
             {
                 List.ReplaceItem(ScoreTypes, Depth, "E");
             }
@@ -2391,6 +2391,13 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             {
                 List.ReplaceItem(BoardAttackerByOwnType, (((AMI.PieceIdx - 1) * 64) + TargetIdx), SourceIdx);
             }
+            Else
+            {
+                If (BoardAttackerByOwnType2[(((AMI.PieceIdx - 1) * 64) + TargetIdx)] == 0)
+                {
+                    List.ReplaceItem(BoardAttackerByOwnType2, (((AMI.PieceIdx - 1) * 64) + TargetIdx), SourceIdx);
+                }
+            }
             If (AMI.Attacked < 9)
             {
                 List.ReplaceItem(BoardAttackedByOwn, (TargetIdx + 0), (AMI.Attacked + 1));
@@ -2417,6 +2424,13 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
                 If (BoardAttackerByOppType[(((AMI.PieceIdx - 1) * 64) + TargetIdx)] == 0)
                 {
                     List.ReplaceItem(BoardAttackerByOppType, (((AMI.PieceIdx - 1) * 64) + TargetIdx), SourceIdx);
+                }
+                Else
+                {
+                    If (BoardAttackerByOppType2[(((AMI.PieceIdx - 1) * 64) + TargetIdx)] == 0)
+                    {
+                        List.ReplaceItem(BoardAttackerByOppType2, (((AMI.PieceIdx - 1) * 64) + TargetIdx), SourceIdx);
+                    }
                 }
                 If (AMI.Attacked < 9)
                 {
@@ -3666,6 +3680,7 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
         Repeat (384)
         {
             List.ReplaceItem(BoardAttackerByOwnType, Idx, 0);
+            List.ReplaceItem(BoardAttackerByOwnType2, Idx, 0);
             Idx += 1;
         }
         IsOppSideChecked = 0;
@@ -3684,6 +3699,7 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
         Repeat (384)
         {
             List.ReplaceItem(BoardAttackerByOppType, Idx, 0);
+            List.ReplaceItem(BoardAttackerByOppType2, Idx, 0);
             Idx += 1;
         }
         IsOwnSideChecked = 0;
@@ -4371,8 +4387,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                                         {
                                             If (((CurrentPiece > 0) And (MovePosLookupOwnLegal[((PieceIdxLookup[CurrentPieceAbs] * 10000) + ((TE.Idx * 100) + ROd))] == 1)) Or ((CurrentPiece < 0) And (MovePosLookupOppLegal[((PieceIdxLookup[CurrentPieceAbs] * 10000) + ((TE.Idx * 100) + ROd))] == 1)))
                                             {
-                                                Call GetAttackDefenseInfo(ROd);
-                                                If ((Attacked == 0) Or (AttackerPieceAbs > GoK_OwnPawn))
+                                                If (Not ((((CurrentPiece > 0) And ((BoardAttackedByOppTypeMask[ROd] % 10) > 0)) Or ((CurrentPiece < 0) And ((BoardAttackedByOwnTypeMask[ROd] % 10) > 0)))))
                                                 {
                                                     ReachFound = 1;
                                                 }
@@ -4392,8 +4407,7 @@ Define EvaluateMajorsMinorsImpl(string Depth) (warp=true)
                                         {
                                             If (((CurrentPiece > 0) And (MovePosLookupOwnLegal[((PieceIdxLookup[CurrentPieceAbs] * 10000) + ((TE.Idx * 100) + ROd))] == 1)) Or ((CurrentPiece < 0) And (MovePosLookupOppLegal[((PieceIdxLookup[CurrentPieceAbs] * 10000) + ((TE.Idx * 100) + ROd))] == 1)))
                                             {
-                                                Call GetAttackDefenseInfo(ROd);
-                                                If ((Attacked == 0) Or (AttackerPieceAbs > GoK_OwnPawn))
+                                                If (Not ((((CurrentPiece > 0) And ((BoardAttackedByOppTypeMask[ROd] % 10) > 0)) Or ((CurrentPiece < 0) And ((BoardAttackedByOwnTypeMask[ROd] % 10) > 0)))))
                                                 {
                                                     ReachFound = 1;
                                                 }
@@ -6137,6 +6151,20 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                                     List.ReplaceItem(KingRingAttacksWeight, (Side + 0), (KingRingAttacksWeight[(Side + 0)] + AttacksWeight[TE.TypeIdx]));
                                     List.Add(TmpList1, TE.SrcIdx);
                                 }
+                                If (Side == 1)
+                                {
+                                    TE.SrcIdx = BoardAttackerByOppType2[(((TE.TypeIdx - 1) * 64) + Idx)];
+                                }
+                                Else
+                                {
+                                    TE.SrcIdx = BoardAttackerByOwnType2[(((TE.TypeIdx - 1) * 64) + Idx)];
+                                }
+                                If ((TE.SrcIdx > 0) And (Not (List.ContainsItem(TmpList1, TE.SrcIdx))))
+                                {
+                                    List.ReplaceItem(KingRingAttackersCount, (Side + 0), (KingRingAttackersCount[(Side + 0)] + 1));
+                                    List.ReplaceItem(KingRingAttacksWeight, (Side + 0), (KingRingAttacksWeight[(Side + 0)] + AttacksWeight[TE.TypeIdx]));
+                                    List.Add(TmpList1, TE.SrcIdx);
+                                }
                                 TE.TypeIdx += 1;
                             }
                             If ((floor(((((Side == 1) * BoardAttackedByOwnTypeMask[Idx]) + ((Side == 2) * BoardAttackedByOppTypeMask[Idx])) / 100)) % 10) > 0)
@@ -6208,24 +6236,22 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                 KingFile = IdxToFile[(KingIdxOpp + 0)];
                 Rank = (IdxToRank[(KingIdxOpp + 0)] - 4);
             }
-            If ((KingFile == 1) Or (KingFile == 3))
+            FlankStart = floor(KingFlankStart[KingFile]);
+            FlankWidth = floor(KingFlankWidth[KingFile]);
+            FlankPawns = 0;
+            File = FlankStart;
+            Repeat (FlankWidth)
             {
-                KingFile = 2;
+                FlankPawns += (floor(PawnCountOwn[File]) + floor(PawnCountOpp[File]));
+                File += 1;
             }
-            Else
-            {
-                If ((KingFile == 6) Or (KingFile == 8))
-                {
-                    KingFile = 7;
-                }
-            }
-            KingPawnlessFlank = (((PawnCountOwn[(KingFile - 1)] + PawnCountOpp[(KingFile - 1)]) == 0) And (((PawnCountOwn[(KingFile + 0)] + PawnCountOpp[(KingFile + 0)]) == 0) And ((PawnCountOwn[(KingFile + 1)] + PawnCountOpp[(KingFile + 1)]) == 0)));
+            KingPawnlessFlank = ((FlankPawns == 0) + 0);
             KingFlankDefense = 0;
-            File = (KingFile - 1);
+            File = FlankStart;
             Idx = (((Rank - 1) * 8) + File);
             Repeat (5)
             {
-                Repeat (3)
+                Repeat (FlankWidth)
                 {
                     If ((Idx > 0) And (Idx < 65))
                     {
@@ -6248,7 +6274,7 @@ Define EvaluateThreatsImpl(string Depth) (warp=true)
                     }
                     Idx += 1;
                 }
-                Idx += 5;
+                Idx += (8 - FlankWidth);
             }
             KingDanger = 19;
             KingDanger += floor(((3 * (KingFlankAttacks * KingFlankAttacks)) / 16));
@@ -7696,13 +7722,13 @@ Define GetKingShelterStorm(string KingIdx)(bool IsBlack)(string ShelterFactor) (
         KS.OppSemi = (PawnAdvancePerFile[(KingFile + 0)] == 0);
     }
     KingShelterStorm += round(((0 - KingOnFile[(((KS.OwnSemi * 2) + KS.OppSemi) + 1)]) * ShelterFactor));
-    If ((KingFile == 1) Or (KingFile == 3))
+    If (KingFile == 1)
     {
         KingFile = 2;
     }
     Else
     {
-        If ((KingFile == 6) Or (KingFile == 8))
+        If (KingFile == 8)
         {
             KingFile = 7;
         }
@@ -8749,7 +8775,9 @@ Define InitBoard (warp=true)
         Repeat (6)
         {
             List.Add(BoardAttackerByOppType, 0);
+            List.Add(BoardAttackerByOppType2, 0);
             List.Add(BoardAttackerByOwnType, 0);
+            List.Add(BoardAttackerByOwnType2, 0);
         }
     }
     Call //("Due to the lack of local variables in Scratch, we emulate a method stack for recursive Minimax using lists");
@@ -12608,7 +12636,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Checked), Checked);
         }
         HorizonLoc = TTNodeEntry[(HashBucket + TTNodeColIdx.Horizon)];
-        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And ((((Not ((Horizon < (HorizonLoc - 3)))) Or (HorizonLoc == EmptyVal)) Or (TTNodeEntry[(HashBucket + TTNodeColIdx.Score)] == EmptyVal)) Or (Type == "E")))
+        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And (((Not ((Horizon < HorizonLoc))) Or (HorizonLoc == EmptyVal)) Or (TTNodeEntry[(HashBucket + TTNodeColIdx.Score)] == EmptyVal)))
         {
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Type), List.IndexOf(NodeTypeLookup, Type));
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Score), Score);
