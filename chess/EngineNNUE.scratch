@@ -1371,7 +1371,7 @@ Define ApplyMove(string Depth)(bool UpdateNNUE) (warp=true)
     }
     List.ReplaceItem(PosEvalDelta, Depth, 0);
     List.ReplaceItem(SourcePieces, Depth, 0);
-    List.ReplaceItem(TargetPiecesIdx, Depth, "");
+    List.ReplaceItem(TargetPiecesIdx, Depth, 0);
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
     If (Depth == 1)
@@ -1750,7 +1750,7 @@ Define ApplyMoveLight(string Depth) (warp=true)
     {
         List.ReplaceItem(PosEvalDelta, Depth, 0);
         List.ReplaceItem(SourcePieces, Depth, 0);
-        List.ReplaceItem(TargetPiecesIdx, Depth, "");
+        List.ReplaceItem(TargetPiecesIdx, Depth, 0);
         List.ReplaceItem(TargetPieces, Depth, 0);
         List.ReplaceItem(PromotionPieces, Depth, 0);
         Call //("Castling => incremental positional eval and Zobrist hash update");
@@ -3748,8 +3748,8 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
 {
     MoveScoreRes = 0;
     Factor = 1;
-    Call GetNormalizedMove(Move);
-    If Operator.Contains(PickedMoves[Depth], NormalizedMoveRes)
+    Call IsMovePicked(Depth)(Move);
+    If (IsMovePickedRes == 1)
     {
         MOPickScanIdx = 1;
         Repeat (MaxMovesPerGeneration)
@@ -4751,13 +4751,13 @@ Define InitBoard (warp=true)
     List.DeleteItem(LMRState, all);
     Repeat (MaxSearchDepthStackFrames)
     {
-        List.Add(Alphas, "");
-        List.Add(Betas, "");
+        List.Add(Alphas, 0);
+        List.Add(Betas, 0);
         List.Add(AlphasOld, "");
         List.Add(BetasOld, "");
         List.Add(SearchEvalResults, "");
         List.Add(MovesCount, 0);
-        List.Add(MovesIdx, "");
+        List.Add(MovesIdx, 0);
         List.Add(BestMoveListIdx, "");
         List.Add(TargetPieces, "");
         List.Add(PreviousBoardHash, 0);
@@ -4772,7 +4772,7 @@ Define InitBoard (warp=true)
         List.Add(CheckedState, "");
         List.Add(CheckedStateAttackLines, "");
         List.Add(PromotionPieces, "");
-        List.Add(TargetPiecesIdx, "");
+        List.Add(TargetPiecesIdx, 0);
         List.Add(PosEvalDelta, "");
         List.Add(BoardAttackedCalculated, "");
         List.Add(PutsInCheck, "");
@@ -6071,6 +6071,21 @@ Define IsLowerCase(string Char) (warp=true)
     }
 }
 
+Define IsMovePicked(string Depth)(string Move) (warp=true)
+{
+    IsMovePickedRes = 0;
+    MPScanIdx = 1;
+    Repeat Until (MPScanIdx > PickedMoveCount[Depth])
+    {
+        If (MovesPicked[(((Depth - 1) * MaxMovesPerGeneration) + MPScanIdx)] == Move)
+        {
+            IsMovePickedRes = 1;
+            Stop(this script);
+        }
+        MPScanIdx += 1;
+    }
+}
+
 Define IsOwnKingCheckedPostMove(string CheckingDepth) (warp=true)
 {
     IsChecked = 0;
@@ -7050,7 +7065,6 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
     {
         Call //("Phase 1: Look up hash-move from transposition table");
         List.ReplaceItem(HashMove, Depth, "");
-        List.ReplaceItem(PickedMoves, Depth, ":");
         List.ReplaceItem(PickedMoveCount, Depth, 0);
         List.ReplaceItem(PickedMoveCountQuiet, Depth, 0);
         List.ReplaceItem(MovesCount, Depth, 0);
@@ -7134,8 +7148,7 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
                 Call AddMoveToList(MP.Move)(Depth)(MoveScoreRes);
                 List.ReplaceItem(MovesIdx, Depth, 1);
                 Call ApplyMove(Depth)(UpdateNNUE);
-                Call GetNormalizedMove(AppliedMove[Depth]);
-                List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalizedMoveRes, ":")));
+                List.ReplaceItem(MovesPicked, ((((Depth - 1) * MaxMovesPerGeneration) + PickedMoveCount[Depth]) + 1), AppliedMove[Depth]);
                 List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
                 If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
                 {
@@ -7238,22 +7251,21 @@ Define PickMove.Iterate(string Depth)(string NextPhase)(bool UpdateNNUE) (warp=t
     If (MovesIdx[Depth] < MovesCount[Depth])
     {
         List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
-        If (Variable.Length(PickedMoves[Depth]) > 0)
+        If (PickedMoveCount[Depth] > 0)
         {
             Call GetCurrentMove(Depth);
-            Call GetNormalizedMove(CurrentMove);
-            Repeat Until ((Not (Operator.Contains(PickedMoves[Depth], NormalizedMoveRes))) Or (MovesIdx[Depth] > MovesCount[Depth]))
+            Call IsMovePicked(Depth)(CurrentMove);
+            Repeat Until ((IsMovePickedRes == 0) Or (MovesIdx[Depth] > MovesCount[Depth]))
             {
                 List.ReplaceItem(MovesIdx, Depth, (MovesIdx[Depth] + 1));
                 Call GetCurrentMove(Depth);
-                Call GetNormalizedMove(CurrentMove);
+                Call IsMovePicked(Depth)(CurrentMove);
             }
         }
         If (Not ((MovesIdx[Depth] > MovesCount[Depth])))
         {
             Call ApplyMove(Depth)(UpdateNNUE);
-            Call GetNormalizedMove(AppliedMove[Depth]);
-            List.ReplaceItem(PickedMoves, Depth, Operator.Join(PickedMoves[Depth], Operator.Join(NormalizedMoveRes, ":")));
+            List.ReplaceItem(MovesPicked, ((((Depth - 1) * MaxMovesPerGeneration) + PickedMoveCount[Depth]) + 1), AppliedMove[Depth]);
             List.ReplaceItem(PickedMoveCount, Depth, (PickedMoveCount[Depth] + 1));
             If ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0))
             {
@@ -7282,8 +7294,8 @@ Define PickMove.TryKCMove(string Move)(string Depth)(string Score) (warp=true)
         KCLegal = MoveToHash[((60000 * (Depth % 2)) + ((PieceIdxLookup[abs(Board[KCSrc])] * 10000) + Move))];
         If (Not ((KCLegal == 0)))
         {
-            Call GetNormalizedMove(Move);
-            If (Not (Operator.Contains(PickedMoves[Depth], NormalizedMoveRes)))
+            Call IsMovePicked(Depth)(Move);
+            If (IsMovePickedRes == 0)
             {
                 List.DeleteAll(CalcMovesMoveList);
                 List.DeleteAll(CalcMovesScoreList);
@@ -7698,7 +7710,7 @@ Define RevertMove(num Depth) (warp=true)
     List.ReplaceItem(AppliedMove, Depth, "");
     List.ReplaceItem(PosEvalDelta, Depth, 0);
     List.ReplaceItem(SourcePieces, Depth, 0);
-    List.ReplaceItem(TargetPiecesIdx, Depth, "");
+    List.ReplaceItem(TargetPiecesIdx, Depth, 0);
     List.ReplaceItem(TargetPieces, Depth, 0);
     List.ReplaceItem(PromotionPieces, Depth, 0);
     If (Depth == 1)
