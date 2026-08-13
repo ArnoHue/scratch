@@ -77,7 +77,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess Version 6.9248 (10.08.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess Version 6.9248 (13.08.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1551,26 +1551,9 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
             List.ReplaceItem(PutsInCheck, Depth, 0);
             List.ReplaceItem(PlyExtensionTagged, Depth, 0);
             List.ReplaceItem(PlyExtension, Depth, 0);
-            SourceIdxOuter2 = floor((AppliedMove[Depth] / 100));
-            TargetIdxOuter2 = floor((AppliedMove[Depth] % 100));
-            Call //("Fast check detection for current move");
-            Call IsCheckingPiece(TargetIdxOuter2);
-            If (IsCheckingPieceRes == 1)
-            {
-                List.ReplaceItem(PutsInCheck, Depth, 1);
-                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
-                List.ReplaceItem(EnPassantTarget, (Depth + 1), EnPassantTarget[Depth]);
-                Call TTStoreNode(CurrentBoardHash)((Depth + 1))(EmptyVal)(EmptyVal)("")(1)(EmptyVal)(EmptyVal);
-            }
-            Call //("Fast discovered check detection for current move");
-            Call IsCheckingPieceDiscovery(SourceIdxOuter2)(TargetIdxOuter2)(Depth);
-            If (IsCheckingPieceRes == 1)
-            {
-                List.ReplaceItem(PutsInCheck, Depth, 1);
-                List.ReplaceItem(CastlingState, (Depth + 1), CastlingState[Depth]);
-                List.ReplaceItem(EnPassantTarget, (Depth + 1), EnPassantTarget[Depth]);
-                Call TTStoreNode(CurrentBoardHash)((Depth + 1))(EmptyVal)(EmptyVal)("")(1)(EmptyVal)(EmptyVal);
-            }
+            Call //("Check detection for current move: does it put the opponent in check");
+            Call IsCheckedFast((Depth + 2));
+            List.ReplaceItem(PutsInCheck, Depth, IsCheckedRes);
             If Quiescence
             {
                 Profile_Delta_Inv += 1;
@@ -2411,7 +2394,6 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
             If (AMI.TargetPiece == GoK_OppKing)
             {
                 IsOppSideChecked = 1;
-                List.Add(KingAttackLines, SourceIdx);
             }
         }
         Else
@@ -2445,27 +2427,20 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Depth)(bool CalcAt
                 If (AMI.TargetPiece == GoK_OwnKing)
                 {
                     IsOwnSideChecked = 1;
-                    List.Add(KingAttackLines, SourceIdx);
                 }
             }
         }
         Stop(this script);
     }
-    If (CheckedState[(Depth + 0)] == 1)
+    If (CheckedState[Depth] == 1)
     {
-        If (Not ((Operator.LetterOf(CheckedStateAttackLines[(Depth + 0)], TargetIdx) == 1)))
+        If (Not ((BoardAttackedEvasionTarget[TargetIdx] == 1)))
         {
-            If (BoardAttackedCalculated[(Depth + 0)] == 1)
+            If (Not ((abs(Board[SourceIdx]) == GoK_OwnKing)))
             {
-                If (Not ((abs(Board[(SourceIdx + 0)]) == GoK_OwnKing)))
+                If (EnPassantTarget[Depth] == "")
                 {
-                    If (Not ((abs(Board[(TargetIdx + 0)]) == GoK_OwnKing)))
-                    {
-                        If ((Depth > 2) And (EnPassantTarget[(Depth + 0)] == ""))
-                        {
-                            Stop(this script);
-                        }
-                    }
+                    Stop(this script);
                 }
             }
         }
@@ -2537,21 +2512,7 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     Call //("Include move in quiescence search if it's a check or check evasion");
     If (CheckedState[Depth] == 1)
     {
-        If (abs(Piece) == GoK_OwnKing)
-        {
-            If ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + TargetIdx)] > 0) And (BoardAttackedCalculated[(Depth + 0)] == 1))
-            {
-                Stop(this script);
-            }
-            Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
-        }
-        Else
-        {
-            If (Operator.LetterOf(CheckedStateAttackLines[Depth], (TargetIdx + 0)) == 1)
-            {
-                Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
-            }
-        }
+        Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
         Stop(this script);
     }
     If (Piece == GoK_OwnPawn)
@@ -2592,13 +2553,13 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     CurrentMove = "";
     If (Piece > 0)
     {
-        Call IsCaptureReachable(Piece)(TargetIdx)(KingIdxOpp);
+        Call IsReachable(Piece)(TargetIdx)(KingIdxOpp);
     }
     Else
     {
-        Call IsCaptureReachable(Piece)(TargetIdx)(KingIdxtOwn);
+        Call IsReachable(Piece)(TargetIdx)(KingIdxtOwn);
     }
-    If (IsCaptureReachableRes == 1)
+    If (IsReachableRes == 1)
     {
         Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
     }
@@ -3251,7 +3212,6 @@ Define ASMAttack(string SourceIdx)(string Depth)(bool SlidingMoveTypeStraight) (
     ASMA.Idx = (MoveLookupLineIndexOffset[(SourceIdx + 0)] + 0);
     ASMA.Count = 1;
     ASMA.InvIdx = 8;
-    List.DeleteAll(KingAttackLinesTemp);
     Repeat Until (ASMA.Count > 32)
     {
         If SlidingMoveTypeStraight
@@ -3266,7 +3226,6 @@ Define ASMAttack(string SourceIdx)(string Depth)(bool SlidingMoveTypeStraight) (
         {
             ASMA.Count += ASMA.InvIdx;
             ASMA.InvIdx = 8;
-            List.DeleteAll(KingAttackLinesTemp);
         }
         Else
         {
@@ -3274,7 +3233,6 @@ Define ASMAttack(string SourceIdx)(string Depth)(bool SlidingMoveTypeStraight) (
             ASMA.TargetPiece = (Board[(ASMA.TargetIdx + 0)] + 0);
             If (ASMA.TargetPiece == 0)
             {
-                List.Add(KingAttackLinesTemp, ASMA.TargetIdx);
                 ASMA.Count += 1;
                 ASMA.InvIdx += -1;
             }
@@ -3282,19 +3240,7 @@ Define ASMAttack(string SourceIdx)(string Depth)(bool SlidingMoveTypeStraight) (
             {
                 IsXRay = 0;
                 ASMA.TargetPieceAbs = abs(ASMA.TargetPiece);
-                If (ASMA.TargetPieceAbs == GoK_OwnKing)
-                {
-                    If (((ASMA.SourcePiece > 0) And (ASMA.TargetPiece == GoK_OppKing)) Or ((ASMA.SourcePiece < 0) And (ASMA.TargetPiece == GoK_OwnKing)))
-                    {
-                        Idx = 1;
-                        Repeat (List.Length(KingAttackLinesTemp))
-                        {
-                            List.Add(KingAttackLines, KingAttackLinesTemp[(Idx + 0)]);
-                            Idx += 1;
-                        }
-                    }
-                }
-                Else
+                If (Not ((ASMA.TargetPieceAbs == GoK_OwnKing)))
                 {
                     If (ASMA.TargetPieceAbs > GoK_OwnKnight)
                     {
@@ -3327,7 +3273,6 @@ Define ASMAttack(string SourceIdx)(string Depth)(bool SlidingMoveTypeStraight) (
                     ASMA.Count += ASMA.InvIdx;
                     ASMA.InvIdx = 8;
                 }
-                List.DeleteAll(KingAttackLinesTemp);
             }
         }
     }
@@ -3396,51 +3341,7 @@ Define CalcBoardAttackedOnDemand(string Depth)(bool Quiescence)(bool ForceOnChec
 {
     If (BoardAttackedCalculated[Depth] == 0)
     {
-        Found = 0;
-        If (Not (Quiescence))
-        {
-            If ((Depth % 2) == 1)
-            {
-                If ((Operator.LetterOf(CastlingState[Depth], 1) == 0) And (Operator.LetterOf(CastlingState[Depth], 2) == 0))
-                {
-                    If (Operator.LetterOf(CastlingState[Depth], 4) == 0)
-                    {
-                        If ((((Board[VirtualBoard[1]] == GoK_OwnRook) And (Board[VirtualBoard[2]] == 0)) And ((Board[VirtualBoard[3]] == 0) And (Board[VirtualBoard[4]] == 0))) And (Board[VirtualBoard[5]] == GoK_OwnKing))
-                        {
-                            Found = 1;
-                        }
-                    }
-                    If (Operator.LetterOf(CastlingState[Depth], 3) == 0)
-                    {
-                        If (((Board[VirtualBoard[5]] == GoK_OwnKing) And (Board[VirtualBoard[6]] == 0)) And ((Board[VirtualBoard[7]] == 0) And (Board[VirtualBoard[8]] == GoK_OwnRook)))
-                        {
-                            Found = 1;
-                        }
-                    }
-                }
-            }
-            Else
-            {
-                If ((Operator.LetterOf(CastlingState[Depth], 5) == 0) And (Operator.LetterOf(CastlingState[Depth], 6) == 0))
-                {
-                    If (Operator.LetterOf(CastlingState[Depth], 8) == 0)
-                    {
-                        If (((Board[VirtualBoard[57]] == GoK_OppRook) And (Board[VirtualBoard[58]] == 0)) And ((Board[VirtualBoard[59]] == 0) And ((Board[VirtualBoard[60]] == 0) And (Board[VirtualBoard[61]] == GoK_OppKing))))
-                        {
-                            Found = 1;
-                        }
-                    }
-                    If (Operator.LetterOf(CastlingState[Depth], 7) == 0)
-                    {
-                        If (((Board[VirtualBoard[62]] == 0) And (Board[VirtualBoard[61]] == GoK_OppKing)) And ((Board[VirtualBoard[63]] == 0) And (Board[VirtualBoard[64]] == GoK_OppRook)))
-                        {
-                            Found = 1;
-                        }
-                    }
-                }
-            }
-        }
-        If (((ForceOnCheck And (CheckedState[Depth] == 1)) Or (Found == 1)) Or ((Not ((Depth > MaxDepth))) And (Not (Quiescence))))
+        If ((ForceOnCheck And (CheckedState[Depth] == 1)) Or ((Not ((Depth > MaxDepth))) And (Not (Quiescence))))
         {
             Call CalcBoardAttackedByMove((Depth + 1));
             Call StoreAttackInfo((Depth + 1))(Depth);
@@ -3706,7 +3607,6 @@ Define ClearBoardAttackedByMove(num Depth) (warp=true)
         }
         IsOwnSideChecked = 0;
     }
-    List.DeleteAll(KingAttackLines);
 }
 
 Define ClearMoveList(num Depth) (warp=true)
@@ -7130,6 +7030,10 @@ Define GenerateMovesForSourceEx(string Depth)(string SourceIdx)(bool CalcAttackS
 
 Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(bool IsBlackMove) (warp=true)
 {
+    If ((CheckedState[Depth] == 1) And (Not (CalcAttackState)))
+    {
+        Call PrepareEvasionMask(Depth);
+    }
     GMI.SkipIdx = -1;
     List.DeleteAll(CalcMovesScoreList);
     List.DeleteAll(CalcMovesMoveList);
@@ -7159,7 +7063,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
                 {
                     If ((((Board[VirtualBoard[1]] == GoK_OwnRook) And (Board[VirtualBoard[2]] == 0)) And ((Board[VirtualBoard[3]] == 0) And (Board[VirtualBoard[4]] == 0))) And (Board[VirtualBoard[5]] == GoK_OwnKing))
                     {
-                        If ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[3])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[4])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[5])] == 0)))
+                        If ((BoardAttackedCalculated[Depth] == 0) Or ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[3])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[4])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[5])] == 0))))
                         {
                             Call AddSpecialMove(GoK_OwnQueensideCastling)(Depth);
                         }
@@ -7169,7 +7073,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
                 {
                     If (((Board[VirtualBoard[5]] == GoK_OwnKing) And (Board[VirtualBoard[6]] == 0)) And ((Board[VirtualBoard[7]] == 0) And (Board[VirtualBoard[8]] == GoK_OwnRook)))
                     {
-                        If ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[5])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[6])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[7])] == 0)))
+                        If ((BoardAttackedCalculated[Depth] == 0) Or ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[5])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[6])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[7])] == 0))))
                         {
                             Call AddSpecialMove(GoK_OwnKingsideCastling)(Depth);
                         }
@@ -7185,7 +7089,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
                 {
                     If (((Board[VirtualBoard[57]] == GoK_OppRook) And (Board[VirtualBoard[58]] == 0)) And ((Board[VirtualBoard[59]] == 0) And ((Board[VirtualBoard[60]] == 0) And (Board[VirtualBoard[61]] == GoK_OppKing))))
                     {
-                        If ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[59])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[60])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[61])] == 0)))
+                        If ((BoardAttackedCalculated[Depth] == 0) Or ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[59])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[60])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[61])] == 0))))
                         {
                             Call AddSpecialMove(GoK_OppQueensideCastling)(Depth);
                         }
@@ -7195,7 +7099,7 @@ Define GenerateMovesImpl(string Depth)(bool CalcAttackState)(bool CapturesOnly)(
                 {
                     If (((Board[VirtualBoard[62]] == 0) And (Board[VirtualBoard[61]] == GoK_OppKing)) And ((Board[VirtualBoard[63]] == 0) And (Board[VirtualBoard[64]] == GoK_OppRook)))
                     {
-                        If ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[61])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[62])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[63])] == 0)))
+                        If ((BoardAttackedCalculated[Depth] == 0) Or ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[61])] == 0) And ((PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[62])] == 0) And (PersistedBoardAttackedSnapshot[(((Depth - 1) * 100) + VirtualBoard[63])] == 0))))
                         {
                             Call AddSpecialMove(GoK_OppKingsideCastling)(Depth);
                         }
@@ -7899,7 +7803,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     If (CheckedState[(Depth + 0)] == 1)
     {
         Call //("Check evasions (SF-style: score all)");
-        If ((abs(SourcePieceParam) == GoK_OwnKing) Or (Operator.LetterOf(CheckedStateAttackLines[(Depth + 0)], ToIdx) == 1))
+        If ((abs(SourcePieceParam) == GoK_OwnKing) Or (BoardAttackedEvasionTarget[ToIdx] == 1))
         {
             MoveScoreRes = (8000000 * GMS.Factor);
             If ((Not ((TargetPieceParam == 0))) And (Not ((TargetPieceParam == ""))))
@@ -8758,6 +8662,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(BoardAttackedByOpp, all);
     List.DeleteItem(BoardAttackedByOwn, all);
     List.DeleteItem(PieceMobility, all);
+    List.DeleteItem(BoardAttackedEvasionTarget, all);
     List.DeleteItem(BoardAttackedByOppPiece, all);
     List.DeleteItem(BoardAttackedByOwnPiece, all);
     List.DeleteItem(BoardAttackedByOppTypeMask, all);
@@ -8769,6 +8674,7 @@ Define InitBoard (warp=true)
         List.Add(BoardAttackedByOpp, 0);
         List.Add(BoardAttackedByOwn, 0);
         List.Add(PieceMobility, 0);
+        List.Add(BoardAttackedEvasionTarget, 0);
         List.Add(BoardAttackedByOppPiece, 0);
         List.Add(BoardAttackedByOwnPiece, 0);
         List.Add(BoardAttackedByOppTypeMask, 0);
@@ -8799,7 +8705,6 @@ Define InitBoard (warp=true)
     List.DeleteItem(PickedPseudoLegalMovesCount, all);
     List.DeleteItem(BestMoves, all);
     List.DeleteItem(CheckedState, all);
-    List.DeleteItem(CheckedStateAttackLines, all);
     List.DeleteItem(PromotionPieces, all);
     List.DeleteItem(TargetPiecesIdx, all);
     List.DeleteItem(PosScoreDelta, all);
@@ -8850,7 +8755,6 @@ Define InitBoard (warp=true)
         List.Add(PickedPseudoLegalMovesCount, 0);
         List.Add(BestMoves, "");
         List.Add(CheckedState, "");
-        List.Add(CheckedStateAttackLines, "");
         List.Add(PromotionPieces, "");
         List.Add(TargetPiecesIdx, 0);
         List.Add(PosScoreDelta, 0);
@@ -11275,56 +11179,66 @@ Define InitTestSuite (warp=true)
     List.Add(TestSuiteSan, "");
 }
 
-Define IsCaptureReachable(string Piece)(string FromIdx)(string ToIdx) (warp=true)
+Define IsCastlingPathSafe(string Move)(string Depth) (warp=true)
 {
-    IsCaptureReachableRes = 0;
-    If (Piece == 0)
+    IsCastlingPathSafeRes = 1;
+    If (floor((Move / 100)) == 0)
     {
-        Stop(this script);
-    }
-    If (Not ((((Piece > 0) And (MovePosLookupOwnLegal[((floor(PieceIdxLookup[Piece]) * 10000) + ((FromIdx * 100) + ToIdx))] == 1)) Or ((Piece < 0) And (MovePosLookupOppLegal[((floor(PieceIdxLookup[(0 - Piece)]) * 10000) + ((FromIdx * 100) + ToIdx))] == 1)))))
-    {
-        Stop(this script);
-    }
-    If ((abs(Piece) == GoK_OwnKing) Or (abs(Piece) == GoK_OwnKnight))
-    {
-        IsCaptureReachableRes = 1;
-        Stop(this script);
-    }
-    If (abs(Piece) == GoK_OwnPawn)
-    {
-        If (Not ((IdxToFile[FromIdx] == IdxToFile[ToIdx])))
+        ICP.FirstIdx = 0;
+        If (Move == GoK_OwnQueensideCastling)
         {
-            IsCaptureReachableRes = 1;
+            ICP.FirstIdx = 3;
         }
-        Stop(this script);
-    }
-    IRC.Idx = ((FromIdx * 100) + ToIdx);
-    IRC.SourceIdx = FromIdx;
-    Repeat ((MovePathDelta[IRC.Idx] - 1))
-    {
-        IRC.SourceIdx += MovePathStepInc[IRC.Idx];
-        If (Not ((Board[IRC.SourceIdx] == 0)))
+        If (Move == GoK_OwnKingsideCastling)
         {
-            Stop(this script);
+            ICP.FirstIdx = 5;
+        }
+        If (Move == GoK_OppQueensideCastling)
+        {
+            ICP.FirstIdx = 59;
+        }
+        If (Move == GoK_OppKingsideCastling)
+        {
+            ICP.FirstIdx = 61;
+        }
+        If (ICP.FirstIdx > 0)
+        {
+            Call CalcBoardAttackedOnDemand(Depth)((1 == 0))((1 == 1))(99);
+            ICP.Base = ((Depth - 1) * 100);
+            If (Not (((PersistedBoardAttackedSnapshot[(ICP.Base + VirtualBoard[ICP.FirstIdx])] == 0) And ((PersistedBoardAttackedSnapshot[(ICP.Base + VirtualBoard[(ICP.FirstIdx + 1)])] == 0) And (PersistedBoardAttackedSnapshot[(ICP.Base + VirtualBoard[(ICP.FirstIdx + 2)])] == 0)))))
+            {
+                IsCastlingPathSafeRes = 0;
+            }
         }
     }
-    IsCaptureReachableRes = 1;
 }
 
 Define IsCheckedFast(string CheckingDepth) (warp=true)
 {
     IsCheckedRes = 0;
     Factor = (1 - (2 * ((CheckingDepth % 2) == 0)));
+    If (Factor > 0)
+    {
+        ICF.KingIdx = KingIdxOpp;
+    }
+    Else
+    {
+        ICF.KingIdx = KingIdxtOwn;
+    }
     IdxOuter2 = 1;
     Repeat (64)
     {
         If ((floor(Board[(IdxOuter2 + 0)]) * Factor) > 0)
         {
-            Call IsCheckingPiece(IdxOuter2);
-            If (IsCheckingPieceRes == 1)
+            If (((Factor > 0) And (MovePosLookupOwnLegal[((floor(PieceIdxLookup[Board[IdxOuter2]]) * 10000) + ((IdxOuter2 * 100) + ICF.KingIdx))] == 1)) Or ((Factor < 0) And (MovePosLookupOppLegal[((floor(PieceIdxLookup[(0 - Board[IdxOuter2])]) * 10000) + ((IdxOuter2 * 100) + ICF.KingIdx))] == 1)))
             {
-                IsCheckedRes = 1;
+                Call IsCheckingPiece(IdxOuter2);
+                If (IsCheckingPieceRes == 1)
+                {
+                    IsCheckedRes = 1;
+                    IsCheckedByIdxRes = IdxOuter2;
+                    Stop(this script);
+                }
             }
         }
         IdxOuter2 += 1;
@@ -11363,13 +11277,13 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
     }
     If (Piece > 0)
     {
-        Call IsCaptureReachable(Piece)(Idx)(KingIdxOpp);
+        Call IsReachable(Piece)(Idx)(KingIdxOpp);
     }
     Else
     {
-        Call IsCaptureReachable(Piece)(Idx)(KingIdxtOwn);
+        Call IsReachable(Piece)(Idx)(KingIdxtOwn);
     }
-    IsCheckingPieceRes = IsCaptureReachableRes;
+    IsCheckingPieceRes = IsReachableRes;
 }
 
 Define IsDrawByMaterial (warp=true)
@@ -11638,6 +11552,43 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
             }
         }
     }
+}
+
+Define IsReachable(string Piece)(string FromIdx)(string ToIdx) (warp=true)
+{
+    IsReachableRes = 0;
+    If (Piece == 0)
+    {
+        Stop(this script);
+    }
+    If (Not ((((Piece > 0) And (MovePosLookupOwnLegal[((floor(PieceIdxLookup[Piece]) * 10000) + ((FromIdx * 100) + ToIdx))] == 1)) Or ((Piece < 0) And (MovePosLookupOppLegal[((floor(PieceIdxLookup[(0 - Piece)]) * 10000) + ((FromIdx * 100) + ToIdx))] == 1)))))
+    {
+        Stop(this script);
+    }
+    If ((abs(Piece) == GoK_OwnKing) Or (abs(Piece) == GoK_OwnKnight))
+    {
+        IsReachableRes = 1;
+        Stop(this script);
+    }
+    If (abs(Piece) == GoK_OwnPawn)
+    {
+        If (Not ((IdxToFile[FromIdx] == IdxToFile[ToIdx])))
+        {
+            IsReachableRes = 1;
+        }
+        Stop(this script);
+    }
+    IRC.Idx = ((FromIdx * 100) + ToIdx);
+    IRC.SourceIdx = FromIdx;
+    Repeat ((MovePathDelta[IRC.Idx] - 1))
+    {
+        IRC.SourceIdx += MovePathStepInc[IRC.Idx];
+        If (Not ((Board[IRC.SourceIdx] == 0)))
+        {
+            Stop(this script);
+        }
+    }
+    IsReachableRes = 1;
 }
 
 Define KingSafeChecks(string KSCSide)(string KSCTargetIdx)(string KSCFoundMask)(string KSCAttacked)(string KSCDefended)(string KSCDefenderPieceAbs) (warp=true)
@@ -12240,6 +12191,7 @@ Define Perft(string PerftDepth)(string PerftHorizon)(string PerftStaged) (warp=t
             Call IsCheckedFast((PerftDepth + 1));
             If (IsCheckedRes == 0)
             {
+                Call PerftValidateCheck(PerftDepth);
                 Call Perft((PerftDepth + 1))((PerftHorizon - 1))(PerftStaged);
             }
             Call RevertMove(PerftDepth);
@@ -12259,6 +12211,7 @@ Define Perft(string PerftDepth)(string PerftHorizon)(string PerftStaged) (warp=t
                 Call IsCheckedFast((PerftDepth + 1));
                 If (IsCheckedRes == 0)
                 {
+                    Call PerftValidateCheck(PerftDepth);
                     Call Perft((PerftDepth + 1))((PerftHorizon - 1))(PerftStaged);
                 }
                 Call RevertMove(PerftDepth);
@@ -12333,6 +12286,41 @@ Define PerftPrepareNode(string PerftPrepDepth)(string PerftPrepStaged) (warp=tru
     }
 }
 
+Define PerftValidateCheck(string ValDepth) (warp=true)
+{
+    Call //("Validate fast check detection against ground truth");
+    PVC.Source = floor((AppliedMove[ValDepth] / 100));
+    PVC.Target = floor((AppliedMove[ValDepth] % 100));
+    PVC.Fast = 0;
+    Call IsCheckingPiece(PVC.Target);
+    If (IsCheckingPieceRes == 1)
+    {
+        PVC.Fast = 1;
+    }
+    Call IsCheckingPieceDiscovery(PVC.Source)(PVC.Target)(ValDepth);
+    If (IsCheckingPieceRes == 1)
+    {
+        PVC.Fast = 1;
+    }
+    Call IsCheckedFast((ValDepth + 2));
+    PVC.Actual = IsCheckedRes;
+    If (Not ((PVC.Fast == PVC.Actual)))
+    {
+        PerftCheckMismatches += 1;
+        If (PerftCheckMismatches < 26)
+        {
+            PVC.Line = "";
+            PVC.Idx = 1;
+            Repeat (ValDepth)
+            {
+                PVC.Line = Operator.Join(PVC.Line, Operator.Join(AppliedMove[PVC.Idx], " "));
+                PVC.Idx += 1;
+            }
+            Call TestLog("MISMATCH ply ")(ValDepth)(" fast=")(PVC.Fast)(" actual=")(PVC.Actual)(" line: ")(PVC.Line);
+        }
+    }
+}
+
 Define PickMove(string Depth)(bool Quiescence) (warp=true)
 {
     Call //("Staged move-generator implementation");
@@ -12367,7 +12355,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 }
                 If (PM.Found == 1)
                 {
-                    Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
                     Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
                     If List.ContainsItem(CalcMovesMoveList, PVStablePrev[Depth])
                     {
@@ -12405,7 +12392,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                             }
                             Else
                             {
-                                Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(99);
                                 Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
                                 If List.ContainsItem(CalcMovesMoveList, TTProbeBestMoveRes)
                                 {
@@ -12422,20 +12408,15 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 Call ClearMoveList(Depth);
                 MoveScoreRes = 9100000;
                 Call AddMoveToList(PM.Move)(Depth)(MoveScoreRes);
-                List.ReplaceItem(MovesIdx, Depth, 1);
-                List.ReplaceItem(PickedPseudoLegalMoves, ((((Depth - 1) * MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Depth]) + 1), PM.Move);
-                List.ReplaceItem(PickedPseudoLegalMovesCount, Depth, (PickedPseudoLegalMovesCount[Depth] + 1));
-                Call ApplyMove(Depth);
-                Call IsCheckedFast((Depth + 1));
-                If (IsCheckedRes == 0)
+                List.ReplaceItem(MovesIdx, Depth, 0);
+                List.ReplaceItem(PickPhase, Depth, 2);
+                List.ReplaceItem(PickMoveRes, Depth, 0);
+                Call PickMove.Iterate(Depth)(2);
+                If (PickMoveRes[Depth] == 1)
                 {
-                    List.ReplaceItem(PickPhase, Depth, 2);
-                    List.ReplaceItem(PickMoveRes, Depth, 1);
                     List.ReplaceItem(HashMove, Depth, AppliedMove[Depth]);
-                    List.ReplaceItem(HashMoveMetaData, Depth, (Not ((TargetPieces[Depth] == 0))));
                     Stop(this script);
                 }
-                Call RevertMove(Depth);
             }
         }
         List.ReplaceItem(PickPhase, Depth, 2);
@@ -12449,7 +12430,6 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
         }
         Else
         {
-            Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(0);
             Call GenerateMovesImplWrapper(Depth)((1 == 0))((1 == 1));
             If (Not ((HashMove[Depth] == "")))
             {
@@ -12513,7 +12493,7 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     If (PickPhase[(Depth + 0)] == 6)
     {
         Call CalcBoardAttackedOnDemand(Depth)(Quiescence)((1 == 1))(4);
-        Call GenerateMovesImplWrapper(Depth)((1 == 0))((Quiescence Or ((CheckedState[(Depth + 0)] == 1) And (BoardAttackedCalculated[(Depth + 0)] == 1))));
+        Call GenerateMovesImplWrapper(Depth)((1 == 0))(Quiescence);
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(PickPhase, Depth, 7);
     }
@@ -12538,14 +12518,22 @@ Define PickMove.Iterate(string Depth)(string NextPhase) (warp=true)
         Call IsMovePicked(Depth)(CurrentMove);
         If (IsMovePickedRes == 0)
         {
-            List.ReplaceItem(PickedPseudoLegalMoves, ((((Depth - 1) * MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Depth]) + 1), CurrentMove);
-            List.ReplaceItem(PickedPseudoLegalMovesCount, Depth, (PickedPseudoLegalMovesCount[(Depth + 0)] + 1));
-            Call ApplyMove(Depth);
-            Call IsCheckedFast((Depth + 1));
-            If (IsCheckedRes == 1)
+            Call IsCastlingPathSafe(CurrentMove)(Depth);
+            If (IsCastlingPathSafeRes == 0)
             {
-                Call RevertMove(Depth);
                 IsMovePickedRes = 1;
+            }
+            Else
+            {
+                List.ReplaceItem(PickedPseudoLegalMoves, ((((Depth - 1) * MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Depth]) + 1), CurrentMove);
+                List.ReplaceItem(PickedPseudoLegalMovesCount, Depth, (PickedPseudoLegalMovesCount[(Depth + 0)] + 1));
+                Call ApplyMove(Depth);
+                Call IsCheckedFast((Depth + 1));
+                If (IsCheckedRes == 1)
+                {
+                    Call RevertMove(Depth);
+                    IsMovePickedRes = 1;
+                }
             }
         }
     }
@@ -12766,6 +12754,36 @@ Define PrepareEvalPiecesData(string Depth) (warp=true)
         Call Log("BoardAttackedByOpp = ")(BoardAttackedByOpp)("")("")("")("")("")("");
         Call Log("BoardAttackedByOwn = ")(BoardAttackedByOwn)("")("")("")("")("")("");
         Call Log("PieceMobility = ")(PieceMobility)("")("")("")("")("")("");
+    }
+}
+
+Define PrepareEvasionMask(string Depth) (warp=true)
+{
+    PEM.Idx = 1;
+    Repeat (64)
+    {
+        List.ReplaceItem(BoardAttackedEvasionTarget, PEM.Idx, 0);
+        PEM.Idx += 1;
+    }
+    Call IsCheckedFast((Depth + 1));
+    If (IsCheckedRes == 1)
+    {
+        List.ReplaceItem(BoardAttackedEvasionTarget, IsCheckedByIdxRes, 1);
+        If ((Depth % 2) == 1)
+        {
+            PEM.KingIdx = KingIdxtOwn;
+        }
+        Else
+        {
+            PEM.KingIdx = KingIdxOpp;
+        }
+        PEM.Move = ((IsCheckedByIdxRes * 100) + PEM.KingIdx);
+        PEM.Idx = IsCheckedByIdxRes;
+        Repeat ((MovePathDelta[PEM.Move] - 1))
+        {
+            PEM.Idx += MovePathStepInc[PEM.Move];
+            List.ReplaceItem(BoardAttackedEvasionTarget, PEM.Idx, 1);
+        }
     }
 }
 
@@ -13290,8 +13308,8 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
             {
                 If ((Not ((abs(SEE.SourcePiece) == GoK_OwnPawn))) Or (Not (((IdxToFile[(SEE.SourceIdx + 0)] + 0) == (IdxToFile[(SEE.TargetIdx + 0)] + 0)))))
                 {
-                    Call IsCaptureReachable(SEE.SourcePiece)(SEE.SourceIdx)(SEE.TargetIdx);
-                    If (IsCaptureReachableRes == 1)
+                    Call IsReachable(SEE.SourcePiece)(SEE.SourceIdx)(SEE.TargetIdx);
+                    If (IsReachableRes == 1)
                     {
                         SEE.Pin.Result = 0;
                         If WithPinFilter
@@ -13523,28 +13541,6 @@ Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
                 IdxSub += 1;
             }
             List.ReplaceItem(CheckedState, StoreDepth, IsOppSideChecked);
-            If (IsOppSideChecked == 0)
-            {
-                List.ReplaceItem(CheckedStateAttackLines, StoreDepth, "");
-            }
-            Else
-            {
-                CurrentValue = "";
-                Idx = 1;
-                Repeat (64)
-                {
-                    If List.ContainsItem(KingAttackLines, Idx)
-                    {
-                        CurrentValue = Operator.Join(CurrentValue, 1);
-                    }
-                    Else
-                    {
-                        CurrentValue = Operator.Join(CurrentValue, 0);
-                    }
-                    Idx += 1;
-                }
-                List.ReplaceItem(CheckedStateAttackLines, StoreDepth, CurrentValue);
-            }
             Call TTStoreNode(CurrentBoardHash)(StoreDepth)(EmptyVal)(EmptyVal)("")(CheckedState[StoreDepth])(EmptyVal)(EmptyVal);
         }
     }
@@ -13562,28 +13558,6 @@ Define StoreAttackInfo(string Depth)(string StoreDepth) (warp=true)
                 IdxSub += 1;
             }
             List.ReplaceItem(CheckedState, StoreDepth, IsOwnSideChecked);
-            If (IsOwnSideChecked == 0)
-            {
-                List.ReplaceItem(CheckedStateAttackLines, StoreDepth, "");
-            }
-            Else
-            {
-                CurrentValue = "";
-                Idx = 1;
-                Repeat (64)
-                {
-                    If List.ContainsItem(KingAttackLines, Idx)
-                    {
-                        CurrentValue = Operator.Join(CurrentValue, 1);
-                    }
-                    Else
-                    {
-                        CurrentValue = Operator.Join(CurrentValue, 0);
-                    }
-                    Idx += 1;
-                }
-                List.ReplaceItem(CheckedStateAttackLines, StoreDepth, CurrentValue);
-            }
             Call TTStoreNode(CurrentBoardHash)(StoreDepth)(EmptyVal)(EmptyVal)("")(CheckedState[StoreDepth])(EmptyVal)(EmptyVal);
         }
     }
@@ -13921,6 +13895,7 @@ Define TestPerft(string TestPerftDepth) (warp=false)
     Call InitTestSuite;
     TestFailures = 0;
     TestPassed = 0;
+    PerftCheckMismatches = 0;
     TestSearchCount = (List.Length(PerftSuiteFens) * TestPerftDepth);
     Call TestLog("=== perft core vs staged movegen, depth 1 to ")(TestPerftDepth)("")("")("")("")("")("");
     TestRow = "";
@@ -13979,6 +13954,7 @@ Define TestPerft(string TestPerftDepth) (warp=false)
         TestPosIdx += 1;
     }
     Call TestLog("=== ")(TestPassed)(" / ")(TestSearchCount)(" successful perft runs")("")("")("");
+    Call TestLog("check-detection mismatches: ")(PerftCheckMismatches)("")("")("")("")("")("");
     IsDCI = 0;
     IsTestRunning = 0;
 }
@@ -14489,7 +14465,6 @@ Define _ClearLists (warp=true)
     List.DeleteItem(PickedPseudoLegalMovesCount, all);
     List.DeleteItem(BestMoves, all);
     List.DeleteItem(CheckedState, all);
-    List.DeleteItem(CheckedStateAttackLines, all);
     List.DeleteItem(PromotionPieces, all);
     List.DeleteItem(TargetPiecesIdx, all);
     List.DeleteItem(PosScoreDelta, all);
