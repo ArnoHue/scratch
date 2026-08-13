@@ -3683,20 +3683,11 @@ Define GetMoveNotation(num Move) (warp=true)
 Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromIdx)(string ToIdx)(string Move)(string Depth) (warp=true)
 {
     MoveScoreRes = 0;
-    Factor = 1;
     Call IsMovePicked(Depth)(Move);
     If (IsMovePickedRes == 1)
     {
-        MOPickScanIdx = 1;
-        Repeat (MaxMovesPerGeneration)
-        {
-            If (Moves[(((Depth - 1) * MaxMovesPerGeneration) + MOPickScanIdx)] == Move)
-            {
-                MoveScoreRes = MovesScore[(((Depth - 1) * MaxMovesPerGeneration) + MOPickScanIdx)];
-                Stop(this script);
-            }
-            MOPickScanIdx += 1;
-        }
+        MoveScoreRes = IsMovePickedScoreRes;
+        Stop(this script);
     }
     Call //("1: Hash moves, handled by staged move generator / PickMove()");
     If (CheckedState[(Depth + 0)] == 1)
@@ -3704,27 +3695,27 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Call //("Check evasions (SF-style: score all)");
         If ((abs(SourcePieceParam) == GoK_BlackKing) Or (BoardAttackedEvasionTarget[ToIdx] == 1))
         {
-            MoveScoreRes = (8000000 * Factor);
+            MoveScoreRes = 8000000;
             If ((Not ((TargetPieceParam == 0))) And (Not ((TargetPieceParam == ""))))
             {
-                MoveScoreRes += ((100000 + ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)]))) * Factor);
+                MoveScoreRes += (100000 + ((PieceIdxLookup[abs(TargetPieceParam)] * 100) + (7 - PieceIdxLookup[abs(SourcePieceParam)])));
             }
             Else
             {
                 GMS.EvCont0 = 0;
                 If ((Depth > 1) And (AppliedMove[(Depth - 1)] > 0))
                 {
-                    Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 68) + floor((AppliedMove[(Depth - 1)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx));
+                    GMS.Idx = ((((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 68) + floor((AppliedMove[(Depth - 1)] % 100))) * 408) + ((PieceIdxLookup[abs(SourcePieceParam)] * 68) + ToIdx));
                     If ((Depth % 2) == 1)
                     {
-                        GMS.EvCont0 = (2 * HistoryContinuationOwn[Idx]);
+                        GMS.EvCont0 = (2 * HistoryContinuationOwn[GMS.Idx]);
                     }
                     Else
                     {
-                        GMS.EvCont0 = (2 * HistoryContinuationOpp[Idx]);
+                        GMS.EvCont0 = (2 * HistoryContinuationOpp[GMS.Idx]);
                     }
                 }
-                MoveScoreRes += (((2 * HistoryMoveScores[(((Depth % 2) * 4200) + ((FromIdx * 64) + ToIdx))]) + GMS.EvCont0) * Factor);
+                MoveScoreRes += ((2 * HistoryMoveScores[(((Depth % 2) * 4200) + ((FromIdx * 64) + ToIdx))]) + GMS.EvCont0);
             }
             Stop(this script);
         }
@@ -3737,14 +3728,14 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         If (((Move * 10) % 10) == 1)
         {
             sffVic = PieceIdxLookup[abs(Board[GMS.To])];
-            Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((sffVic - 1) * 64) + GMS.To));
-            MoveScoreRes = (((7000000 + (100000 * sffVic)) + HistoryCaptureScores[Idx2]) * Factor);
+            GMS.Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((sffVic - 1) * 64) + GMS.To));
+            MoveScoreRes = ((7000000 + (100000 * sffVic)) + HistoryCaptureScores[GMS.Idx2]);
             Stop(this script);
         }
         Else
         {
             Call GetHistoryStatScore(SourcePieceParam)(GMS.From)(GMS.To)(floor(Move))(Depth);
-            MoveScoreRes = (2100000 + (HistoryStatScore * Factor));
+            MoveScoreRes = (2100000 + HistoryStatScore);
             Stop(this script);
         }
     }
@@ -3755,51 +3746,42 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         {
             GMS.TargetPiece = (0 - SourcePieceParam);
         }
-        Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((PieceIdxLookup[abs(GMS.TargetPiece)] - 1) * 64) + ToIdx));
-        If (Quiescence[Depth] == 1)
+        GMS.Idx2 = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((PieceIdxLookup[abs(GMS.TargetPiece)] - 1) * 64) + ToIdx));
+        GMS.Tier = 7000000;
+        If (Not ((Quiescence[Depth] == 1)))
         {
-            MoveScoreRes = (((7000000 + (6 * abs(GMS.TargetPiece))) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
+            If (Not (((PieceIdxLookup[abs(GMS.TargetPiece)] + 1) > PieceIdxLookup[abs(SourcePieceParam)])))
+            {
+                If (Not ((IsScratch3 == 1)))
+                {
+                    Call ClearMoveList((Depth + 2));
+                    Call AddMoveToList(Move)((Depth + 2))(0);
+                    List.ReplaceItem(MovesIdx, (Depth + 2), 1);
+                    Call ApplyMoveLight((Depth + 2));
+                    Call SEE((Depth + 2))((1 == 0));
+                    Call RevertMoveLight((Depth + 2));
+                    If (Not (((((Depth % 2) == 1) And (Not ((SEE.Result < (-50 - (abs(GMS.TargetPiece) / 4)))))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > (50 + (abs(GMS.TargetPiece) / 4)))))))))
+                    {
+                        GMS.Tier = 1000000;
+                    }
+                }
+            }
         }
-        If ((PieceIdxLookup[abs(GMS.TargetPiece)] + 1) > PieceIdxLookup[abs(SourcePieceParam)])
-        {
-            MoveScoreRes = (((7000000 + (6 * abs(GMS.TargetPiece))) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
-        }
-        If (IsScratch3 == 1)
-        {
-            MoveScoreRes = (((7000000 + (6 * abs(GMS.TargetPiece))) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
-        }
-        Call ClearMoveList((Depth + 2));
-        Call AddMoveToList(Move)((Depth + 2))(0);
-        List.ReplaceItem(MovesIdx, (Depth + 2), 1);
-        Call ApplyMoveLight((Depth + 2));
-        Call SEE((Depth + 2))((1 == 0));
-        Call RevertMoveLight((Depth + 2));
-        If ((((Depth % 2) == 1) And (Not ((SEE.Result < (-50 - (abs(GMS.TargetPiece) / 4)))))) Or (((Depth % 2) == 0) And (Not ((SEE.Result > (50 + (abs(GMS.TargetPiece) / 4)))))))
-        {
-            MoveScoreRes = (((7000000 + (6 * abs(GMS.TargetPiece))) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
-        }
-        Else
-        {
-            MoveScoreRes = (((1000000 + (6 * abs(GMS.TargetPiece))) + HistoryCaptureScores[Idx2]) * Factor);
-            Stop(this script);
-        }
+        MoveScoreRes = ((GMS.Tier + (6 * abs(GMS.TargetPiece))) + HistoryCaptureScores[GMS.Idx2]);
+        Stop(this script);
     }
     Call //("4: Killer moves");
     Call PrepareCurrentKillerMoves(Depth);
     If (CurrentKillerMoves[1] == Move)
     {
-        MoveScoreRes = (6000000 * Factor);
+        MoveScoreRes = 6000000;
         Stop(this script);
     }
     Else
     {
         If (CurrentKillerMoves[2] == Move)
         {
-            MoveScoreRes = (5000000 * Factor);
+            MoveScoreRes = 5000000;
             Stop(this script);
         }
     }
@@ -3808,14 +3790,14 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
     {
         If (HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))] == Move)
         {
-            MoveScoreRes = (4000000 * Factor);
+            MoveScoreRes = 4000000;
             Stop(this script);
         }
     }
     Call //("6: Quiets with high history score");
     MoveScoreRes = 2100000;
     Call GetHistoryStatScore(SourcePieceParam)(FromIdx)(ToIdx)(Move)(Depth);
-    MoveScoreRes += (HistoryStatScore * Factor);
+    MoveScoreRes += HistoryStatScore;
     If ((Not ((SourcePieceParam == 0))) And (Not ((SourcePieceParam == ""))))
     {
         If (BoardAttackedCalculated[(Depth + 0)] == 1)
@@ -3823,35 +3805,35 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
             CurrentPieceAbs = abs(SourcePieceParam);
             If ((CurrentPieceAbs > GoK_BlackPawn) And (CurrentPieceAbs < GoK_BlackKing))
             {
-                IdxSub = (((Depth - 1) * 100) + FromIdx);
-                If (BoardAttackedByOpponentSnapshot[(IdxSub + 0)] > 0)
+                GMS.IdxSub = (((Depth - 1) * 100) + FromIdx);
+                If (BoardAttackedByOpponentSnapshot[(GMS.IdxSub + 0)] > 0)
                 {
-                    ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[(IdxSub + 0)]]);
+                    ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[(GMS.IdxSub + 0)]]);
                     If (((CurrentPieceAbs == GoK_BlackQueen) And (ThreatenedByPieceAbs < GoK_BlackQueen)) Or (((CurrentPieceAbs == GoK_BlackRook) And (ThreatenedByPieceAbs < GoK_BlackRook)) Or (((CurrentPieceAbs == GoK_BlackKnight) Or (CurrentPieceAbs == GoK_BlackBishop)) And (ThreatenedByPieceAbs == GoK_BlackPawn))))
                     {
                         ThreatenedByPieceAbs = 0;
-                        IdxSub = (((Depth - 1) * 100) + ToIdx);
-                        If (BoardAttackedByOpponentSnapshot[(IdxSub + 0)] > 0)
+                        GMS.IdxSub = (((Depth - 1) * 100) + ToIdx);
+                        If (BoardAttackedByOpponentSnapshot[(GMS.IdxSub + 0)] > 0)
                         {
-                            ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[(IdxSub + 0)]]);
+                            ThreatenedByPieceAbs = abs(Board[BoardAttackedByOpponentPieceSnapshot[(GMS.IdxSub + 0)]]);
                         }
                         If (ThreatenedByPieceAbs < GoK_BlackKing)
                         {
                             If ((CurrentPieceAbs == GoK_BlackQueen) And ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs == GoK_BlackQueen)))
                             {
-                                MoveScoreRes += (50000 * Factor);
+                                MoveScoreRes += 50000;
                             }
                             Else
                             {
                                 If ((CurrentPieceAbs == GoK_BlackRook) And ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs > GoK_BlackBishop)))
                                 {
-                                    MoveScoreRes += (25000 * Factor);
+                                    MoveScoreRes += 25000;
                                 }
                                 Else
                                 {
                                     If ((ThreatenedByPieceAbs == 0) Or (ThreatenedByPieceAbs > GoK_BlackPawn))
                                     {
-                                        MoveScoreRes += (15000 * Factor);
+                                        MoveScoreRes += 15000;
                                     }
                                 }
                             }
@@ -4807,9 +4789,11 @@ Define InitBoard (warp=true)
         List.Add(MovesScore, 0);
     }
     List.DeleteAll(PickedPseudoLegalMoves);
+    List.DeleteAll(PickedPseudoLegalMovesScore);
     Repeat ((MaxMovesPerGeneration * MaxSearchDepthStackFrames))
     {
         List.Add(PickedPseudoLegalMoves, 0);
+        List.Add(PickedPseudoLegalMovesScore, 0);
     }
     List.DeleteAll(PickedLegalMovesCount);
     Repeat (MaxSearchDepthStackFrames)
@@ -7431,6 +7415,7 @@ Define IsMovePicked(string Depth)(string Move) (warp=true)
         If (PickedPseudoLegalMoves[(((Depth - 1) * MaxMovesPerGeneration) + MPScanIdx)] == Move)
         {
             IsMovePickedRes = 1;
+            IsMovePickedScoreRes = PickedPseudoLegalMovesScore[(((Depth - 1) * MaxMovesPerGeneration) + MPScanIdx)];
             Stop(this script);
         }
         MPScanIdx += 1;
@@ -8772,6 +8757,7 @@ Define PickMove.Iterate(string Depth)(string NextPhase)(bool UpdateNNUE) (warp=t
             Else
             {
                 List.ReplaceItem(PickedPseudoLegalMoves, ((((Depth - 1) * MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Depth]) + 1), CurrentMove);
+                List.ReplaceItem(PickedPseudoLegalMovesScore, ((((Depth - 1) * MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Depth]) + 1), MovesScore[(((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth])]);
                 List.ReplaceItem(PickedPseudoLegalMovesCount, Depth, (PickedPseudoLegalMovesCount[Depth] + 1));
                 Call ApplyMove(Depth)(UpdateNNUE);
                 Call IsCheckedFast((Depth + 1));
