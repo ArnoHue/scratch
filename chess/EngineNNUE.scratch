@@ -4169,16 +4169,16 @@ Define GetTargetIdx(num SourceIdx)(num DeltaX)(num DeltaY) (warp=true)
 Define GetTTBoardHash(string BoardHash)(string Depth) (warp=true)
 {
     TTBoardHashResult = ((Depth % 2) + 1);
-    TTBoardHashResult = ((TTBoardHashResult * 97) + (CastlingState[Depth] + 1));
+    TTBoardHashResult = ((TTBoardHashResult * 11111117) + (CastlingState[Depth] + 1));
     TTBoardHashResult = ((TTBoardHashResult * 97) + (BoardHash + 1));
 }
 
 Define GetTTNodeHash(string BoardHash)(string Depth)(bool Quiescence) (warp=true)
 {
     TTNodeHashResult = ((Depth % 2) + 1);
-    TTNodeHashResult = ((TTNodeHashResult * 97) + (Quiescence + 1));
-    TTNodeHashResult = ((TTNodeHashResult * 97) + (EnPassantTarget[Depth] + 1));
-    TTNodeHashResult = ((TTNodeHashResult * 97) + (CastlingState[Depth] + 1));
+    TTNodeHashResult = ((TTNodeHashResult * 3) + (Quiescence + 1));
+    TTNodeHashResult = ((TTNodeHashResult * 67) + (EnPassantTarget[Depth] + 1));
+    TTNodeHashResult = ((TTNodeHashResult * 11111117) + (CastlingState[Depth] + 1));
     TTNodeHashResult = ((TTNodeHashResult * 97) + (BoardHash + 1));
 }
 
@@ -8551,7 +8551,6 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
         List.ReplaceItem(MovesCount, Depth, 0);
         List.ReplaceItem(MovesIdx, Depth, 0);
         List.ReplaceItem(BestMoveListIdx, Depth, 0);
-        List.ReplaceItem(LMRState, Depth, 0);
         Call ClearMoveList(Depth);
         If ((Depth > 1) Or (1 == 1))
         {
@@ -8688,7 +8687,7 @@ Define PickMove(string Depth)(bool Quiescence)(bool UpdateNNUE) (warp=true)
         }
         Call PickMove.TryKCMove(CurrentKillerMoves[1])(Depth)(6000000);
         Call PickMove.TryKCMove(CurrentKillerMoves[2])(Depth)(5000000);
-        If ((Depth > 1) And ((Not ((CounterMove == CurrentKillerMoves[1]))) And (Not ((CounterMove == CurrentKillerMoves[2])))))
+        If (((Depth > 1) And ((Not ((CounterMove == CurrentKillerMoves[1]))) And (Not ((CounterMove == CurrentKillerMoves[2]))))) And (Not ((CounterMove == ""))))
         {
             Call PickMove.TryKCMove(HistoryCounterMoves[(((Depth % 2) * 1000) + ((PieceIdxLookup[abs(SourcePieces[(Depth - 1)])] * 100) + floor((AppliedMove[(Depth - 1)] % 100))))])(Depth)(4000000);
         }
@@ -10518,6 +10517,7 @@ Define Search_InitStack(string Depth)(bool Quiescence) (warp=true)
     List.ReplaceItem(BestMoves, (Depth + 0), "");
     List.ReplaceItem(AppliedMove, (Depth + 0), "");
     List.ReplaceItem(BoardEval, (Depth + 0), "");
+    List.ReplaceItem(LMRState, Depth, 0);
     List.ReplaceItem(PV, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
     List.ReplaceItem(PVRaw, (((Depth - 1) * MaxSearchDepthStackFrames) + 1), 0);
     If Quiescence
@@ -11667,7 +11667,9 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
     FirstBucket = (((FirstBucket - 1) * TTNodeEntrySize) + 1);
     HashBucket = FirstBucket;
     UpdateIdx = 0;
-    CreateIdx = 0;
+    Call //("Choose the store slot: same position > empty slot > least valuable entry");
+    TT.EmptySlot = 0;
+    TT.EvictionSlot = 0;
     Repeat (5)
     {
         Hash = TTNodeEntry[HashBucket];
@@ -11677,9 +11679,19 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
         }
         Else
         {
-            If (TTNodeEntry[(HashBucket + TTNodeColIdx.Age)] < TT.CurrentAge)
+            If (Hash == 0)
             {
-                CreateIdx = HashBucket;
+                TT.EmptySlot = HashBucket;
+            }
+            Else
+            {
+                Call //("An entry is worth keeping if it is deep and fresh: depth minus age-in-searches");
+                TT.EntryValue = (TTNodeEntry[(HashBucket + TTNodeColIdx.Horizon)] - (TT.CurrentAge - TTNodeEntry[(HashBucket + TTNodeColIdx.Age)]));
+                If ((TT.EvictionSlot == 0) Or (TT.EntryValue < TT.EvictionSlotValue))
+                {
+                    TT.EvictionSlotValue = TT.EntryValue;
+                    TT.EvictionSlot = HashBucket;
+                }
             }
         }
         HashBucket += TTNodeEntrySize;
@@ -11690,13 +11702,13 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
     }
     Else
     {
-        If (CreateIdx > 0)
+        If (TT.EmptySlot > 0)
         {
-            HashBucket = CreateIdx;
+            HashBucket = TT.EmptySlot;
         }
         Else
         {
-            HashBucket = FirstBucket;
+            HashBucket = TT.EvictionSlot;
         }
     }
     If (TTNodeEntry[HashBucket] == NodeHash)
@@ -11706,7 +11718,8 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Checked), Checked);
         }
         HorizonLoc = TTNodeEntry[(HashBucket + TTNodeColIdx.Horizon)];
-        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And (((Not ((Horizon < HorizonLoc))) Or (HorizonLoc == EmptyVal)) Or (TTNodeEntry[(HashBucket + TTNodeColIdx.Eval)] == EmptyVal)))
+        Call //("Overwrite the same position: an exact score always wins; otherwise only if not clearly shallower than stored (reference rule: stored depth - 4)");
+        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And ((Type == "E") Or (Not ((Horizon < (HorizonLoc - 4))))))
         {
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Type), List.IndexOf(NodeTypeLookup, Type));
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Eval), Score);
