@@ -78,7 +78,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (15.08.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (16.08.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1104,13 +1104,13 @@ Define AddPotentialQuiescenceMove(string SourceIdx)(string TargetIdx)(string Pie
     }
     If (Piece > 0)
     {
-        Call IsReachable(Piece)(TargetIdx)(WhiteKingIdx);
+        Call IsReachableForAttack(Piece)(TargetIdx)(WhiteKingIdx);
     }
     Else
     {
-        Call IsReachable(Piece)(TargetIdx)(BlackKingIdx);
+        Call IsReachableForAttack(Piece)(TargetIdx)(BlackKingIdx);
     }
-    If (IsReachableRes == 1)
+    If (IsReachableForAttackRes == 1)
     {
         Call AddMoveImpl(SourceIdx)(TargetIdx)(Depth)((1 == 0))((1 == 1));
     }
@@ -1349,6 +1349,25 @@ Define AddToFiftyMoves(bool IsCaptureOrPawnMove) (warp=true)
         }
         List.Add(BoardHistoryFiftyMoves, (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] + 1));
     }
+}
+
+Define AdjustEvalScore(string Depth)(string RawEval) (warp=true)
+{
+    If (1 == 1)
+    {
+        List.ReplaceItem(BoardEval, Depth, Operator.Round(((RawEval * (211 - BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)])) / 211)));
+    }
+    Call GetCorrHistIndices(Depth);
+    CorrSum = 0;
+    If (CorrHistKey[CorrIdx] == CorrPawnKey)
+    {
+        CorrSum += (53 * CorrHistVal[CorrIdx]);
+    }
+    If (CorrHistNPKey[CorrNPIdx] == CorrNPKey)
+    {
+        CorrSum += (65 * CorrHistNP[CorrNPIdx]);
+    }
+    List.ReplaceItem(BoardEval, (Depth + 0), (BoardEval[(Depth + 0)] + Operator.Round((CorrSum / 512))));
 }
 
 Define ApplyMove(string Depth)(bool UpdateNNUE) (warp=true)
@@ -3310,7 +3329,7 @@ Define GetBestMoveMedDiff (warp=false)
         ThinkTimeLimitSearch = ThinkTimeLimit;
         If (((IdxDeepening > 4) And (1 == 1)) And ((Not ((GBM.Evaluation == ""))) And (abs(GBM.Evaluation) < AbsMinCheckmateEval)))
         {
-            AWDelta = Operator.Round((40 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 2400)));
+            AWDelta = Operator.Round((12 + ((abs(GBM.Evaluation) * abs(GBM.Evaluation)) / 6712)));
             AWAlpha = Operator.Round((GBM.Evaluation - AWDelta));
             AWBeta = Operator.Round((GBM.Evaluation + AWDelta));
         }
@@ -3378,28 +3397,7 @@ Define GetBoardEval(string Depth) (warp=true)
     If (BoardEval[Depth] == "")
     {
         Call Evaluate((Depth - 1))((1 == 1));
-        If (1 == 1)
-        {
-            List.ReplaceItem(BoardEval, Depth, Operator.Round(((EvaluationRes * (211 - BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)])) / 211)));
-        }
-        CorrPawnKey = CurrentBoardHashKP;
-        Call GetPiecePosHash(Board[WhiteKingIdx])(WhiteKingIdx);
-        CorrPawnKey = (CorrPawnKey - PiecePosHash);
-        Call GetPiecePosHash(Board[BlackKingIdx])(BlackKingIdx);
-        CorrPawnKey = (CorrPawnKey - PiecePosHash);
-        CorrIdx = ((((Depth % 2) * 100000) + (CorrPawnKey % 100000)) + 1);
-        CorrNPKey = (CurrentBoardHash - CurrentBoardHashKP);
-        CorrNPIdx = ((((Depth % 2) * 100000) + (CorrNPKey % 100000)) + 1);
-        CorrSum = 0;
-        If (CorrHistKey[CorrIdx] == CorrPawnKey)
-        {
-            CorrSum += (53 * CorrHistVal[CorrIdx]);
-        }
-        If (CorrHistNPKey[CorrNPIdx] == CorrNPKey)
-        {
-            CorrSum += (65 * CorrHistNP[CorrNPIdx]);
-        }
-        List.ReplaceItem(BoardEval, (Depth + 0), (BoardEval[(Depth + 0)] + Operator.Round((CorrSum / 512))));
+        Call AdjustEvalScore(Depth)(EvaluationRes);
     }
 }
 
@@ -3420,13 +3418,6 @@ Define GetCalibratedEval(string Depth) (warp=true)
     If (Not ((BoardEval[Depth] == "")))
     {
         Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 0));
-        If (TTProbeRes == 0)
-        {
-            If (1 == 0)
-            {
-                Call TTProbeNode(CurrentBoardHash)(Depth)((1 == 1));
-            }
-        }
         If ((TTProbeRes == 1) And (Not ((TTProbeNode.EvalRes == EmptyVal))))
         {
             If ((TTProbeNode.NodeTypeRes == "E") Or (((TTProbeNode.NodeTypeRes == "A") And (TTProbeNode.EvalRes < BoardEval[(Depth + 0)])) Or ((TTProbeNode.NodeTypeRes == "B") And (TTProbeNode.EvalRes > BoardEval[(Depth + 0)]))))
@@ -3441,6 +3432,18 @@ Define GetCalibratedEval(string Depth) (warp=true)
             }
         }
     }
+}
+
+Define GetCorrHistIndices(string Depth) (warp=true)
+{
+    CorrPawnKey = CurrentBoardHashKP;
+    Call GetPiecePosHash(Board[WhiteKingIdx])(WhiteKingIdx);
+    CorrPawnKey = (CorrPawnKey - PiecePosHash);
+    Call GetPiecePosHash(Board[BlackKingIdx])(BlackKingIdx);
+    CorrPawnKey = (CorrPawnKey - PiecePosHash);
+    CorrIdx = ((((Depth % 2) * 100000) + (CorrPawnKey % 100000)) + 1);
+    CorrNPKey = (CurrentBoardHash - CurrentBoardHashKP);
+    CorrNPIdx = ((((Depth % 2) * 100000) + (CorrNPKey % 100000)) + 1);
 }
 
 Define GetCurrentMove(num Depth) (warp=true)
@@ -3535,12 +3538,17 @@ Define GetImproving(string Depth) (warp=true)
         IsImproving = 0;
         Stop(this script);
     }
-    IsImproving = "";
+    IsImproving = 1;
     If (Not ((BoardEval[Depth] == "")))
     {
-        If ((Depth > 2) And (Not ((BoardEval[(Depth - 2)] == ""))))
+        GI.Idx = (Depth - 2);
+        If (BoardEval[GI.Idx] == "")
         {
-            If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[(Depth - 2)])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[(Depth - 2)])))
+            GI.Idx = (GI.Idx - 2);
+        }
+        If ((GI.Idx > 0) And (Not ((BoardEval[GI.Idx] == ""))))
+        {
+            If ((((Depth % 2) == 1) And (BoardEval[Depth] > BoardEval[GI.Idx])) Or (((Depth % 2) == 0) And (BoardEval[Depth] < BoardEval[GI.Idx])))
             {
                 IsImproving = 1;
             }
@@ -3665,14 +3673,14 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Call //("Promotions");
         If (((Move * 10) % 10) == 1)
         {
-            GMS.PieceIdx = PieceIdxLookup[abs(Board[ToIdx])];
-            GMS.BaseIdx = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((GMS.PieceIdx - 1) * 64) + ToIdx));
+            GMS.PieceIdx = PieceIdxLookup[abs(Board[floor((Move % 100))])];
+            GMS.BaseIdx = (((PieceIdxLookup[abs(SourcePieceParam)] - 1) * 384) + (((GMS.PieceIdx - 1) * 64) + floor((Move % 100))));
             MoveScoreRes = ((7000000 + (100000 * GMS.PieceIdx)) + HistoryCaptureScores[GMS.BaseIdx]);
             Stop(this script);
         }
         Else
         {
-            Call GetHistoryStatScore(SourcePieceParam)(FromIdx)(ToIdx)(floor(Move))(Depth);
+            Call GetHistoryStatScore(SourcePieceParam)(floor((floor(Move) / 100)))(floor((Move % 100)))(floor(Move))(Depth);
             MoveScoreRes = (2100000 + HistoryStatScore);
             Stop(this script);
         }
@@ -7221,13 +7229,13 @@ Define IsCheckingPieceImpl(string Idx)(string Piece) (warp=true)
     }
     If (Piece > 0)
     {
-        Call IsReachable(Piece)(Idx)(WhiteKingIdx);
+        Call IsReachableForAttack(Piece)(Idx)(WhiteKingIdx);
     }
     Else
     {
-        Call IsReachable(Piece)(Idx)(BlackKingIdx);
+        Call IsReachableForAttack(Piece)(Idx)(BlackKingIdx);
     }
-    IsCheckingPieceRes = IsReachableRes;
+    IsCheckingPieceRes = IsReachableForAttackRes;
 }
 
 Define IsDrawByMaterial (warp=true)
@@ -7397,7 +7405,7 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
 {
     Call //("Quiescence search extension for checking moves, esp. check sequences. Return value defined whether check sequences should pursued at this point");
     IsQuiescentCheckRes = 0;
-    If (1 == 0)
+    If (1 == 1)
     {
         If (IsScratch3 == 0)
         {
@@ -7409,9 +7417,9 @@ Define IsQuiescentCheckCond(string Depth) (warp=true)
     }
 }
 
-Define IsReachable(string Piece)(string FromIdx)(string ToIdx) (warp=true)
+Define IsReachableForAttack(string Piece)(string FromIdx)(string ToIdx) (warp=true)
 {
-    IsReachableRes = 0;
+    IsReachableForAttackRes = 0;
     If (Piece == 0)
     {
         Stop(this script);
@@ -7422,14 +7430,14 @@ Define IsReachable(string Piece)(string FromIdx)(string ToIdx) (warp=true)
     }
     If ((abs(Piece) == GoK_BlackKing) Or (abs(Piece) == GoK_BlackKnight))
     {
-        IsReachableRes = 1;
+        IsReachableForAttackRes = 1;
         Stop(this script);
     }
     If (abs(Piece) == GoK_BlackPawn)
     {
         If (Not ((IdxToFile[FromIdx] == IdxToFile[ToIdx])))
         {
-            IsReachableRes = 1;
+            IsReachableForAttackRes = 1;
             Stop(this script);
         }
     }
@@ -7445,7 +7453,7 @@ Define IsReachable(string Piece)(string FromIdx)(string ToIdx) (warp=true)
                 Stop(this script);
             }
         }
-        IsReachableRes = 1;
+        IsReachableForAttackRes = 1;
     }
 }
 
@@ -9297,7 +9305,7 @@ Define Search(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(bool 
             List.Add(PVStablePrev, PVStable[Idx]);
             Idx += 1;
         }
-        Call StoreKillerMove(1)(Search.MoveRes)((MaxDepth - 1))((1 == 0))((1 == 0));
+        Call StoreKillerMove(1)(Search.MoveRes)((MaxDepth - 1))((1 == 0))((1 == 0))((1 == 1));
     }
 }
 
@@ -9339,32 +9347,14 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         List.ReplaceItem(SearchEvalResults, Depth, EvaluationRes);
         Stop(this script);
     }
-    If (1 == 1)
+    If (CheckedState[Depth] == 0)
     {
         Call TTProbeBoard(CurrentBoardHash)((Depth - 1));
         Profile_TTStaticProbe += 1;
         If ((TTProbeRes == 1) And (Not ((TTProbeBoard.EvalSumRes == EmptyVal))))
         {
             Profile_TTStaticHit += 1;
-            List.ReplaceItem(BoardEval, Depth, TTProbeBoard.EvalSumRes);
-            CorrPawnKey = CurrentBoardHashKP;
-            Call GetPiecePosHash(Board[WhiteKingIdx])(WhiteKingIdx);
-            CorrPawnKey = (CorrPawnKey - PiecePosHash);
-            Call GetPiecePosHash(Board[BlackKingIdx])(BlackKingIdx);
-            CorrPawnKey = (CorrPawnKey - PiecePosHash);
-            CorrIdx = ((((Depth % 2) * 100000) + (CorrPawnKey % 100000)) + 1);
-            CorrNPKey = (CurrentBoardHash - CurrentBoardHashKP);
-            CorrNPIdx = ((((Depth % 2) * 100000) + (CorrNPKey % 100000)) + 1);
-            CorrSum = 0;
-            If (CorrHistKey[CorrIdx] == CorrPawnKey)
-            {
-                CorrSum += (53 * CorrHistVal[CorrIdx]);
-            }
-            If (CorrHistNPKey[CorrNPIdx] == CorrNPKey)
-            {
-                CorrSum += (65 * CorrHistNP[CorrNPIdx]);
-            }
-            List.ReplaceItem(BoardEval, (Depth + 0), (BoardEval[(Depth + 0)] + Operator.Round((CorrSum / 512))));
+            Call AdjustEvalScore(Depth)(TTProbeBoard.EvalSumRes);
         }
     }
     If (Not (Quiescence))
@@ -9688,7 +9678,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                             If ((LMRState[Depth] == 2) Or (LMRState[Depth] == 3))
                             {
                                 Call GetCurrentMove(Depth);
-                                Call StoreKillerMove(Depth)(CurrentMove)(Horizon)((LMRState[Depth] == 3))((1 == 1));
+                                Call StoreKillerMove(Depth)(CurrentMove)(Horizon)((LMRState[Depth] == 3))((1 == 1))((1 == 1));
                             }
                         }
                     }
@@ -9766,7 +9756,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
         }
         If ((Not (Quiescence)) And (Not ((BestMoves[Depth] == ""))))
         {
-            Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon)((1 == 0))((1 == 0));
+            Call StoreKillerMove(Depth)(BestMoves[Depth])(Horizon)((1 == 0))((1 == 0))((1 == 1));
             If (PickedPseudoLegalMovesCount[Depth] < MovesCount[Depth])
             {
                 Call StoreKillerMoveMalus(Depth)(Horizon)(BestMoveListIdx[Depth]);
@@ -9794,14 +9784,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(b
                     BM = BestMoves[(Depth + 0)];
                     If ((CheckedState[(Depth + 0)] == 0) And (((BM == "") And (Not ((ImpVal > 0)))) Or ((Not ((BM == ""))) And ((Board[floor((BM % 100))] == 0) And (ImpVal > 0)))))
                     {
-                        CorrPawnKey = CurrentBoardHashKP;
-                        Call GetPiecePosHash(Board[WhiteKingIdx])(WhiteKingIdx);
-                        CorrPawnKey = (CorrPawnKey - PiecePosHash);
-                        Call GetPiecePosHash(Board[BlackKingIdx])(BlackKingIdx);
-                        CorrPawnKey = (CorrPawnKey - PiecePosHash);
-                        CorrIdx = ((((Depth % 2) * 100000) + (CorrPawnKey % 100000)) + 1);
-                        CorrNPKey = (CurrentBoardHash - CurrentBoardHashKP);
-                        CorrNPIdx = ((((Depth % 2) * 100000) + (CorrNPKey % 100000)) + 1);
+                        Call GetCorrHistIndices(Depth);
                         CorrBonus = ((CorrDelta * Horizon) / 4);
                         If (CorrBonus > 249)
                         {
@@ -9902,7 +9885,7 @@ Define Search_Core(string Depth)(bool InitialDeepening)(string QuiescenceDepth)(
             }
             If (PickedLegalMovesCount[Depth] > CurrentValue)
             {
-                Reduction = floor(((1 + ((ln(PickedLegalMovesCount[Depth]) * ln((Horizon + SearchExtension[Depth]))) / 1.75)) * 128));
+                Reduction = floor(((1 + ((ln(PickedLegalMovesCount[Depth]) * ln((Horizon + SearchExtension[Depth]))) / 2.25)) * 128));
                 If (1 == 1)
                 {
                     If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
@@ -10174,6 +10157,11 @@ Define Search_DetectDrawByRepetition(string Depth)(bool Quiescence) (warp=true)
 {
     If ((Depth > 1) And (IsInNullMove == 0))
     {
+        If ((BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 100) And (CheckedState[Depth] == 0))
+        {
+            List.ReplaceItem(SearchEvalResults, (Depth + 0), DrawByRepetitionEval);
+            Stop(this script);
+        }
         Call //("Draw-by-repetition detection. This happens on every ply and could be costly, so we check previous plies for pawn moves and captures. When repetition is possible, history tables are searched for same board hash, when found we verify if the occurred for the same side.");
         Count = 1;
         If List.ContainsItem(PreviousBoardHash, (CurrentBoardHash + 0))
@@ -10543,10 +10531,10 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                                     IsImproving = 1;
                                 }
                                 Margin = 0;
-                                CalibratedEvalResult = BoardEval[(Depth + 0)];
-                                If (Not ((CalibratedEvalResult == "")))
+                                NMP.Eval = BoardEval[(Depth + 0)];
+                                If (Not ((NMP.Eval == "")))
                                 {
-                                    If ((((Depth % 2) == 1) And (Not ((CalibratedEvalResult < (Betas[Depth] + Margin))))) Or (((Depth % 2) == 0) And (Not ((CalibratedEvalResult > (Alphas[Depth] - Margin))))))
+                                    If ((((Depth % 2) == 1) And (Not ((NMP.Eval < (Betas[Depth] + Margin))))) Or (((Depth % 2) == 0) And (Not ((NMP.Eval > (Alphas[Depth] - Margin))))))
                                     {
                                         Call ClearMoveList((Depth + 0));
                                         Call AddMoveToList(0)((Depth + 0))(0);
@@ -10788,8 +10776,8 @@ Define SEE(string MoveDepth)(bool WithPinFilter) (warp=true)
             SEE.SourcePiece = Board[(SEE.SourceIdx + 0)];
             If (((Side == 1) And (SEE.SourcePiece > 0)) Or ((Side == 2) And (SEE.SourcePiece < 0)))
             {
-                Call IsReachable(Board[(SEE.SourceIdx + 0)])(SEE.SourceIdx)(SEE.TargetIdx);
-                If (IsReachableRes == 1)
+                Call IsReachableForAttack(Board[(SEE.SourceIdx + 0)])(SEE.SourceIdx)(SEE.TargetIdx);
+                If (IsReachableForAttackRes == 1)
                 {
                     SEE.Pin.Result = 0;
                     If WithPinFilter
@@ -11123,11 +11111,11 @@ Define StoreAttackInfo(string Depth) (warp=true)
     Call TTStoreNode(CurrentBoardHash)(Depth)(EmptyVal)(EmptyVal)("")(CheckedState[Depth])(EmptyVal)(EmptyVal);
 }
 
-Define StoreKillerMove(string Depth)(string Move)(string Horizon)(bool Malus)(bool ContinuationOnly) (warp=true)
+Define StoreKillerMove(string Depth)(string Move)(string Horizon)(bool Malus)(bool ContinuationOnly)(bool QuietOk) (warp=true)
 {
     HistoryBonusA = ((190 * Horizon) - 108);
     HistoryBonus = ((((HistoryBonusA + 1596) - abs((HistoryBonusA - 1596))) / 2) * (1 - (2 * Malus)));
-    If (floor((Move / 100)) == 0)
+    If ((floor((Move / 100)) == 0) And QuietOk)
     {
         If ((((Move == GoK_BlackKingsideCastling) Or (Move == GoK_BlackQueensideCastling)) Or (Move == GoK_WhiteKingsideCastling)) Or (Move == GoK_WhiteQueensideCastling))
         {
@@ -11181,7 +11169,7 @@ Define StoreKillerMove(string Depth)(string Move)(string Horizon)(bool Malus)(bo
             }
         }
     }
-    If ((((floor((Move / 100)) == 0) Or (Board[floor((Move % 100))] == 0)) And (Move == floor(Move))) And (Not (((abs(Board[floor((Move / 100))]) == GoK_BlackPawn) And (Not ((IdxToFile[floor((Move / 100))] == IdxToFile[floor((Move % 100))])))))))
+    If (((((floor((Move / 100)) == 0) Or (Board[floor((Move % 100))] == 0)) And (Move == floor(Move))) And (Not (((abs(Board[floor((Move / 100))]) == GoK_BlackPawn) And (Not ((IdxToFile[floor((Move / 100))] == IdxToFile[floor((Move % 100))]))))))) And QuietOk)
     {
         If (Not (ContinuationOnly))
         {
@@ -11280,14 +11268,11 @@ Define StoreKillerMove(string Depth)(string Move)(string Horizon)(bool Malus)(bo
 Define StoreKillerMoveMalus(string Depth)(string Horizon)(string KillerMoveIdx) (warp=true)
 {
     CurrentMove = Moves[(((Depth - 1) * MaxMovesPerGeneration) + KillerMoveIdx)];
-    If ((floor((CurrentMove / 100)) == 0) Or (Board[floor((CurrentMove % 100))] == 0))
+    Caller.Idx = 1;
+    Repeat ((KillerMoveIdx - 1))
     {
-        Caller.Idx = 1;
-        Repeat ((KillerMoveIdx - 1))
-        {
-            Call StoreKillerMove(Depth)(Moves[(((Depth - 1) * MaxMovesPerGeneration) + Caller.Idx)])(Horizon)((1 == 1))((1 == 0));
-            Caller.Idx += 1;
-        }
+        Call StoreKillerMove(Depth)(Moves[(((Depth - 1) * MaxMovesPerGeneration) + Caller.Idx)])(Horizon)((1 == 1))((1 == 0))(((floor((CurrentMove / 100)) == 0) Or (Board[floor((CurrentMove % 100))] == 0)));
+        Caller.Idx += 1;
     }
 }
 
@@ -11664,7 +11649,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Depth)(string Score)(string BestM
         }
         HorizonLoc = TTNodeEntry[(HashBucket + TTNodeColIdx.Horizon)];
         Call //("Overwrite the same position: an exact score always wins; otherwise only if not clearly shallower than stored (reference rule: stored depth - 4)");
-        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And ((Type == "E") Or (Not ((Horizon < (HorizonLoc - 4))))))
+        If (((Not ((Score == EmptyVal))) And (Not ((Horizon == EmptyVal)))) And ((Type == "E") Or ((HorizonLoc == -1) Or (Not ((Horizon < HorizonLoc))))))
         {
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Type), List.IndexOf(NodeTypeLookup, Type));
             List.ReplaceItem(TTNodeEntry, (HashBucket + TTNodeColIdx.Eval), Score);
