@@ -78,7 +78,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (16.08.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (20.08.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -1376,7 +1376,6 @@ Define ApplyMove(string Depth)(bool UpdateNNUE) (warp=true)
     {
         Call NNUE_Public_OnMakeMoveStart(Depth);
     }
-    List.ReplaceItem(PosEvalDelta, Depth, 0);
     List.ReplaceItem(SourcePieces, Depth, 0);
     List.ReplaceItem(TargetPiecesIdx, Depth, 0);
     List.ReplaceItem(TargetPieces, Depth, 0);
@@ -1408,9 +1407,7 @@ Define ApplyMove(string Depth)(bool UpdateNNUE) (warp=true)
         List.ReplaceItem(PromotionPieces, Depth, 0);
         List.ReplaceItem(Board, TargetIdx, SourcePiece);
         List.ReplaceItem(Board, SourceIdx, 0);
-        Call //("Incremental positional eval via move-to-eval lookup table");
         Idx2 = ((((DepthEvalFactor[Depth] + 1) * 30000) + (PieceIdxLookup[abs(SourcePiece)] * 10000)) + ((SourceIdx * 100) + TargetIdx));
-        List.ReplaceItem(PosEvalDelta, Depth, MoveToEvalDelta[Idx2]);
         Call //("Incremental Zobrist hash update via move-to-hash lookup table");
         CurrentBoardHash += MoveToHash[Idx2];
         If (abs(SourcePiece) == GoK_BlackPawn)
@@ -1554,7 +1551,6 @@ Define ApplyMove(string Depth)(bool UpdateNNUE) (warp=true)
         {
             Call //("Captures => incremental positional eval and Zobrist hash update");
             Idx2 = ((((DepthEvalFactor[(Depth + 1)] + 1) * 30000) + (PieceIdxLookup[abs(TargetPiece)] * 10000)) + (TargetPiecesIdx[Depth] * 100));
-            List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + MoveToEvalDelta[Idx2]));
             CurrentBoardHash += MoveToHash[Idx2];
             If ((abs(TargetPiece) == GoK_BlackPawn) Or (abs(TargetPiece) == GoK_BlackKing))
             {
@@ -1755,7 +1751,6 @@ Define ApplyMoveLight(string Depth) (warp=true)
     }
     Else
     {
-        List.ReplaceItem(PosEvalDelta, Depth, 0);
         List.ReplaceItem(SourcePieces, Depth, 0);
         List.ReplaceItem(TargetPiecesIdx, Depth, 0);
         List.ReplaceItem(TargetPieces, Depth, 0);
@@ -2208,21 +2203,6 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
             }
             Stop(this script);
         }
-        Call //("Incremental Evaluation");
-        If (Depth == 1)
-        {
-            List.ReplaceItem(PosEvalDeltaSum, Depth, PosEvalDelta[Depth]);
-            List.ReplaceItem(CapturesDeltaSum, Depth, TargetPieces[Depth]);
-        }
-        Else
-        {
-            List.ReplaceItem(PosEvalDeltaSum, Depth, (PosEvalDeltaSum[(Depth - 1)] + PosEvalDelta[Depth]));
-            List.ReplaceItem(CapturesDeltaSum, Depth, (CapturesDeltaSum[(Depth - 1)] + TargetPieces[Depth]));
-        }
-        If (Not ((PromotionPieces[Depth] == 0)))
-        {
-            List.ReplaceItem(CapturesDeltaSum, Depth, ((CapturesDeltaSum[Depth] - PromotionPieces[Depth]) + SourcePieces[Depth]));
-        }
     }
     If ForceFullEval
     {
@@ -2250,7 +2230,8 @@ Define Evaluate(string Depth)(bool ForceFullEval) (warp=true)
         }
         Else
         {
-            EvaluationRes = (EvalBase + (PosEvalDeltaSum[Depth] - CapturesDeltaSum[Depth]));
+            Call EvaluateBoardBasic;
+            EvaluationRes = EvalBoardBasicRes;
             Call //("SF-style mate driving (endgame.cpp): push the weak king to the edge and the kings together");
             PE.Side = 0;
             If ((((BlackQueenCountLocal + BlackNonQueenMajorMinorCountLocal) + BlackPawnCountLocal) == 0) And ((WhiteQueenCountLocal + WhiteNonQueenMajorMinorCountLocal) > 0))
@@ -4612,19 +4593,13 @@ Define InitBoard (warp=true)
     List.DeleteItem(CheckedState, all);
     List.DeleteItem(PromotionPieces, all);
     List.DeleteItem(TargetPiecesIdx, all);
-    List.DeleteItem(PosEvalDelta, all);
     List.DeleteItem(BoardAttackedCalculated, all);
     List.DeleteItem(PutsInCheck, all);
-    List.DeleteItem(EvalExtended1, all);
     List.DeleteItem(SearchExtension, all);
     List.DeleteItem(SourcePieces, all);
-    List.DeleteItem(EvalExtended2, all);
-    List.DeleteItem(EvalExtended3, all);
     List.DeleteItem(BlackMobBonus, all);
     List.DeleteItem(WhiteMobBonus, all);
     List.DeleteItem(AppliedMove, all);
-    List.DeleteItem(CapturesDeltaSum, all);
-    List.DeleteItem(PosEvalDeltaSum, all);
     List.DeleteItem(SearchExtensionTagged, all);
     List.DeleteItem(Quiescence, all);
     List.DeleteItem(EnPassantTarget, all);
@@ -4662,20 +4637,14 @@ Define InitBoard (warp=true)
         List.Add(CheckedState, "");
         List.Add(PromotionPieces, "");
         List.Add(TargetPiecesIdx, 0);
-        List.Add(PosEvalDelta, "");
         List.Add(BoardAttackedCalculated, "");
         List.Add(PutsInCheck, "");
-        List.Add(EvalExtended1, "");
         List.Add(SearchExtension, "");
         List.Add(PrevSearchExtension, "");
         List.Add(SourcePieces, 0);
-        List.Add(EvalExtended2, "");
-        List.Add(EvalExtended3, "");
         List.Add(BlackMobBonus, "");
         List.Add(WhiteMobBonus, "");
         List.Add(AppliedMove, "");
-        List.Add(CapturesDeltaSum, "");
-        List.Add(PosEvalDeltaSum, "");
         List.Add(SearchExtensionTagged, "");
         List.Add(Quiescence, "");
         List.Add(EnPassantTarget, "");
@@ -9181,7 +9150,6 @@ Define RevertMove(num Depth) (warp=true)
     CurrentBoardHash = PreviousBoardHash[Depth];
     CurrentBoardHashKP = PreviousBoardHashKP[Depth];
     List.ReplaceItem(AppliedMove, Depth, "");
-    List.ReplaceItem(PosEvalDelta, Depth, 0);
     List.ReplaceItem(SourcePieces, Depth, 0);
     List.ReplaceItem(TargetPiecesIdx, Depth, 0);
     List.ReplaceItem(TargetPieces, Depth, 0);
@@ -10526,7 +10494,7 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(string Quiesc
                             {
                                 CurrentValue = 642;
                             }
-                            Reduction = ((5 + floor((Horizon / 5))) + floor((CurrentValue / 214)));
+                            Reduction = ((5 + floor((Horizon / 5))) + floor((CurrentValue / 144)));
                             If (Reduction < 0)
                             {
                                 Reduction = 0;
@@ -10681,7 +10649,7 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
             If (Not ((BoardEval[Depth] == "")))
             {
                 Call GetImproving(Depth);
-                Margin = (120 * Horizon);
+                Margin = (102 * Horizon);
                 Call GetCalibratedEval(Depth);
                 If (Not ((CalibratedEvalResult == "")))
                 {
@@ -11740,17 +11708,6 @@ Define UpdateMoveHashPosEval(string Piece)(string SourceIdx)(string TargetIdx)(b
     {
         CurrentBoardHashKP = (CurrentBoardHashKP + PiecePosHash);
     }
-    Call GetPiecePosEval(Piece)(SourceIdx);
-    If PosScoreUpdate
-    {
-        List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] - PosEvalRes));
-    }
-    Else
-    {
-        List.ReplaceItem(PosEvalDelta, Depth, (0 - PosEvalRes));
-    }
-    Call GetPiecePosEval(Piece)(TargetIdx);
-    List.ReplaceItem(PosEvalDelta, Depth, (PosEvalDelta[Depth] + PosEvalRes));
 }
 
 Define UpdateMoveNotationPV (warp=true)
