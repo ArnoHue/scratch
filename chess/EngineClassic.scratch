@@ -836,6 +836,63 @@ Define ABSearch(string Alpha)(string Beta)(string MinDepth)(string MaxDepth)(boo
     }
 }
 
+Define ABSearch_ComputeReduction(string Depth)(string Horizon)(bool Cutnode) (warp=true)
+{
+    Reduction = 0;
+    If ((((Horizon + PlyExtension[Depth]) > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And ((1 == 0) Or (((QueenCountOppLocal + NonQueenMajorMinorCountOppLocal) + (QueenCounttOwnLocal + NonQueenMajorMinorCountOwnLocal)) > 0)))
+    {
+        Reduction = 0;
+        CurrentValue = (2 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1)))));
+        If (CurrentValue == 0)
+        {
+            CurrentValue = 1;
+        }
+        If (PickedLegalMovesCount[Depth] > CurrentValue)
+        {
+            Reduction = floor((128 * (2.25 + ((ln((Horizon + PlyExtension[Depth])) * ln(PickedLegalMovesCount[Depth])) / 2.25))));
+            If (1 == 1)
+            {
+                If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
+                {
+                    Reduction += -128;
+                }
+            }
+            If (1 == 0)
+            {
+                If (PutsInCheck[Depth] == 1)
+                {
+                    Reduction += -64;
+                }
+            }
+            If (1 == 1)
+            {
+                If Cutnode
+                {
+                    Reduction += 128;
+                }
+            }
+            If (1 == 1)
+            {
+                Call GetHistoryStatScore(SourcePieces[Depth])(floor((AppliedMove[Depth] / 100)))(floor((AppliedMove[Depth] % 100)))(AppliedMove[Depth])(Depth);
+                Reduction += (0 - Operator.Round(((HistoryStatScore / 82000) * 128)));
+            }
+            If (1 == 0)
+            {
+                Call GetImproving(Depth);
+                If (IsImproving == 1)
+                {
+                    Reduction += -128;
+                }
+            }
+            Reduction = floor((Reduction / 128));
+            If (Reduction < 0)
+            {
+                Reduction = 0;
+            }
+        }
+    }
+}
+
 Define ABSearch_DetectCheckmatesAndDraws(string Depth)(bool Quiescence)(string Horizon)(string ExcludedMove) (warp=true)
 {
     If (Depth > 1)
@@ -1102,7 +1159,7 @@ Define ABSearch_DetectExtension(string Depth)(bool InitialDeepening)(string Quie
         }
         If (PlyExtension[Depth] == 0)
         {
-            If ((Depth > 1) And (CheckedState[Depth] == 1))
+            If ((Horizon > 1) And ((Depth > 1) And (CheckedState[Depth] == 1)))
             {
                 List.ReplaceItem(PlyExtension, Depth, 1);
                 If (ProfilerMode == 2)
@@ -1153,7 +1210,8 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
                     Rank = IdxToRank[floor((AppliedMove[Depth] % 100))];
                     If (((Not ((SourcePieces[Depth] == GoK_OwnPawn))) Or (Rank < 6)) And ((Not ((SourcePieces[Depth] == GoK_OppPawn))) Or (Rank > 3)))
                     {
-                        FutilityMargin = (Horizon * 150);
+                        Call ABSearch_ComputeReduction(Depth)(Horizon)((1 == 0));
+                        FutilityMargin = ((Horizon - Reduction) * 150);
                     }
                 }
             }
@@ -1426,7 +1484,7 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
         }
     }
     Call //("Search tree leaf reached");
-    If ((Horizon == 0) Or (Depth > (MaxSearchDepthStackFrames - 10)))
+    If (Depth > (MaxSearchDepthStackFrames - 10))
     {
         Call Evaluate((Depth - 1))((1 == 1));
         Call AdjustEvalScore(Depth)(EvaluateRes);
@@ -1981,22 +2039,12 @@ Define ABSearch_Main(string Depth)(bool InitialDeepening)(string QuiescenceHoriz
 
 Define ABSearch_NextPly(string CurrentDepth)(bool CurrentInitialDeepening)(string CurrentQuiescenceHorizon)(bool CurrentQuiescence)(bool ShowProgress)(string CurrentHorizon)(string Reduction)(bool CurrentCutnode)(string ExcludedMove) (warp=true)
 {
-    If (CurrentQuiescence Or ((Not (CurrentQuiescence)) And (((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) < 2)))
+    SNP.NextHorizon = (((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) - 1);
+    If (SNP.NextHorizon < 0)
     {
-        Call //("If on full search and max depth reached, extend or switch to quiescence. If on quiescence search, continue");
-        If (CurrentQuiescenceHorizon > 0)
-        {
-            Call ABSearch_Main((CurrentDepth + 1))(CurrentInitialDeepening)((CurrentQuiescenceHorizon - 1))((1 == 1))(ShowProgress)(1)((1 == 1))("");
-        }
-        Else
-        {
-            Call ABSearch_Main((CurrentDepth + 1))(CurrentInitialDeepening)((CurrentQuiescenceHorizon - 1))((1 == 1))(ShowProgress)(0)((1 == 1))("");
-        }
+        SNP.NextHorizon = 0;
     }
-    Else
-    {
-        Call ABSearch_Main((CurrentDepth + 1))(CurrentInitialDeepening)(CurrentQuiescenceHorizon)(CurrentQuiescence)(ShowProgress)((((CurrentHorizon + PlyExtension[CurrentDepth]) - Reduction) - 1))(CurrentCutnode)(ExcludedMove);
-    }
+    Call ABSearch_Main((CurrentDepth + 1))(CurrentInitialDeepening)(CurrentQuiescenceHorizon)((CurrentQuiescence Or (SNP.NextHorizon < 1)))(ShowProgress)(SNP.NextHorizon)(CurrentCutnode)(ExcludedMove);
 }
 
 Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(string QuiescenceHorizon)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
@@ -2276,104 +2324,49 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
     IsReductionAndDone = 0;
     If ((Not (Quiescence)) And (IsMinMaxTimeout == 0))
     {
-        If ((((Horizon + PlyExtension[Depth]) > 2) And ((CheckedState[Depth] == 0) And ((TargetPieces[Depth] == 0) And (PromotionPieces[Depth] == 0)))) And ((1 == 0) Or (((QueenCountOppLocal + NonQueenMajorMinorCountOppLocal) + (QueenCounttOwnLocal + NonQueenMajorMinorCountOwnLocal)) > 0)))
+        Call ABSearch_ComputeReduction(Depth)(Horizon)(Cutnode);
+        Call //("Late move reduction");
+        If (Reduction > 0)
         {
-            Reduction = 0;
-            CurrentValue = (2 + (2 * (Not (((Betas[Depth] - Alphas[Depth]) == 1)))));
-            If (CurrentValue == 0)
+            If (ProfilerMode == 2)
             {
-                CurrentValue = 1;
+                PSH.Slot = (Horizon + 1);
+                If (Quiescence[Depth] == 1)
+                {
+                    PSH.Slot = 64;
+                }
+                List.ReplaceItem(ProfileByHorizon, (1024 + PSH.Slot), (ProfileByHorizon[(1024 + PSH.Slot)] + 1));
             }
-            If (PickedLegalMovesCount[Depth] > CurrentValue)
+            If ((Depth % 2) == 1)
             {
-                Reduction = floor((128 * (2.25 + ((ln((Horizon + PlyExtension[Depth])) * ln(PickedLegalMovesCount[Depth])) / 2.25))));
-                If (1 == 1)
+                List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
+                List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
+            }
+            Else
+            {
+                List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
+                List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
+            }
+            Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
+            SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
+            IsReductionAndDone = 1;
+            List.ReplaceItem(LMRState, Depth, 1);
+            If (Not (((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))))
+            {
+                PSH.Slot = (Horizon + 1);
+                If (Quiescence[Depth] == 1)
                 {
-                    If (Not (((Betas[Depth] - Alphas[Depth]) == 1)))
-                    {
-                        Reduction += -128;
-                    }
+                    PSH.Slot = 64;
                 }
-                If (1 == 0)
-                {
-                    If (PutsInCheck[Depth] == 1)
-                    {
-                        Reduction += -64;
-                    }
-                }
-                If (1 == 1)
-                {
-                    If Cutnode
-                    {
-                        Reduction += 128;
-                    }
-                }
-                If (1 == 1)
-                {
-                    Call GetHistoryStatScore(SourcePieces[Depth])(floor((AppliedMove[Depth] / 100)))(floor((AppliedMove[Depth] % 100)))(AppliedMove[Depth])(Depth);
-                    Reduction += (0 - Operator.Round(((HistoryStatScore / 82000) * 128)));
-                }
-                If (1 == 0)
-                {
-                    Call GetImproving(Depth);
-                    If (IsImproving == 1)
-                    {
-                        Reduction += -128;
-                    }
-                }
-                Reduction = floor((Reduction / 128));
-                If (Reduction > ((Horizon + PlyExtension[Depth]) - 2))
-                {
-                    Reduction = ((Horizon + PlyExtension[Depth]) - 2);
-                }
-                If (Reduction < 0)
-                {
-                    Reduction = 0;
-                }
-                Call //("Late move reduction");
-                If (Reduction > 0)
-                {
-                    If (ProfilerMode == 2)
-                    {
-                        PSH.Slot = (Horizon + 1);
-                        If (Quiescence[Depth] == 1)
-                        {
-                            PSH.Slot = 64;
-                        }
-                        List.ReplaceItem(ProfileByHorizon, (1024 + PSH.Slot), (ProfileByHorizon[(1024 + PSH.Slot)] + 1));
-                    }
-                    If ((Depth % 2) == 1)
-                    {
-                        List.ReplaceItem(Alphas, (Depth + 1), Alphas[Depth]);
-                        List.ReplaceItem(Betas, (Depth + 1), (Alphas[Depth] + 1));
-                    }
-                    Else
-                    {
-                        List.ReplaceItem(Alphas, (Depth + 1), (Betas[Depth] - 1));
-                        List.ReplaceItem(Betas, (Depth + 1), Betas[Depth]);
-                    }
-                    Call ABSearch_NextPly(Depth)(InitialDeepening)(QuiescenceDepth)(Quiescence)(ShowProgress)(Horizon)(Reduction)((1 == 1))("");
-                    SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
-                    IsReductionAndDone = 1;
-                    List.ReplaceItem(LMRState, Depth, 1);
-                    If (Not (((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))))
-                    {
-                        PSH.Slot = (Horizon + 1);
-                        If (Quiescence[Depth] == 1)
-                        {
-                            PSH.Slot = 64;
-                        }
-                        List.ReplaceItem(ProfileByHorizon, (1088 + PSH.Slot), (ProfileByHorizon[(1088 + PSH.Slot)] + 1));
-                    }
-                }
+                List.ReplaceItem(ProfileByHorizon, (1088 + PSH.Slot), (ProfileByHorizon[(1088 + PSH.Slot)] + 1));
             }
         }
         Call //("Non-PV search");
         If ((((IsReductionAndDone == 1) And ((((Depth % 2) == 1) And (SearchCore.NodeEval > Alphas[Depth])) Or (((Depth % 2) == 0) And (SearchCore.NodeEval < Betas[Depth])))) Or ((IsReductionAndDone == 0) And ((PickedLegalMovesCount[Depth] > 1) Or ((Betas[Depth] - Alphas[Depth]) == 1)))) And (IsMinMaxTimeout == 0))
         {
-            If ((Betas[Depth] - Alphas[Depth]) > 1)
+            If (ProfilerMode == 2)
             {
-                If (ProfilerMode == 2)
+                If ((Betas[Depth] - Alphas[Depth]) > 1)
                 {
                     PSH.Slot = (Horizon + 1);
                     If (Quiescence[Depth] == 1)
@@ -2398,15 +2391,12 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(string Quiescenc
             If ((SearchCore.NodeEval > Alphas[Depth]) And (SearchCore.NodeEval < Betas[Depth]))
             {
                 IsReductionAndDone = 0;
-                If (ProfilerMode == 2)
+                PSH.Slot = (Horizon + 1);
+                If (Quiescence[Depth] == 1)
                 {
-                    PSH.Slot = (Horizon + 1);
-                    If (Quiescence[Depth] == 1)
-                    {
-                        PSH.Slot = 64;
-                    }
-                    List.ReplaceItem(ProfileByHorizon, (1216 + PSH.Slot), (ProfileByHorizon[(1216 + PSH.Slot)] + 1));
+                    PSH.Slot = 64;
                 }
+                List.ReplaceItem(ProfileByHorizon, (1216 + PSH.Slot), (ProfileByHorizon[(1216 + PSH.Slot)] + 1));
             }
             Else
             {
@@ -3879,26 +3869,71 @@ Define EnterExecution (warp=false)
 
 Define Evaluate(string Depth)(bool FullEval) (warp=true)
 {
+    If (ProfilerMode == 2)
+    {
+        PTH.Slot = (HorizonAtPly[Depth] + 1);
+        If (Quiescence[Depth] == 1)
+        {
+            PTH.Slot = 64;
+        }
+        List.ReplaceItem(ProfileTimeByHorizon, (0 + PTH.Slot), (ProfileTimeByHorizon[(0 + PTH.Slot)] - ((Sensing.DaysSince2000() * 24) * 3600)));
+    }
     EvaluateRes = "";
     If ((KingIdxOpp == "") And (KingIdxtOwn == ""))
     {
         EvaluateRes = 0;
+        If (ProfilerMode == 2)
+        {
+            PTH.Slot = (HorizonAtPly[Depth] + 1);
+            If (Quiescence[Depth] == 1)
+            {
+                PTH.Slot = 64;
+            }
+            List.ReplaceItem(ProfileTimeByHorizon, (0 + PTH.Slot), (ProfileTimeByHorizon[(0 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
+        }
         Stop(this script);
     }
     If (KingIdxOpp == "")
     {
         EvaluateRes = (100000 - (List.Length(BoardHistoryFiftyMoves) - 1));
+        If (ProfilerMode == 2)
+        {
+            PTH.Slot = (HorizonAtPly[Depth] + 1);
+            If (Quiescence[Depth] == 1)
+            {
+                PTH.Slot = 64;
+            }
+            List.ReplaceItem(ProfileTimeByHorizon, (0 + PTH.Slot), (ProfileTimeByHorizon[(0 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
+        }
         Stop(this script);
     }
     If (KingIdxtOwn == "")
     {
         EvaluateRes = (-100000 + (List.Length(BoardHistoryFiftyMoves) - 1));
+        If (ProfilerMode == 2)
+        {
+            PTH.Slot = (HorizonAtPly[Depth] + 1);
+            If (Quiescence[Depth] == 1)
+            {
+                PTH.Slot = 64;
+            }
+            List.ReplaceItem(ProfileTimeByHorizon, (0 + PTH.Slot), (ProfileTimeByHorizon[(0 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
+        }
         Stop(this script);
     }
     If (Depth == 0)
     {
         Call EvaluateBoard;
         EvalResultBase = Eval;
+        If (ProfilerMode == 2)
+        {
+            PTH.Slot = (HorizonAtPly[Depth] + 1);
+            If (Quiescence[Depth] == 1)
+            {
+                PTH.Slot = 64;
+            }
+            List.ReplaceItem(ProfileTimeByHorizon, (0 + PTH.Slot), (ProfileTimeByHorizon[(0 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
+        }
         Stop(this script);
     }
     If (ProfilerMode == 2)
@@ -3928,6 +3963,15 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
                 If (ProfilerMode == 2)
                 {
                     Call Profile_MethodExit(Depth);
+                }
+                If (ProfilerMode == 2)
+                {
+                    PTH.Slot = (HorizonAtPly[Depth] + 1);
+                    If (Quiescence[Depth] == 1)
+                    {
+                        PTH.Slot = 64;
+                    }
+                    List.ReplaceItem(ProfileTimeByHorizon, (0 + PTH.Slot), (ProfileTimeByHorizon[(0 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
                 }
                 Stop(this script);
             }
@@ -3991,6 +4035,15 @@ Define Evaluate(string Depth)(bool FullEval) (warp=true)
     If (ProfilerMode == 2)
     {
         Call Profile_MethodExit(Depth);
+    }
+    If (ProfilerMode == 2)
+    {
+        PTH.Slot = (HorizonAtPly[Depth] + 1);
+        If (Quiescence[Depth] == 1)
+        {
+            PTH.Slot = 64;
+        }
+        List.ReplaceItem(ProfileTimeByHorizon, (0 + PTH.Slot), (ProfileTimeByHorizon[(0 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
     }
 }
 
@@ -7270,6 +7323,15 @@ Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool Capture
 {
     If (ProfilerMode == 2)
     {
+        PTH.Slot = (HorizonAtPly[Depth] + 1);
+        If (Quiescence[Depth] == 1)
+        {
+            PTH.Slot = 64;
+        }
+        List.ReplaceItem(ProfileTimeByHorizon, (192 + PTH.Slot), (ProfileTimeByHorizon[(192 + PTH.Slot)] - ((Sensing.DaysSince2000() * 24) * 3600)));
+    }
+    If (ProfilerMode == 2)
+    {
         Call Profile_MethodEnter(((((3 * MaxSearchDepthStackFrames) - (MaxSearchDepthStackFrames * CapturesOnly)) - ((2 * MaxSearchDepthStackFrames) * CalcAttackState)) + Depth));
     }
     Call TaperedEval.Init;
@@ -7284,6 +7346,15 @@ Define GenerateMovesImplWrapper(string Depth)(bool CalcAttackState)(bool Capture
     If (ProfilerMode == 2)
     {
         Call Profile_MethodExit(((((3 * MaxSearchDepthStackFrames) - (MaxSearchDepthStackFrames * CapturesOnly)) - ((2 * MaxSearchDepthStackFrames) * CalcAttackState)) + Depth));
+    }
+    If (ProfilerMode == 2)
+    {
+        PTH.Slot = (HorizonAtPly[Depth] + 1);
+        If (Quiescence[Depth] == 1)
+        {
+            PTH.Slot = 64;
+        }
+        List.ReplaceItem(ProfileTimeByHorizon, (192 + PTH.Slot), (ProfileTimeByHorizon[(192 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
     }
 }
 
@@ -12713,6 +12784,15 @@ Define PerftValidateCheck(string ValDepth) (warp=true)
 
 Define PickMove(string Depth)(bool Quiescence) (warp=true)
 {
+    If (ProfilerMode == 2)
+    {
+        PTH.Slot = (HorizonAtPly[Depth] + 1);
+        If (Quiescence[Depth] == 1)
+        {
+            PTH.Slot = 64;
+        }
+        List.ReplaceItem(ProfileTimeByHorizon, (512 + PTH.Slot), (ProfileTimeByHorizon[(512 + PTH.Slot)] - ((Sensing.DaysSince2000() * 24) * 3600)));
+    }
     Call //("Staged move-generator implementation");
     If (PickPhase[Depth] == 1)
     {
@@ -12822,6 +12902,15 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
                 If (PickMoveRes[Depth] == 1)
                 {
                     List.ReplaceItem(HashMove, Depth, AppliedMove[Depth]);
+                    If (ProfilerMode == 2)
+                    {
+                        PTH.Slot = (HorizonAtPly[Depth] + 1);
+                        If (Quiescence[Depth] == 1)
+                        {
+                            PTH.Slot = 64;
+                        }
+                        List.ReplaceItem(ProfileTimeByHorizon, (512 + PTH.Slot), (ProfileTimeByHorizon[(512 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
+                    }
                     Stop(this script);
                 }
             }
@@ -12905,6 +12994,15 @@ Define PickMove(string Depth)(bool Quiescence) (warp=true)
     If (PickPhase[Depth] == "*")
     {
         List.ReplaceItem(PickMoveRes, Depth, 0);
+    }
+    If (ProfilerMode == 2)
+    {
+        PTH.Slot = (HorizonAtPly[Depth] + 1);
+        If (Quiescence[Depth] == 1)
+        {
+            PTH.Slot = 64;
+        }
+        List.ReplaceItem(ProfileTimeByHorizon, (512 + PTH.Slot), (ProfileTimeByHorizon[(512 + PTH.Slot)] + ((Sensing.DaysSince2000() * 24) * 3600)));
     }
 }
 
@@ -13396,6 +13494,9 @@ Define PrintStats (warp=true)
     Call PadInto("PVS")(9)((1 == 1));
     Call PadInto("TTnode")(9)((1 == 1));
     Call PadInto("TThash")(9)((1 == 1));
+    Call PadInto("EvalS")(9)((1 == 1));
+    Call PadInto("MgenS")(9)((1 == 1));
+    Call PadInto("PickS")(9)((1 == 1));
     Call Log(PadBuffer)("")("")("")("")("")("")("");
     PSH.H = 1;
     Repeat (63)
@@ -13414,6 +13515,9 @@ Define PrintStats (warp=true)
             Call PadInto(ProfileByHorizon[(1152 + PSH.H)])(9)((1 == 1));
             Call PadInto(ProfileByHorizon[(0 + PSH.H)])(9)((1 == 1));
             Call PadInto(ProfileByHorizon[(1600 + PSH.H)])(9)((1 == 1));
+            Call PadInto((floor((100 * ProfileTimeByHorizon[(0 + PSH.H)])) / 100))(9)((1 == 1));
+            Call PadInto((floor((100 * (ProfileTimeByHorizon[(128 + PSH.H)] + ProfileTimeByHorizon[(192 + PSH.H)]))) / 100))(9)((1 == 1));
+            Call PadInto((floor((100 * ProfileTimeByHorizon[(512 + PSH.H)])) / 100))(9)((1 == 1));
             Call Log(PadBuffer)("")("")("")("")("")("")("");
         }
         PSH.H += 1;
@@ -13433,6 +13537,9 @@ Define PrintStats (warp=true)
         Call PadInto(ProfileByHorizon[(1152 + PSH.H)])(9)((1 == 1));
         Call PadInto(ProfileByHorizon[(0 + PSH.H)])(9)((1 == 1));
         Call PadInto(ProfileByHorizon[(1600 + PSH.H)])(9)((1 == 1));
+        Call PadInto((floor((100 * ProfileTimeByHorizon[(0 + PSH.H)])) / 100))(9)((1 == 1));
+        Call PadInto((floor((100 * (ProfileTimeByHorizon[(128 + PSH.H)] + ProfileTimeByHorizon[(192 + PSH.H)]))) / 100))(9)((1 == 1));
+        Call PadInto((floor((100 * ProfileTimeByHorizon[(512 + PSH.H)])) / 100))(9)((1 == 1));
         Call Log(PadBuffer)("")("")("")("")("")("")("");
     }
     Call Log("------------------------------------------------------------")("")("")("")("")("")("")("");
