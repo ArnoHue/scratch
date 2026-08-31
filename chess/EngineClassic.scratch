@@ -1167,7 +1167,7 @@ Define ABSearch_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (
         If (((Not (Quiescence)) And ((Betas[Depth] - Alphas[Depth]) == 1)) And (TargetPieces[Depth] == 0))
         {
             Call GetImproving(Depth);
-            If (PickedLegalMovesCountQuiet[Depth] > floor(((12 + (Horizon * Horizon)) * (1 + (Not ((IsImproving == 0)))))))
+            If (PickedLegalMovesCountQuiet[Depth] > floor(((12 + (Horizon * Horizon)) * (1 + (IsImproving == 1)))))
             {
                 IsFutile = 1;
                 Stop(this script);
@@ -2069,7 +2069,7 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(bool Quiescence)(bo
                 If ((((Depth % 2) == 1) And (abs(Betas[Depth]) < AbsMinCheckmateEval)) Or (((Depth % 2) == 0) And (abs(Alphas[Depth]) < AbsMinCheckmateEval)))
                 {
                     Call GetImproving(Depth);
-                    Margin = ((102 * Horizon) - (0 * (IsImproving == 1)));
+                    Margin = (102 * (Horizon - (IsImproving == 1)));
                     Call GetCalibratedEval(Depth);
                     If (Not ((CalibratedEvalResult == "")))
                     {
@@ -2091,7 +2091,8 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(bool Quiescence)(bo
         {
             Call Profile_CountByHorizon(448)(Horizon)(Depth);
         }
-        NMP.Eval = BoardEval[Depth];
+        Call GetCalibratedEval(Depth);
+        NMP.Eval = CalibratedEvalResult;
         If (Not ((NMP.Eval == "")))
         {
             If ((Horizon > 2) And (IsInNullMove == 0))
@@ -2104,11 +2105,11 @@ Define ABSearch_Pruning(string Depth)(bool InitialDeepening)(bool Quiescence)(bo
                         {
                             If ((Depth % 2) == 1)
                             {
-                                NMP.EvalDiff = (BoardEval[Depth] - Betas[Depth]);
+                                NMP.EvalDiff = (NMP.Eval - Betas[Depth]);
                             }
                             Else
                             {
-                                NMP.EvalDiff = (Alphas[Depth] - BoardEval[Depth]);
+                                NMP.EvalDiff = (Alphas[Depth] - NMP.Eval);
                             }
                             If (NMP.EvalDiff > 0)
                             {
@@ -2311,7 +2312,7 @@ Define ABSearch_SearchCore(string Depth)(bool InitialDeepening)(bool Quiescence)
             }
             Call ABSearch_NextPly(Depth)(InitialDeepening)(Quiescence)(ShowProgress)(Horizon)(0)((Not (Cutnode)))("");
             SearchCore.NodeEval = MinMaxResults[(Depth + 1)];
-            If ((SearchCore.NodeEval > Alphas[Depth]) And (SearchCore.NodeEval < Betas[Depth]))
+            If (((SearchCore.NodeEval > Alphas[Depth]) And (SearchCore.NodeEval < Betas[Depth])) And ((Betas[Depth] - Alphas[Depth]) > 1))
             {
                 IsReductionAndDone = 0;
                 If (ProfilerMode == 2)
@@ -4994,6 +4995,250 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
             List.Add(PE.NormalizedRank, 0);
         }
     }
+    PWS.FixedOwn = 0;
+    PWS.FixedOpp = 0;
+    PWS.i = 1;
+    Repeat (List.Length(EvalPiecesIdx_Pawns))
+    {
+        PWS.Idx = EvalPiecesIdx_Pawns[PWS.i];
+        PWS.P = (Board[PWS.Idx] + 0);
+        PWS.File = IdxToFile[PWS.Idx];
+        PWS.Rank = IdxToRank[PWS.Idx];
+        If (PWS.P > 0)
+        {
+            PWS.Norm = PWS.Rank;
+            If ((Board[(PWS.Idx + 8)] == GoK_OppPawn) Or ((PWS.Norm < 7) And (((PWS.File > 1) And (Board[(PWS.Idx + 15)] == GoK_OppPawn)) Or ((PWS.File < 8) And (Board[(PWS.Idx + 17)] == GoK_OppPawn)))))
+            {
+                PWS.FixedOwn += 1;
+            }
+        }
+        Else
+        {
+            PWS.Norm = (9 - PWS.Rank);
+            If ((Board[(PWS.Idx + -8)] == GoK_OwnPawn) Or ((PWS.Norm < 7) And (((PWS.File > 1) And (Board[(PWS.Idx + -17)] == GoK_OwnPawn)) Or ((PWS.File < 8) And (Board[(PWS.Idx + -15)] == GoK_OwnPawn)))))
+            {
+                PWS.FixedOpp += 1;
+            }
+        }
+        PWS.i += 1;
+    }
+    PWS.i = 1;
+    Repeat (List.Length(EvalPiecesIdx_Pawns))
+    {
+        PWS.Idx = EvalPiecesIdx_Pawns[PWS.i];
+        PWS.P = (Board[PWS.Idx] + 0);
+        PWS.File = IdxToFile[PWS.Idx];
+        PWS.Rank = IdxToRank[PWS.Idx];
+        If (PWS.P > 0)
+        {
+            PWS.Norm = PWS.Rank;
+            PWS.Opposed = (PawnAdvancePerFile[PWS.File] > PWS.Rank);
+            PWS.Blocked = (Board[(PWS.Idx + 8)] == GoK_OppPawn);
+            PWS.Doubled = (Board[(PWS.Idx + -8)] == GoK_OwnPawn);
+            PWS.Support = (((PWS.File > 1) And (Board[(PWS.Idx + -9)] == GoK_OwnPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + -7)] == GoK_OwnPawn)));
+            PWS.Phalanx = (((PWS.File > 1) And (Board[(PWS.Idx + -1)] == GoK_OwnPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + 1)] == GoK_OwnPawn)));
+            PWS.Lever = (((PWS.File > 1) And (Board[(PWS.Idx + 7)] == GoK_OppPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + 9)] == GoK_OppPawn)));
+            PWS.LeverPush = 0;
+            If (PWS.Norm < 7)
+            {
+                PWS.LeverPush = (((PWS.File > 1) And (Board[(PWS.Idx + 15)] == GoK_OppPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + 17)] == GoK_OppPawn)));
+            }
+            PWS.Neigh = (((PWS.File > 1) And (PawnCountOwn[(PWS.File - 1)] > 0)) Or ((PWS.File < 8) And (PawnCountOwn[(PWS.File + 1)] > 0)));
+            PWS.AllAhead = (((PWS.File == 1) Or ((PawnCountOwn[(PWS.File - 1)] == 0) Or (PawnAdvancePerFile[((PWS.File - 1) + 16)] > PWS.Rank))) And ((PWS.File == 8) Or ((PawnCountOwn[(PWS.File + 1)] == 0) Or (PawnAdvancePerFile[((PWS.File + 1) + 16)] > PWS.Rank))));
+            PWS.Backward = 0;
+            If ((PWS.Neigh == 1) And ((PWS.AllAhead == 1) And ((PWS.Blocked == 1) Or (PWS.LeverPush > 0))))
+            {
+                PWS.Backward = 1;
+            }
+            PWS.IdxSub = ((2 * PWS.Norm) - 1);
+            If ((PWS.Support > 0) Or (PWS.Phalanx > 0))
+            {
+                If (PWS.Phalanx > 0)
+                {
+                    If (PWS.Opposed == 1)
+                    {
+                        Call TaperedEval.Add((PawnPhalanxBonusOpposed[PWS.IdxSub] * 1))((PawnPhalanxBonusOpposed[(PWS.IdxSub + 1)] * 1))("Eval.Pawns.Phalanx.Opposed")(PWS.Idx)(1)("");
+                    }
+                    Else
+                    {
+                        Call TaperedEval.Add((PawnPhalanxBonus[PWS.IdxSub] * 1))((PawnPhalanxBonus[(PWS.IdxSub + 1)] * 1))("Eval.Pawns.Phalanx.Unopposed")(PWS.Idx)(1)("");
+                    }
+                }
+                If (PWS.Support > 0)
+                {
+                    PWS.V = Operator.Round(((PawnConnectedBonus[PWS.Norm] * ((2 + (PWS.Phalanx > 0)) - PWS.Opposed)) + (11 * PWS.Support)));
+                    Call TaperedEval.Add((PWS.V * 1))((Operator.Round(((PWS.V * (PWS.Norm - 3)) / 4)) * 1))("Eval.Pawns.Connected")(PWS.Idx)(1)("");
+                }
+            }
+            Else
+            {
+                If (PWS.Neigh == 0)
+                {
+                    If (PWS.Opposed == 1)
+                    {
+                        Call TaperedEval.Add(-2)(-16)("Eval.Pawns.Isolated.Opposed")(PWS.Idx)(1)("");
+                    }
+                    Else
+                    {
+                        Call TaperedEval.Add(-12)(-30)("Eval.Pawns.Isolated.Unopposed")(PWS.Idx)(1)("");
+                    }
+                }
+                Else
+                {
+                    If (PWS.Backward == 1)
+                    {
+                        If (PWS.Opposed == 1)
+                        {
+                            Call TaperedEval.Add(-3)(-10)("Eval.Pawns.NonIsolated.Backward.Opposed")(PWS.Idx)(1)("");
+                        }
+                        Else
+                        {
+                            If ((PWS.File > 1) And (PWS.File < 8))
+                            {
+                                Call TaperedEval.Add(-11)(-19)("Eval.Pawns.NonIsolated.Backward.Unopposed")(PWS.Idx)(1)("");
+                            }
+                            Else
+                            {
+                                Call TaperedEval.Add(-3)(-10)("Eval.Pawns.NonIsolated.Backward.Unopposed.Edge")(PWS.Idx)(1)("");
+                            }
+                        }
+                    }
+                }
+            }
+            If ((PWS.Backward == 0) And (PWS.Lever > 0))
+            {
+                Call TaperedEval.Add((PawnLeverBonus[PWS.IdxSub] * 1))((PawnLeverBonus[(PWS.IdxSub + 1)] * 1))("Eval.Pawns.Lever")(PWS.Idx)(1)("");
+            }
+            If (PWS.Support == 0)
+            {
+                If (PWS.Doubled == 1)
+                {
+                    Call TaperedEval.Add(-9)(-40)("Eval.Pawns.DoubledPawn")(PWS.Idx)(1)("");
+                }
+                If (PWS.Lever > 1)
+                {
+                    Call TaperedEval.Add(-1)(-29)("Eval.Pawns.WeakLever")(PWS.Idx)(1)("");
+                }
+            }
+            If ((PWS.Doubled == 1) And (PWS.FixedOwn == 0))
+            {
+                Call TaperedEval.Add(-13)(-6)("Eval.Pawns.DoubledPawnEarly")(PWS.Idx)(1)("");
+            }
+            If ((PWS.Blocked == 1) And (PWS.Norm == 5))
+            {
+                Call TaperedEval.Add(-10)(-4)("Eval.Pawns.BlockedPawn.Rank5")(PWS.Idx)(1)("");
+            }
+            If ((PWS.Blocked == 1) And (PWS.Norm == 6))
+            {
+                Call TaperedEval.Add(-4)(2)("Eval.Pawns.BlockedPawn.Rank6")(PWS.Idx)(1)("");
+            }
+        }
+        Else
+        {
+            PWS.Norm = (9 - PWS.Rank);
+            PWS.Opposed = ((PawnAdvancePerFile[(PWS.File + 16)] > 0) And (PawnAdvancePerFile[(PWS.File + 16)] < PWS.Rank));
+            PWS.Blocked = (Board[(PWS.Idx + -8)] == GoK_OwnPawn);
+            PWS.Doubled = (Board[(PWS.Idx + 8)] == GoK_OppPawn);
+            PWS.Support = (((PWS.File > 1) And (Board[(PWS.Idx + 7)] == GoK_OppPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + 9)] == GoK_OppPawn)));
+            PWS.Phalanx = (((PWS.File > 1) And (Board[(PWS.Idx + -1)] == GoK_OppPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + 1)] == GoK_OppPawn)));
+            PWS.Lever = (((PWS.File > 1) And (Board[(PWS.Idx + -9)] == GoK_OwnPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + -7)] == GoK_OwnPawn)));
+            PWS.LeverPush = 0;
+            If (PWS.Norm < 7)
+            {
+                PWS.LeverPush = (((PWS.File > 1) And (Board[(PWS.Idx + -17)] == GoK_OwnPawn)) + ((PWS.File < 8) And (Board[(PWS.Idx + -15)] == GoK_OwnPawn)));
+            }
+            PWS.Neigh = (((PWS.File > 1) And (PawnCountOpp[(PWS.File - 1)] > 0)) Or ((PWS.File < 8) And (PawnCountOpp[(PWS.File + 1)] > 0)));
+            PWS.AllAhead = (((PWS.File == 1) Or ((PawnCountOpp[(PWS.File - 1)] == 0) Or (PawnAdvancePerFile[(PWS.File - 1)] < PWS.Rank))) And ((PWS.File == 8) Or ((PawnCountOpp[(PWS.File + 1)] == 0) Or (PawnAdvancePerFile[(PWS.File + 1)] < PWS.Rank))));
+            PWS.Backward = 0;
+            If ((PWS.Neigh == 1) And ((PWS.AllAhead == 1) And ((PWS.Blocked == 1) Or (PWS.LeverPush > 0))))
+            {
+                PWS.Backward = 1;
+            }
+            PWS.IdxSub = ((2 * PWS.Norm) - 1);
+            If ((PWS.Support > 0) Or (PWS.Phalanx > 0))
+            {
+                If (PWS.Phalanx > 0)
+                {
+                    If (PWS.Opposed == 1)
+                    {
+                        Call TaperedEval.Add((PawnPhalanxBonusOpposed[PWS.IdxSub] * -1))((PawnPhalanxBonusOpposed[(PWS.IdxSub + 1)] * -1))("Eval.Pawns.Phalanx.Opposed")(PWS.Idx)(2)("");
+                    }
+                    Else
+                    {
+                        Call TaperedEval.Add((PawnPhalanxBonus[PWS.IdxSub] * -1))((PawnPhalanxBonus[(PWS.IdxSub + 1)] * -1))("Eval.Pawns.Phalanx.Unopposed")(PWS.Idx)(2)("");
+                    }
+                }
+                If (PWS.Support > 0)
+                {
+                    PWS.V = Operator.Round(((PawnConnectedBonus[PWS.Norm] * ((2 + (PWS.Phalanx > 0)) - PWS.Opposed)) + (11 * PWS.Support)));
+                    Call TaperedEval.Add((PWS.V * -1))((Operator.Round(((PWS.V * (PWS.Norm - 3)) / 4)) * -1))("Eval.Pawns.Connected")(PWS.Idx)(2)("");
+                }
+            }
+            Else
+            {
+                If (PWS.Neigh == 0)
+                {
+                    If (PWS.Opposed == 1)
+                    {
+                        Call TaperedEval.Add(2)(16)("Eval.Pawns.Isolated.Opposed")(PWS.Idx)(2)("");
+                    }
+                    Else
+                    {
+                        Call TaperedEval.Add(12)(30)("Eval.Pawns.Isolated.Unopposed")(PWS.Idx)(2)("");
+                    }
+                }
+                Else
+                {
+                    If (PWS.Backward == 1)
+                    {
+                        If (PWS.Opposed == 1)
+                        {
+                            Call TaperedEval.Add(3)(10)("Eval.Pawns.NonIsolated.Backward.Opposed")(PWS.Idx)(2)("");
+                        }
+                        Else
+                        {
+                            If ((PWS.File > 1) And (PWS.File < 8))
+                            {
+                                Call TaperedEval.Add(11)(19)("Eval.Pawns.NonIsolated.Backward.Unopposed")(PWS.Idx)(2)("");
+                            }
+                            Else
+                            {
+                                Call TaperedEval.Add(3)(10)("Eval.Pawns.NonIsolated.Backward.Unopposed.Edge")(PWS.Idx)(2)("");
+                            }
+                        }
+                    }
+                }
+            }
+            If ((PWS.Backward == 0) And (PWS.Lever > 0))
+            {
+                Call TaperedEval.Add((PawnLeverBonus[PWS.IdxSub] * -1))((PawnLeverBonus[(PWS.IdxSub + 1)] * -1))("Eval.Pawns.Lever")(PWS.Idx)(2)("");
+            }
+            If (PWS.Support == 0)
+            {
+                If (PWS.Doubled == 1)
+                {
+                    Call TaperedEval.Add(9)(40)("Eval.Pawns.DoubledPawn")(PWS.Idx)(2)("");
+                }
+                If (PWS.Lever > 1)
+                {
+                    Call TaperedEval.Add(1)(29)("Eval.Pawns.WeakLever")(PWS.Idx)(2)("");
+                }
+            }
+            If ((PWS.Doubled == 1) And (PWS.FixedOpp == 0))
+            {
+                Call TaperedEval.Add(13)(6)("Eval.Pawns.DoubledPawnEarly")(PWS.Idx)(2)("");
+            }
+            If ((PWS.Blocked == 1) And (PWS.Norm == 5))
+            {
+                Call TaperedEval.Add(10)(4)("Eval.Pawns.BlockedPawn.Rank5")(PWS.Idx)(2)("");
+            }
+            If ((PWS.Blocked == 1) And (PWS.Norm == 6))
+            {
+                Call TaperedEval.Add(4)(-2)("Eval.Pawns.BlockedPawn.Rank6")(PWS.Idx)(2)("");
+            }
+        }
+        PWS.i += 1;
+    }
     Side = 1;
     Repeat (2)
     {
@@ -5113,34 +5358,6 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                 Opposed = ((Not ((PE.TheirBackwardRank == 0))) And (PE.NormalizedRank[PE.TheirBackwardRank] > PE.OurForwardRankNormalized));
                 PE.Passed = ((Opposed == 0) And (((PE.LeftTheirPawnRank == 0) Or (Not ((PE.NormalizedRank[PE.LeftTheirPawnRank] > PE.OurForwardRankNormalized)))) And ((PE.RightTheirPawnRank == 0) Or (Not ((PE.NormalizedRank[PE.RightTheirPawnRank] > PE.OurForwardRankNormalized))))));
                 BlockerIdx = (((PE.OurForwardRank - 1) * 8) + (PE.File + PE.Forward));
-                If (PE.OurPawnCount > 1)
-                {
-                    If (Not ((((PE.LeftOurPawnRank > 0) And (PE.NormalizedRank[PE.LeftOurPawnRank] == (PE.OurForwardRankNormalized - 1))) Or ((PE.RightOurPawnRank > 0) And (PE.NormalizedRank[PE.RightOurPawnRank] == (PE.OurForwardRankNormalized - 1))))))
-                    {
-                        Call TaperedEval.Add(((-9 * PE.Factor) * (PE.OurPawnCount - 1)))(((-40 * PE.Factor) * (PE.OurPawnCount - 1)))("Eval.Pawns.DoubledPawn")(PE.OurForwardIdx)(Side)("");
-                        If (Opposed == 0)
-                        {
-                            Call TaperedEval.Add(((-13 * PE.Factor) * (PE.OurPawnCount - 1)))(((-6 * PE.Factor) * (PE.OurPawnCount - 1)))("Eval.Pawns.DoubledPawnEarly")(PE.OurForwardIdx)(Side)("");
-                        }
-                    }
-                }
-                If (1 == 1)
-                {
-                    If (Board[BlockerIdx] == (GoK_OppPawn * PE.Factor))
-                    {
-                        If (PE.OurForwardRankNormalized == 5)
-                        {
-                            Call TaperedEval.Add((-10 * PE.Factor))((-4 * PE.Factor))("Eval.Pawns.BlockedPawn.Rank5")(PE.OurForwardIdx)(Side)("");
-                        }
-                        Else
-                        {
-                            If (PE.OurForwardRankNormalized == 6)
-                            {
-                                Call TaperedEval.Add((-4 * PE.Factor))((2 * PE.Factor))("Eval.Pawns.BlockedPawn.Rank6")(PE.OurForwardIdx)(Side)("");
-                            }
-                        }
-                    }
-                }
                 If (Opposed == 0)
                 {
                     Call //("Unopposed pawn");
@@ -5344,150 +5561,48 @@ Define EvaluatePawnsImpl(string Depth) (warp=true)
                         }
                     }
                 }
-                If (((PE.File == 1) Or (((Side == 1) And (PawnCountOwn[(PE.File - 1)] == 0)) Or ((Side == 2) And (PawnCountOpp[(PE.File - 1)] == 0)))) And ((PE.File == 8) Or (((Side == 1) And (PawnCountOwn[(PE.File + 1)] == 0)) Or ((Side == 2) And (PawnCountOpp[(PE.File + 1)] == 0)))))
+                If (((PE.Passed == 0) And (PE.TheirPawnCount == 0)) And ((PE.OurForwardRankNormalized > 2) And (PE.OurForwardRankNormalized < 7)))
                 {
-                    If (PE.Passed == 0)
+                    LeverPawns = 0;
+                    SupportPawns = 0;
+                    LeverPushPawns = 0;
+                    PhalanxPawns = 0;
+                    If ((PE.LeftTheirPawnRank > 0) And (PE.NormalizedRank[PE.LeftTheirPawnRank] == PE.OurForwardRankNormalized))
                     {
-                        If (Opposed == 1)
-                        {
-                            Call TaperedEval.Add((-2 * PE.Factor))((-16 * PE.Factor))("Eval.Pawns.Isolated.Opposed")(PE.OurForwardIdx)(Side)("");
-                        }
-                        Else
-                        {
-                            Call TaperedEval.Add((-12 * PE.Factor))((-30 * PE.Factor))("Eval.Pawns.Isolated.Unopposed")(PE.OurForwardIdx)(Side)("");
-                        }
+                        LeverPawns += 1;
                     }
-                }
-                Else
-                {
-                    If (((PE.Passed == 0) And (PE.TheirPawnCount == 0)) And ((PE.OurForwardRankNormalized > 2) And (PE.OurForwardRankNormalized < 7)))
+                    If ((PE.RightTheirPawnRank > 0) And (PE.NormalizedRank[PE.RightTheirPawnRank] == PE.OurForwardRankNormalized))
                     {
-                        LeverPawns = 0;
-                        SupportPawns = 0;
-                        LeverPushPawns = 0;
-                        PhalanxPawns = 0;
-                        If ((PE.LeftTheirPawnRank > 0) And (PE.NormalizedRank[PE.LeftTheirPawnRank] == PE.OurForwardRankNormalized))
-                        {
-                            LeverPawns += 1;
-                        }
-                        If ((PE.RightTheirPawnRank > 0) And (PE.NormalizedRank[PE.RightTheirPawnRank] == PE.OurForwardRankNormalized))
-                        {
-                            LeverPawns += 1;
-                        }
-                        If ((PE.LeftOurPawnRank > 0) And (PE.NormalizedRank[PE.LeftOurPawnRank] > (PE.OurForwardRankNormalized - 2)))
-                        {
-                            SupportPawns += 1;
-                        }
-                        If ((PE.RightOurPawnRank > 0) And (PE.NormalizedRank[PE.RightOurPawnRank] > (PE.OurForwardRankNormalized - 2)))
-                        {
-                            SupportPawns += 1;
-                        }
-                        If ((PE.LeftTheirPawnRank > 0) And (PE.NormalizedRank[PE.LeftTheirPawnRank] == (PE.OurForwardRankNormalized + 1)))
-                        {
-                            LeverPushPawns += 1;
-                        }
-                        If ((PE.RightTheirPawnRank > 0) And (PE.NormalizedRank[PE.RightTheirPawnRank] == (PE.OurForwardRankNormalized + 1)))
-                        {
-                            LeverPushPawns += 1;
-                        }
-                        If ((PE.LeftOurPawnRank > 0) And (PE.NormalizedRank[PE.LeftOurPawnRank] == PE.OurForwardRankNormalized))
-                        {
-                            PhalanxPawns += 1;
-                        }
-                        If ((PE.RightOurPawnRank > 0) And (PE.NormalizedRank[PE.RightOurPawnRank] == PE.OurForwardRankNormalized))
-                        {
-                            PhalanxPawns += 1;
-                        }
-                        If ((Not ((SupportPawns < LeverPawns))) And (Not ((PhalanxPawns < LeverPushPawns))))
-                        {
-                            Idx = ((PE.OurForwardRankNormalized * 2) - 1);
-                            Call TaperedEval.Add((PassedPawnCandidateBonus[Idx] * PE.Factor))((PassedPawnCandidateBonus[(Idx + 1)] * PE.Factor))("Eval.Pawns.PassedPawnCandidate")(PE.OurForwardIdx)(Side)("");
-                        }
+                        LeverPawns += 1;
                     }
-                    IsBackward = 0;
-                    If (PE.OurForwardRankNormalized < 6)
+                    If ((PE.LeftOurPawnRank > 0) And (PE.NormalizedRank[PE.LeftOurPawnRank] > (PE.OurForwardRankNormalized - 2)))
                     {
-                        If ((PE.LeftOurPawnRank == 0) Or (PE.NormalizedRank[PE.LeftOurPawnRank] > PE.OurForwardRankNormalized))
-                        {
-                            If ((PE.RightOurPawnRank == 0) Or (PE.NormalizedRank[PE.RightOurPawnRank] > PE.OurForwardRankNormalized))
-                            {
-                                If ((Board[BlockerIdx] == (GoK_OppPawn * PE.Factor)) Or (((PE.LeftTheirPawnRank > 0) And (PE.NormalizedRank[PE.LeftTheirPawnRank] == (PE.OurForwardRankNormalized + 2))) Or ((PE.RightTheirPawnRank > 0) And (PE.NormalizedRank[PE.RightTheirPawnRank] == (PE.OurForwardRankNormalized + 2)))))
-                                {
-                                    IsBackward = 1;
-                                }
-                            }
-                        }
+                        SupportPawns += 1;
                     }
-                    If (IsBackward == 1)
+                    If ((PE.RightOurPawnRank > 0) And (PE.NormalizedRank[PE.RightOurPawnRank] > (PE.OurForwardRankNormalized - 2)))
                     {
-                        If (Opposed == 1)
-                        {
-                            Call TaperedEval.Add((-3 * PE.Factor))((-10 * PE.Factor))("Eval.Pawns.NonIsolated.Backward.Opposed")((((PE.OurBackwardRank - 1) * 8) + PE.File))(Side)("");
-                        }
-                        Else
-                        {
-                            If ((PE.File > 1) And (PE.File < 8))
-                            {
-                                Call TaperedEval.Add((-11 * PE.Factor))((-19 * PE.Factor))("Eval.Pawns.NonIsolated.Backward.Unopposed")((((PE.OurBackwardRank - 1) * 8) + PE.File))(Side)("");
-                            }
-                            Else
-                            {
-                                Call TaperedEval.Add((-3 * PE.Factor))((-10 * PE.Factor))("Eval.Pawns.NonIsolated.Backward.Unopposed.Edge")((((PE.OurBackwardRank - 1) * 8) + PE.File))(Side)("");
-                            }
-                        }
+                        SupportPawns += 1;
                     }
-                    Else
+                    If ((PE.LeftTheirPawnRank > 0) And (PE.NormalizedRank[PE.LeftTheirPawnRank] == (PE.OurForwardRankNormalized + 1)))
                     {
-                        If (1 == 1)
-                        {
-                            LeverCount = 0;
-                            If ((PE.LeftTheirPawnRank > 0) And (PE.NormalizedRank[PE.LeftTheirPawnRank] == (PE.OurForwardRankNormalized + 1)))
-                            {
-                                LeverCount += 1;
-                            }
-                            If ((PE.RightTheirPawnRank > 0) And (PE.NormalizedRank[PE.RightTheirPawnRank] == (PE.OurForwardRankNormalized + 1)))
-                            {
-                                LeverCount += 1;
-                            }
-                            If (LeverCount > 0)
-                            {
-                                IdxSub = ((PE.OurForwardRankNormalized * 2) - 1);
-                                Call TaperedEval.Add((PawnLeverBonus[IdxSub] * PE.Factor))((PawnLeverBonus[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Lever")(PE.OurForwardIdx)(Side)("");
-                            }
-                            Delta = 9;
-                            Delta2 = 9;
-                            If (Not ((PE.LeftOurPawnRank == 0)))
-                            {
-                                Delta = (PE.NormalizedRank[PE.LeftOurPawnRank] - PE.OurForwardRankNormalized);
-                            }
-                            If (Not ((PE.RightOurPawnRank == 0)))
-                            {
-                                Delta2 = (PE.NormalizedRank[PE.RightOurPawnRank] - PE.OurForwardRankNormalized);
-                            }
-                            Count1 = ((Delta == 0) + (Delta2 == 0));
-                            Count2 = ((Delta == -1) + (Delta2 == -1));
-                            If ((LeverCount > 1) And (Count2 == 0))
-                            {
-                                Call TaperedEval.Add((-1 * PE.Factor))((-29 * PE.Factor))("Eval.Pawns.WeakLever")(PE.OurForwardIdx)(Side)("");
-                            }
-                            If (Count1 > 0)
-                            {
-                                IdxSub = ((PE.OurForwardRankNormalized * 2) - 1);
-                                If (Opposed == 1)
-                                {
-                                    Call TaperedEval.Add((PawnPhalanxBonusOpposed[IdxSub] * PE.Factor))((PawnPhalanxBonusOpposed[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Phalanx.Opposed")(PE.OurForwardIdx)(Side)("");
-                                }
-                                Else
-                                {
-                                    Call TaperedEval.Add((PawnPhalanxBonus[IdxSub] * PE.Factor))((PawnPhalanxBonus[(IdxSub + 1)] * PE.Factor))("Eval.Pawns.Phalanx.Unopposed")(PE.OurForwardIdx)(Side)("");
-                                }
-                            }
-                            If (Count2 > 0)
-                            {
-                                CurrentValue = Operator.Round(((PawnConnectedBonus[PE.OurForwardRankNormalized] * ((2 + (Count1 > 0)) - Opposed)) + (Count2 * 11)));
-                                Call TaperedEval.Add((CurrentValue * PE.Factor))((Operator.Round(((CurrentValue * (PE.OurForwardRankNormalized - 3)) / 4)) * PE.Factor))("Eval.Pawns.Connected")(PE.OurForwardIdx)(Side)("");
-                            }
-                        }
+                        LeverPushPawns += 1;
+                    }
+                    If ((PE.RightTheirPawnRank > 0) And (PE.NormalizedRank[PE.RightTheirPawnRank] == (PE.OurForwardRankNormalized + 1)))
+                    {
+                        LeverPushPawns += 1;
+                    }
+                    If ((PE.LeftOurPawnRank > 0) And (PE.NormalizedRank[PE.LeftOurPawnRank] == PE.OurForwardRankNormalized))
+                    {
+                        PhalanxPawns += 1;
+                    }
+                    If ((PE.RightOurPawnRank > 0) And (PE.NormalizedRank[PE.RightOurPawnRank] == PE.OurForwardRankNormalized))
+                    {
+                        PhalanxPawns += 1;
+                    }
+                    If ((Not ((SupportPawns < LeverPawns))) And (Not ((PhalanxPawns < LeverPushPawns))))
+                    {
+                        Idx = ((PE.OurForwardRankNormalized * 2) - 1);
+                        Call TaperedEval.Add((PassedPawnCandidateBonus[Idx] * PE.Factor))((PassedPawnCandidateBonus[(Idx + 1)] * PE.Factor))("Eval.Pawns.PassedPawnCandidate")(PE.OurForwardIdx)(Side)("");
                     }
                 }
             }
