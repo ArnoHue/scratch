@@ -81,7 +81,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.3383 (30.08.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.3383.1400 (06.09.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -4168,6 +4168,68 @@ Define GetVirtualMove(num Move) (warp=true)
     }
 }
 
+Define GivesCheckFast(string Depth) (warp=true)
+{
+    If (floor((AppliedMove[Depth] / 100)) == 0)
+    {
+        Call IsCheckedFast((Depth + 2));
+    }
+    Else
+    {
+        CI.FromIdx = floor((AppliedMove[Depth] / 100));
+        CI.ToIdx = floor((AppliedMove[Depth] % 100));
+        If (Not ((TargetPiecesIdx[Depth] == CI.ToIdx)))
+        {
+            Call IsCheckedFast((Depth + 2));
+        }
+        Else
+        {
+            If ((Depth % 2) == 1)
+            {
+                CI.TheirKingIdx = WhiteKingIdx;
+            }
+            Else
+            {
+                CI.TheirKingIdx = BlackKingIdx;
+            }
+            IsCheckedRes = 0;
+            If (Not ((abs(Board[CI.ToIdx]) == GoK_BlackKing)))
+            {
+                Call IsReachableForAttack(Board[CI.ToIdx])(CI.ToIdx)(CI.TheirKingIdx);
+                IsCheckedRes = IsReachableForAttackRes;
+            }
+            If (IsCheckedRes == 0)
+            {
+                CI.DiscoveryIdx = 1;
+                Repeat (DiscoveryCount[Depth])
+                {
+                    If (DiscoverySq[(((Depth - 1) * 8) + CI.DiscoveryIdx)] == CI.FromIdx)
+                    {
+                        If (Not ((abs(MoveToPathStepInc[((CI.FromIdx * 100) + CI.ToIdx)]) == DiscoveryRay[(((Depth - 1) * 8) + CI.DiscoveryIdx)])))
+                        {
+                            IsCheckedRes = 1;
+                        }
+                    }
+                    CI.DiscoveryIdx += 1;
+                }
+            }
+            If (ProfilerMode == 2)
+            {
+                CI.IsCheckedRes = IsCheckedRes;
+                Call IsCheckedFast((Depth + 2));
+                If (Not ((CI.IsCheckedRes == IsCheckedRes)))
+                {
+                    CheckInfo.Mismatch += 1;
+                    Call Log("CheckInfoMismatch check depth=")(Depth)(" move=")(AppliedMove[Depth])(" new=")(CI.IsCheckedRes)(" old=")(IsCheckedRes);
+                    Call Log("  detail pieceAtTo=")(Board[CI.ToIdx])(" enemyK=")(CI.TheirKingIdx)(" ira=")(IsReachableForAttackRes)(" discCount=")(DiscoveryCount[Depth]);
+                    Call Log("  disc1=")(DiscoverySq[(((Depth - 1) * 8) + 1)])(" ray1=")(DiscoveryRay[(((Depth - 1) * 8) + 1)])(" ownK=")(CI.OurKingIdx)(" sign=")(CI.SideToMoveFactor);
+                    Call Log("  board=")(Board)("")("")("")("")("")("");
+                }
+            }
+        }
+    }
+}
+
 Define ImportBoard(string ImpBoard) (warp=false)
 {
     Call EnterExecution;
@@ -7348,6 +7410,49 @@ Define IsLowerCase(string Char) (warp=true)
     }
 }
 
+Define IsMoveLegalFast(string Depth) (warp=true)
+{
+    If ((CheckedState[Depth] == 1) Or (floor((AppliedMove[Depth] / 100)) == 0))
+    {
+        Call IsCheckedFast((Depth + 1));
+    }
+    Else
+    {
+        CI.FromIdx = floor((AppliedMove[Depth] / 100));
+        CI.ToIdx = floor((AppliedMove[Depth] % 100));
+        If ((abs(SourcePieces[Depth]) == GoK_BlackKing) Or (Not ((TargetPiecesIdx[Depth] == CI.ToIdx))))
+        {
+            Call IsCheckedFast((Depth + 1));
+        }
+        Else
+        {
+            IsCheckedRes = 0;
+            CI.PinIdx = 1;
+            Repeat (PinCount[Depth])
+            {
+                If (PinSq[(((Depth - 1) * 8) + CI.PinIdx)] == CI.FromIdx)
+                {
+                    If (Not ((abs(MoveToPathStepInc[((CI.FromIdx * 100) + CI.ToIdx)]) == PinRay[(((Depth - 1) * 8) + CI.PinIdx)])))
+                    {
+                        IsCheckedRes = 1;
+                    }
+                }
+                CI.PinIdx += 1;
+            }
+            If (ProfilerMode == 2)
+            {
+                CI.IsCheckedRes = IsCheckedRes;
+                Call IsCheckedFast((Depth + 1));
+                If (Not ((CI.IsCheckedRes == IsCheckedRes)))
+                {
+                    CheckInfo.Mismatch += 1;
+                    Call Log("CheckInfoMismatch legal depth=")(Depth)(" move=")(AppliedMove[Depth])(" new=")(CI.IsCheckedRes)(" old=")(IsCheckedRes);
+                }
+            }
+        }
+    }
+}
+
 Define IsMovePicked(string Depth)(string Move) (warp=true)
 {
     IsMovePickedRes = 0;
@@ -8457,6 +8562,7 @@ Define PerftPrepareNode(string PerftPrepDepth)(string PerftPrepStaged) (warp=tru
     Call IsCheckedFast((PerftPrepDepth + 1));
     List.ReplaceItem(CheckedState, PerftPrepDepth, IsCheckedRes);
     List.ReplaceItem(BoardAttackedCalculated, PerftPrepDepth, 0);
+    Call PrepareCheckInfo(PerftPrepDepth);
     If (PerftPrepStaged == 0)
     {
         Call CalcBoardAttackedOnDemand(PerftPrepDepth)((1 == 0))((1 == 1))(99);
@@ -8715,7 +8821,7 @@ Define PickMove.Iterate(string Depth)(string NextPhase)(bool UpdateNNUE) (warp=t
                 List.ReplaceItem(PickedPseudoLegalMovesScore, ((((Depth - 1) * MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Depth]) + 1), MovesScore[(((Depth - 1) * MaxMovesPerGeneration) + MovesIdx[Depth])]);
                 List.ReplaceItem(PickedPseudoLegalMovesCount, Depth, (PickedPseudoLegalMovesCount[Depth] + 1));
                 Call ApplyMove(Depth)(UpdateNNUE);
-                Call IsCheckedFast((Depth + 1));
+                Call IsMoveLegalFast(Depth);
                 If (IsCheckedRes == 1)
                 {
                     Call RevertMove(Depth);
@@ -8760,6 +8866,113 @@ Define PickMove.TryKCMove(string Move)(string Depth)(string Score) (warp=true)
                 }
             }
         }
+    }
+}
+
+Define PrepareCheckInfo(string Depth) (warp=true)
+{
+    List.ReplaceItem(PinCount, Depth, 0);
+    List.ReplaceItem(DiscoveryCount, Depth, 0);
+    CI.SideToMoveFactor = ((((Depth % 2) == 1) * 2) - 1);
+    If ((Depth % 2) == 1)
+    {
+        CI.OurKingIdx = BlackKingIdx;
+        CI.TheirKingIdx = WhiteKingIdx;
+    }
+    Else
+    {
+        CI.OurKingIdx = WhiteKingIdx;
+        CI.TheirKingIdx = BlackKingIdx;
+    }
+    CI.IsPin = 1;
+    Repeat (2)
+    {
+        If (CI.IsPin == 1)
+        {
+            CI.KingIdx = CI.OurKingIdx;
+            CI.SliderFactor = -1;
+        }
+        Else
+        {
+            CI.KingIdx = CI.TheirKingIdx;
+            CI.SliderFactor = 1;
+        }
+        CI.LineOffset = MoveSourceIdxToListOffsetSliding[CI.KingIdx];
+        CI.IsStraight = 1;
+        Repeat (2)
+        {
+            If (CI.IsStraight == 1)
+            {
+                CI.SliderPiece = GoK_BlackRook;
+            }
+            Else
+            {
+                CI.SliderPiece = GoK_BlackBishop;
+            }
+            CI.DirIdx = 0;
+            Repeat (4)
+            {
+                CI.StepIdx = 1;
+                CI.BlockerIdx = 0;
+                CI.IsDone = 0;
+                Repeat Until ((CI.StepIdx > 8) Or (CI.IsDone == 1))
+                {
+                    If (CI.IsStraight == 1)
+                    {
+                        CI.SquareIdx = MoveSlidingStraightListIdxToTargetIdx[((CI.LineOffset + (CI.DirIdx * 8)) + CI.StepIdx)];
+                    }
+                    Else
+                    {
+                        CI.SquareIdx = MoveCrossListIdxToTargetIdx[((CI.LineOffset + (CI.DirIdx * 8)) + CI.StepIdx)];
+                    }
+                    If (CI.SquareIdx == -1)
+                    {
+                        CI.IsDone = 1;
+                    }
+                    Else
+                    {
+                        CI.Piece = Board[CI.SquareIdx];
+                        If (Not ((CI.Piece == 0)))
+                        {
+                            If (CI.BlockerIdx == 0)
+                            {
+                                If ((CI.Piece * CI.SideToMoveFactor) > 0)
+                                {
+                                    CI.BlockerIdx = CI.SquareIdx;
+                                }
+                                Else
+                                {
+                                    CI.IsDone = 1;
+                                }
+                            }
+                            Else
+                            {
+                                If ((((CI.Piece * CI.SideToMoveFactor) * CI.SliderFactor) > 0) And ((abs(CI.Piece) == GoK_BlackQueen) Or (abs(CI.Piece) == CI.SliderPiece)))
+                                {
+                                    If (CI.IsPin == 1)
+                                    {
+                                        List.ReplaceItem(PinSq, (((Depth - 1) * 8) + (PinCount[Depth] + 1)), CI.BlockerIdx);
+                                        List.ReplaceItem(PinRay, (((Depth - 1) * 8) + (PinCount[Depth] + 1)), abs(MoveToPathStepInc[((CI.KingIdx * 100) + CI.BlockerIdx)]));
+                                        List.ReplaceItem(PinCount, Depth, (PinCount[Depth] + 1));
+                                    }
+                                    Else
+                                    {
+                                        List.ReplaceItem(DiscoverySq, (((Depth - 1) * 8) + (DiscoveryCount[Depth] + 1)), CI.BlockerIdx);
+                                        List.ReplaceItem(DiscoveryRay, (((Depth - 1) * 8) + (DiscoveryCount[Depth] + 1)), abs(MoveToPathStepInc[((CI.KingIdx * 100) + CI.BlockerIdx)]));
+                                        List.ReplaceItem(DiscoveryCount, Depth, (DiscoveryCount[Depth] + 1));
+                                    }
+                                }
+                                CI.IsDone = 1;
+                            }
+                        }
+                    }
+                    CI.StepIdx += 1;
+                }
+                CI.DirIdx += 1;
+            }
+            CI.IsStraight = 0;
+        }
+        CI.IsPin = 0;
     }
 }
 
@@ -9694,6 +9907,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(bool Quiescence)(bool Sho
     List.ReplaceItem(PickedPseudoLegalMovesCount, Depth, 0);
     List.ReplaceItem(PickedLegalMovesCountQuiet, Depth, 0);
     List.ReplaceItem(PickedLegalMovesCount, Depth, 0);
+    Call PrepareCheckInfo(Depth);
     Call //("Move generation and move loop");
     Repeat Until (PickMoveRes[Depth] == 0)
     {
@@ -9762,7 +9976,7 @@ Define SearchImpl(string Depth)(bool InitialDeepening)(bool Quiescence)(bool Sho
             List.ReplaceItem(SearchExtensionTagged, Depth, 0);
             List.ReplaceItem(SearchExtension, Depth, 0);
             Call //("Check detection for current move: does it put the opponent in check");
-            Call IsCheckedFast((Depth + 2));
+            Call GivesCheckFast(Depth);
             List.ReplaceItem(PutsInCheck, Depth, IsCheckedRes);
             Call Search_FutilityPruning(Depth)(Quiescence)(Horizon);
             If (IsFutile == 1)
@@ -10586,7 +10800,7 @@ Define Search_FutilityPruning(string Depth)(bool Quiescence)(string Horizon) (wa
                 {
                     IsImproving = 1;
                 }
-                If (PickedLegalMovesCountQuiet[Depth] > floor(((12 + (Horizon * Horizon)) * (1 + (Not ((IsImproving == 0)))))))
+                If (PickedLegalMovesCountQuiet[Depth] > (3 + ((Horizon * Horizon) / (2 - (IsImproving == 1)))))
                 {
                     IsFutile = 1;
                     Stop(this script);
@@ -10810,11 +11024,11 @@ Define Search_NullMovePruning(string Depth)(bool InitialDeepening)(bool Quiescen
                             {
                                 CurrentValue = (Alphas[Depth] - BoardEval[Depth]);
                             }
-                            If (CurrentValue > 642)
+                            If (CurrentValue > 243)
                             {
-                                CurrentValue = 642;
+                                CurrentValue = 243;
                             }
-                            Reduction = ((5 + floor((Horizon / 5))) + floor((CurrentValue / 144)));
+                            Reduction = ((3 + floor((Horizon / 3))) + floor((CurrentValue / 81)));
                             If (Reduction < 0)
                             {
                                 Reduction = 0;
@@ -10923,13 +11137,13 @@ Define Search_Razoring(string Depth)(bool InitialDeepening)(bool Quiescence)(boo
     }
     If (1 == 1)
     {
-        If (((Not (Quiescence)) And ((CheckedState[Depth] == 0) And (Horizon < 2))) And ((Betas[Depth] - Alphas[Depth]) == 1))
+        If (((Not (Quiescence)) And ((CheckedState[Depth] == 0) And (Horizon < 5))) And ((Betas[Depth] - Alphas[Depth]) == 1))
         {
             If (IsInNullMove == 0)
             {
                 If (Not ((BoardEval[Depth] == "")))
                 {
-                    Margin = 300;
+                    Margin = (21 + (150 * Horizon));
                     Call GetCalibratedEval(Depth);
                     If (Not ((CalibratedEvalResult == "")))
                     {
@@ -10978,7 +11192,7 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
     }
     If (1 == 1)
     {
-        If (((Depth > 1) And (Horizon < 6)) And ((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1)))
+        If (((Depth > 1) And (Horizon < 7)) And ((CheckedState[Depth] == 0) And ((Betas[Depth] - Alphas[Depth]) == 1)))
         {
             If ((((Depth % 2) == 1) And (abs(Betas[Depth]) > AbsMinCheckmateEval)) Or (((Depth % 2) == 0) And (abs(Alphas[Depth]) > AbsMinCheckmateEval)))
             {
@@ -10987,7 +11201,11 @@ Define Search_ReverseFutilityPruning(string Depth)(string Horizon) (warp=true)
             If (Not ((BoardEval[Depth] == "")))
             {
                 Call GetImproving(Depth);
-                Margin = (102 * Horizon);
+                Margin = ((79 * Horizon) - (138 * (IsImproving == 1)));
+                If (Margin < 15)
+                {
+                    Margin = 15;
+                }
                 Call GetCalibratedEval(Depth);
                 If (Not ((CalibratedEvalResult == "")))
                 {
