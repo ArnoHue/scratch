@@ -17,6 +17,7 @@ WhenGreenFlagClicked()
     PieceSquareIdx = 0;
     PieceValue = 0;
     Pieces_ClickHandlerRunningCount = 0;
+    Pieces_DragOwner = 0;
     IsInputEnabled = 1;
 }
 
@@ -33,18 +34,27 @@ WhenThisSpriteClicked()
     {
         Stop(this script);
     }
-    If (Sensing.Timer() > (Stg_ClickedTimer + 0.25))
+    Event.BroadcastAndWait("Stg_StageClickedRouted");
+    If (Pieces_DragOwner == 0)
     {
-        Event.BroadcastAndWait("Stg_StageClickedRouted");
-        If (Pieces_ClickHandlerRunningCount == 0)
+        Pieces_ClickHandlerRunningCount += 1;
+        Pieces_DragOwner = PieceSquareIdx;
+        X = Sensing.MouseX();
+        Y = Sensing.MouseY();
+        If (PieceValue < 0)
         {
-            Pieces_ClickHandlerRunningCount += 1;
-            Costume.GoToFrontBack(front);
-            X = Sensing.MouseX();
-            Y = Sensing.MouseY();
-            If (PieceValue < 0)
+            PressX = Sensing.MouseX();
+            PressY = Sensing.MouseY();
+            Dragging = 0;
+            Repeat Until (((Not (Sensing.MouseDown())) Or (IsInputEnabled == 0)) Or (GoK_IsGameSuspended == 1))
             {
-                Repeat Until (Not (Sensing.MouseDown()))
+                Control.Wait(0);
+                If ((Dragging == 0) And ((abs((Sensing.MouseX() - PressX)) > 8) Or (abs((Sensing.MouseY() - PressY)) > 8)))
+                {
+                    Dragging = 1;
+                    Costume.GoToFrontBack(front);
+                }
+                If (Dragging == 1)
                 {
                     If (Sensing.MouseX() < 120)
                     {
@@ -54,9 +64,12 @@ WhenThisSpriteClicked()
                     {
                         Motion.GoToXY(120, Sensing.MouseY());
                     }
-                    X = (floor(((Sensing.MouseX() + 230) / 42.2)) + 1);
-                    Y = (floor(((Sensing.MouseY() + 168) / 42.2)) + 1);
                 }
+                X = (floor(((Sensing.MouseX() + 230) / 42.2)) + 1);
+                Y = (floor(((Sensing.MouseY() + 168) / 42.2)) + 1);
+            }
+            If (Dragging == 1)
+            {
                 If (((X > 0) And (X < 9)) And ((Y > 0) And (Y < 9)))
                 {
                     Idx = (((8 - Y) * 8) + X);
@@ -71,10 +84,11 @@ WhenThisSpriteClicked()
                     Motion.GoToXY((-208 + (((PieceSquareIdx - 1) % 8) * 42.2)), (148 - ((((PieceSquareIdx - 1) - ((PieceSquareIdx - 1) % 8)) / 8) * 42.2)));
                     Event.BroadcastAndWait("Stg_StageClickedRouted");
                 }
-                Event.BroadcastAndWait("Pieces_DrawPiece");
             }
-            Pieces_ClickHandlerRunningCount += -1;
+            Event.Broadcast("Pieces_DrawPiece");
         }
+        Pieces_ClickHandlerRunningCount += -1;
+        Pieces_DragOwner = 0;
     }
 }
 
@@ -88,6 +102,7 @@ WhenBroadcastReceived(GoK_ModeBusy)
 
 WhenBroadcastReceived(GoK_ModeInput)
 {
+    Pieces_ClickHandlerRunningCount = 0;
     IsInputEnabled = 1;
 }
 
@@ -103,7 +118,7 @@ WhenBroadcastReceived(Pieces_DrawPiece)
 {
     If (PieceSquareIdx > 0)
     {
-        PieceValue = Board[PieceSquareIdx];
+        PieceValue = GoK_Board[PieceSquareIdx];
         If (PieceValue == 0)
         {
             Looks.SwitchCostumeTo(NoPiece);
@@ -184,23 +199,23 @@ WhenBroadcastReceived(Pieces_MovePiece)
         {
             If (Pieces_MovePieceSpecial == GoK_WhiteKingsideCastling)
             {
-                Call MovePieceImpl(VirtualBoard[61])(VirtualBoard[63]);
-                Call MovePieceImpl(VirtualBoard[64])(VirtualBoard[62]);
+                Call MovePieceImpl(GoK_VirtualBoard[61])(GoK_VirtualBoard[63]);
+                Call MovePieceImpl(GoK_VirtualBoard[64])(GoK_VirtualBoard[62]);
             }
             If (Pieces_MovePieceSpecial == GoK_WhiteQueensideCastling)
             {
-                Call MovePieceImpl(VirtualBoard[61])(VirtualBoard[59]);
-                Call MovePieceImpl(VirtualBoard[57])(VirtualBoard[60]);
+                Call MovePieceImpl(GoK_VirtualBoard[61])(GoK_VirtualBoard[59]);
+                Call MovePieceImpl(GoK_VirtualBoard[57])(GoK_VirtualBoard[60]);
             }
             If (Pieces_MovePieceSpecial == GoK_BlackKingsideCastling)
             {
-                Call MovePieceImpl(VirtualBoard[5])(VirtualBoard[7]);
-                Call MovePieceImpl(VirtualBoard[8])(VirtualBoard[6]);
+                Call MovePieceImpl(GoK_VirtualBoard[5])(GoK_VirtualBoard[7]);
+                Call MovePieceImpl(GoK_VirtualBoard[8])(GoK_VirtualBoard[6]);
             }
             If (Pieces_MovePieceSpecial == GoK_BlackQueensideCastling)
             {
-                Call MovePieceImpl(VirtualBoard[5])(VirtualBoard[3]);
-                Call MovePieceImpl(VirtualBoard[1])(VirtualBoard[4]);
+                Call MovePieceImpl(GoK_VirtualBoard[5])(GoK_VirtualBoard[3]);
+                Call MovePieceImpl(GoK_VirtualBoard[1])(GoK_VirtualBoard[4]);
             }
         }
         Pieces_MovePieceFromIdx = -1;
@@ -325,6 +340,7 @@ WhenBroadcastReceived(Stg_ToSquareSelected)
 
 WhenBroadcastReceived(Stg_TriggerRestart)
 {
+    Pieces_DragOwner = 0;
     If (PieceSquareIdx == 0)
     {
         Pen.Clear();
@@ -359,3 +375,4 @@ Define MovePieceImpl(string FromIdx)(string ToIdx) (warp=false)
         Event.BroadcastAndWait("Pieces_MovePieceInternal");
     }
 }
+
