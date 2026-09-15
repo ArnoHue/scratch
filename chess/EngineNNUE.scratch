@@ -81,7 +81,7 @@ WhenKeyPressed(d)
 
 WhenKeyPressed(v)
 {
-    Call SayAsync("Game of Kings Chess NNUE Version 7.3383.1591 (15.09.2026) by ArnoHu")(5);
+    Call SayAsync("Game of Kings Chess NNUE Version 7.3383.1614 (16.09.2026) by ArnoHu")(5);
 }
 
 WhenKeyPressed(r)
@@ -142,6 +142,7 @@ WhenBroadcastReceived($gok_nnue)
     Glob.IsDCI = 1;
     Call ​​log​​("$gok1");
     Call $gok_prepare;
+    Call AddBoardToHistory(0);
     Call IsOwnKingCheckMate;
     If (Ret.IsOwnKingCheckMate.IsCheckMate == 1)
     {
@@ -184,7 +185,6 @@ WhenBroadcastReceived($gok_nnue)
         }
     }
     Call ​​log​​("$gok2");
-    Call AddBoardToHistory(0);
     DCI.Move = "";
     Call GetOpeningMoves;
     If (List.Length(OpeningMovesRes) > 0)
@@ -212,6 +212,7 @@ WhenBroadcastReceived($gok_nnue)
     List.ReplaceItem(MovesIdx, 1, 1);
     Call ApplyMove(1)((1 == 0));
     Call AddBoardToHistory(1);
+    List.ReplaceItem(BoardHistoryMetaState, List.Length(BoardHistoryMetaState), CastlingState[1]);
     Call RevertMove(1);
     Call GetMoveNotation(DCI.Move);
     If (Ret.GetMoveNotation.Notation == "O-O")
@@ -1581,6 +1582,28 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
         }
         If (Not ((AM.TargetPiece == 0)))
         {
+            If (AM.TargetPiece == GoK_WhiteRook)
+            {
+                If (AM.TargetIdx == VirtualBoard[64])
+                {
+                    Call SetCastlingStateFlag(Ply)(7)(1);
+                }
+                If (AM.TargetIdx == VirtualBoard[57])
+                {
+                    Call SetCastlingStateFlag(Ply)(8)(1);
+                }
+            }
+            If (AM.TargetPiece == GoK_BlackRook)
+            {
+                If (AM.TargetIdx == VirtualBoard[8])
+                {
+                    Call SetCastlingStateFlag(Ply)(3)(1);
+                }
+                If (AM.TargetIdx == VirtualBoard[1])
+                {
+                    Call SetCastlingStateFlag(Ply)(4)(1);
+                }
+            }
             Call //("Captures => incremental positional eval and Zobrist hash update");
             AM.MoveKey = ((((DepthEvalFactor[(Ply + 1)] + 1) * 30000) + (PieceIdxLookup[abs(AM.TargetPiece)] * 10000)) + (TargetPiecesIdx[Ply] * 100));
             Glob.CurrentBoardHash += MoveToHash[AM.MoveKey];
@@ -2373,78 +2396,99 @@ Define EvaluatePostProcess(string Ply)(string Score) (warp=true)
             }
             Eval.PP.Idx += 1;
         }
-        Eval.PP.WhiteUnstoppableCnt = 0;
-        Eval.PP.BlackUnstoppableCnt = 0;
-        Eval.PP.Idx = 1;
-        Repeat (8)
+        Eval.PP.WhiteQueener = 99;
+        Eval.PP.BlackQueener = 99;
+        Eval.PP.Side = 1;
+        Repeat (2)
         {
-            Eval.PP.WhitePawnForwardRank = PawnAdvancePerFile[(Eval.PP.Idx + 8)];
-            Eval.PP.BlackPawnForwardRank = PawnAdvancePerFile[(Eval.PP.Idx + 24)];
-            If ((Glob.BlackQueenCountLocal + Glob.BlackNonQueenMajorMinorCountLocal) == 0)
+            If (Eval.PP.Side == 1)
             {
-                If ((Eval.PP.WhitePawnForwardRank < 7) And (Eval.PP.WhitePawnForwardRank > 0))
+                Eval.PP.OurOffset = 24;
+                Eval.PP.TheirOffset = 0;
+                Eval.PP.PromoBase = 56;
+                Eval.PP.KingIdx = Glob.BlackKingIdx;
+                Eval.PP.TheirKingIdx = Glob.WhiteKingIdx;
+            }
+            Else
+            {
+                Eval.PP.OurOffset = 8;
+                Eval.PP.TheirOffset = 16;
+                Eval.PP.PromoBase = 0;
+                Eval.PP.KingIdx = Glob.WhiteKingIdx;
+                Eval.PP.TheirKingIdx = Glob.BlackKingIdx;
+            }
+            Eval.PP.Idx = 1;
+            Repeat (8)
+            {
+                Eval.PP.OurForwardRank = PawnAdvancePerFile[(Eval.PP.Idx + Eval.PP.OurOffset)];
+                If (Not ((Eval.PP.OurForwardRank == 0)))
                 {
-                    Eval.PP.BlackPawnBackwardRank = PawnAdvancePerFile[(Eval.PP.Idx + 16)];
-                    If ((Eval.PP.WhitePawnForwardRank < Eval.PP.BlackPawnBackwardRank) Or (Eval.PP.BlackPawnBackwardRank == 0))
+                    Eval.PP.NFwd = ((Not ((Eval.PP.OurForwardRank == 0))) * (Eval.PP.OurForwardRank + ((Eval.PP.Side == 2) * (9 - (2 * Eval.PP.OurForwardRank)))));
+                    If (Eval.PP.NFwd > 2)
                     {
-                        Eval.PP.LeftTheirPawnRank = PawnAdvancePerFile[((Eval.PP.Idx + 16) - 1)];
-                        If (((Eval.PP.Idx == 1) Or (Eval.PP.LeftTheirPawnRank == 0)) Or (Eval.PP.WhitePawnForwardRank < Eval.PP.LeftTheirPawnRank))
+                        Eval.PP.NBack = ((Not ((PawnAdvancePerFile[(Eval.PP.Idx + Eval.PP.TheirOffset)] == 0))) * (PawnAdvancePerFile[(Eval.PP.Idx + Eval.PP.TheirOffset)] + ((Eval.PP.Side == 2) * (9 - (2 * PawnAdvancePerFile[(Eval.PP.Idx + Eval.PP.TheirOffset)])))));
+                        If (Eval.PP.NFwd > Eval.PP.NBack)
                         {
-                            Eval.PP.RightTheirPawnRank = PawnAdvancePerFile[((Eval.PP.Idx + 16) + 1)];
-                            If (((Eval.PP.Idx == 8) Or (Eval.PP.RightTheirPawnRank == 0)) Or (Eval.PP.WhitePawnForwardRank < Eval.PP.RightTheirPawnRank))
+                            Eval.PP.NAdj = ((Not ((PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) - 1)] == 0))) * (PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) - 1)] + ((Eval.PP.Side == 2) * (9 - (2 * PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) - 1)])))));
+                            If ((Eval.PP.Idx == 1) Or (Eval.PP.NFwd > Eval.PP.NAdj))
                             {
-                                Eval.PP.TargetIdx = Eval.PP.Idx;
-                                Eval.PP.Delta = (Eval.PP.WhitePawnForwardRank - 1);
-                                If (Eval.PP.Delta > 5)
+                                Eval.PP.NAdj = ((Not ((PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) + 1)] == 0))) * (PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) + 1)] + ((Eval.PP.Side == 2) * (9 - (2 * PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) + 1)])))));
+                                If ((Eval.PP.Idx == 8) Or (Eval.PP.NFwd > Eval.PP.NAdj))
                                 {
-                                    Eval.PP.Delta = 5;
-                                }
-                                If ((ChebyshevDistance[((Glob.BlackKingIdx * 100) + Eval.PP.TargetIdx)] - ((Ply + 1) % 2)) > Eval.PP.Delta)
-                                {
-                                    If (Eval.PP.WhiteUnstoppableCnt == 0)
+                                    Eval.PP.TargetIdx = (Eval.PP.PromoBase + Eval.PP.Idx);
+                                    Eval.PP.Delta = (8 - Eval.PP.NFwd);
+                                    If (Eval.PP.Delta > 5)
                                     {
-                                        Ret.EvaluatePostProcess.Score += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
+                                        Eval.PP.Delta = 5;
                                     }
-                                    Eval.PP.WhiteUnstoppableCnt += 1;
+                                    If ((ChebyshevDistance[((Eval.PP.TheirKingIdx * 100) + Eval.PP.TargetIdx)] - (((Ply + Eval.PP.Side) + 1) % 2)) > Eval.PP.Delta)
+                                    {
+                                        Eval.PP.QD = Eval.PP.Delta;
+                                        If ((IdxToFile[Eval.PP.KingIdx] == Eval.PP.Idx) And (((Not ((IdxToRank[Eval.PP.KingIdx] == 0))) * (IdxToRank[Eval.PP.KingIdx] + ((Eval.PP.Side == 2) * (9 - (2 * IdxToRank[Eval.PP.KingIdx]))))) > Eval.PP.NFwd))
+                                        {
+                                            If ((Eval.PP.Idx == 1) Or (Eval.PP.Idx == 8))
+                                            {
+                                                Eval.PP.QD = 99;
+                                            }
+                                            Else
+                                            {
+                                                Eval.PP.QD += 1;
+                                            }
+                                        }
+                                        If (Eval.PP.Side == 1)
+                                        {
+                                            If (Eval.PP.QD < Eval.PP.BlackQueener)
+                                            {
+                                                Eval.PP.BlackQueener = Eval.PP.QD;
+                                            }
+                                        }
+                                        Else
+                                        {
+                                            If (Eval.PP.QD < Eval.PP.WhiteQueener)
+                                            {
+                                                Eval.PP.WhiteQueener = Eval.PP.QD;
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                Eval.PP.Idx += 1;
             }
-            If ((Glob.WhiteQueenCountLocal + Glob.WhiteNonQueenMajorMinorCountLocal) == 0)
+            Eval.PP.Side += 1;
+        }
+        If (Eval.PP.WhiteQueener < Eval.PP.BlackQueener)
+        {
+            Ret.EvaluatePostProcess.Score += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
+        }
+        Else
+        {
+            If (Eval.PP.BlackQueener < Eval.PP.WhiteQueener)
             {
-                If (Eval.PP.BlackPawnForwardRank > 2)
-                {
-                    Eval.PP.WhitePawnBackwardRank = PawnAdvancePerFile[Eval.PP.Idx];
-                    If (Eval.PP.BlackPawnForwardRank > Eval.PP.WhitePawnBackwardRank)
-                    {
-                        Eval.PP.LeftTheirPawnRank = PawnAdvancePerFile[(Eval.PP.Idx - 1)];
-                        If (((Eval.PP.Idx == 1) Or (Eval.PP.LeftTheirPawnRank == 0)) Or (Eval.PP.BlackPawnForwardRank > Eval.PP.LeftTheirPawnRank))
-                        {
-                            Eval.PP.RightTheirPawnRank = PawnAdvancePerFile[(Eval.PP.Idx + 1)];
-                            If (((Eval.PP.Idx == 8) Or (Eval.PP.RightTheirPawnRank == 0)) Or (Eval.PP.BlackPawnForwardRank > Eval.PP.RightTheirPawnRank))
-                            {
-                                Eval.PP.TargetIdx = (56 + Eval.PP.Idx);
-                                Eval.PP.Delta = (8 - Eval.PP.BlackPawnForwardRank);
-                                If (Eval.PP.Delta > 5)
-                                {
-                                    Eval.PP.Delta = 5;
-                                }
-                                If ((ChebyshevDistance[((Glob.WhiteKingIdx * 100) + Eval.PP.TargetIdx)] - (Ply % 2)) > Eval.PP.Delta)
-                                {
-                                    If (Eval.PP.BlackUnstoppableCnt == 0)
-                                    {
-                                        Ret.EvaluatePostProcess.Score += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
-                                    }
-                                    Eval.PP.BlackUnstoppableCnt += 1;
-                                }
-                            }
-                        }
-                    }
-                }
+                Ret.EvaluatePostProcess.Score += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
             }
-            Eval.PP.Idx += 1;
         }
     }
 }
@@ -3234,6 +3278,28 @@ Define GetBestMoveBlitz (warp=false)
                     GBM.Evaluation = Ret.Search.Eval;
                 }
                 Call OnEvaluationChanged(GBM.Evaluation);
+                If (Not ((Glob.IsDCI == 1)))
+                {
+                    If (Ret.GetBestMoveBlitz.Move == GoK_BlackKingsideCastling)
+                    {
+                        Stg_BestMoveFromIdx = VirtualBoard[5];
+                        Stg_BestMoveToIdx = VirtualBoard[7];
+                    }
+                    Else
+                    {
+                        If (Ret.GetBestMoveBlitz.Move == GoK_BlackQueensideCastling)
+                        {
+                            Stg_BestMoveFromIdx = VirtualBoard[5];
+                            Stg_BestMoveToIdx = VirtualBoard[3];
+                        }
+                        Else
+                        {
+                            Stg_BestMoveFromIdx = floor((Ret.GetBestMoveBlitz.Move / 100));
+                            Stg_BestMoveToIdx = floor((Ret.GetBestMoveBlitz.Move % 100));
+                        }
+                    }
+                    Event.Broadcast("UI_ShowBestMove");
+                }
             }
         }
         Glob.IdxDeepening += 1;
@@ -3260,6 +3326,29 @@ Define GetBestMoveEasy (warp=false)
     }
     Call Search(-100000)(100000)(1)(2)((1 == 0))(3)((1 == 1));
     Ret.GetBestMoveEasy.Move = Ret.Search.Move;
+    Call OnEvaluationChanged(Ret.Search.Eval);
+    If (Not ((Glob.IsDCI == 1)))
+    {
+        If (Ret.GetBestMoveEasy.Move == GoK_BlackKingsideCastling)
+        {
+            Stg_BestMoveFromIdx = VirtualBoard[5];
+            Stg_BestMoveToIdx = VirtualBoard[7];
+        }
+        Else
+        {
+            If (Ret.GetBestMoveEasy.Move == GoK_BlackQueensideCastling)
+            {
+                Stg_BestMoveFromIdx = VirtualBoard[5];
+                Stg_BestMoveToIdx = VirtualBoard[3];
+            }
+            Else
+            {
+                Stg_BestMoveFromIdx = floor((Ret.GetBestMoveEasy.Move / 100));
+                Stg_BestMoveToIdx = floor((Ret.GetBestMoveEasy.Move % 100));
+            }
+        }
+        Event.Broadcast("UI_ShowBestMove");
+    }
     Get.BME.Rnd = Operator.Random(1 , 100);
     If ((Get.BME.Rnd > ((Get.BME.JuniorSearchQuota + 100) / 2)) Or (((BoardAttackedByWhite[floor((Ret.GetBestMoveEasy.Move / 100))] == 0) And (Board[floor((Ret.GetBestMoveEasy.Move % 100))] == 0)) And (Get.BME.Rnd > Get.BME.JuniorSearchQuota)))
     {
@@ -3365,6 +3454,34 @@ Define GetBestMoveMedDiff (warp=false)
                     GBM.Evaluation = Get.BMMD.SearchEval;
                 }
                 Call OnEvaluationChanged(GBM.Evaluation);
+                If (Not ((Glob.IsDCI == 1)))
+                {
+                    If (GBM.Move == GoK_BlackKingsideCastling)
+                    {
+                        Stg_BestMoveFromIdx = VirtualBoard[5];
+                        Stg_BestMoveToIdx = VirtualBoard[7];
+                    }
+                    Else
+                    {
+                        If (GBM.Move == GoK_BlackQueensideCastling)
+                        {
+                            Stg_BestMoveFromIdx = VirtualBoard[5];
+                            Stg_BestMoveToIdx = VirtualBoard[3];
+                        }
+                        Else
+                        {
+                            Stg_BestMoveFromIdx = floor((GBM.Move / 100));
+                            Stg_BestMoveToIdx = floor((GBM.Move % 100));
+                        }
+                    }
+                    Event.Broadcast("UI_ShowBestMove");
+                }
+            }
+            Get.BMMD.Now = (Sensing.DaysSince2000() * 86400);
+            If (Get.BMMD.Now > (Glob.PrevProgressUpdate + 1))
+            {
+                Call OnProgressChanged((((Get.BMMD.Now - Glob.ThinkTimeStart) / Glob.ThinkTimeLimitSearch) * 100));
+                Glob.PrevProgressUpdate = Get.BMMD.Now;
             }
             Call Log(Glob.IdxDeepening)(": AW : ")(Get.BMMD.AWAlpha)(" : ")(Get.BMMD.AWBeta)(" : ")(Get.BMMD.SearchEval)(Operator.Join(" : ", ((Not ((Get.BMMD.SearchEval == ""))) And ((Not ((Get.BMMD.SearchEval > Get.BMMD.AWAlpha))) Or (Not ((Get.BMMD.SearchEval < Get.BMMD.AWBeta)))))));
             If (((Glob.IsSearchTimeout == 0) And (Not ((Get.BMMD.SearchEval == "")))) And ((Not ((Get.BMMD.SearchEval > Get.BMMD.AWAlpha))) Or (Not ((Get.BMMD.SearchEval < Get.BMMD.AWBeta)))))
@@ -3558,7 +3675,7 @@ Define GetImproving(string Ply) (warp=true)
         Ret.GetImproving.IsImproving = 0;
         Stop(this script);
     }
-    Ret.GetImproving.IsImproving = 0;
+    Ret.GetImproving.IsImproving = "";
     If (Not ((BoardEval[Ply] == "")))
     {
         Get.Improving.BoardEvalIdx = (Ply - 2);
@@ -9942,7 +10059,10 @@ Define Search(string Alpha)(string Beta)(string MinPly)(string MaxPly)(bool Init
             List.Add(PVStablePrev, PVStable[Search.PVStableIdx]);
             Search.PVStableIdx += 1;
         }
-        Call StoreKillerMove(1)(Ret.Search.Move)((MaxPly - 1))((1 == 0))((1 == 0))((1 == 1));
+        If (Not ((Ret.Search.Eval < Beta)))
+        {
+            Call StoreKillerMove(1)(Ret.Search.Move)((MaxPly - 1))((1 == 0))((1 == 0))((1 == 1));
+        }
     }
 }
 
@@ -10103,7 +10223,7 @@ Define SearchImpl(string Ply)(bool InitialDeepening)(bool Quiescence)(bool ShowP
     Call //("Move generation and move loop");
     Repeat Until (PickMoveRes[Ply] == 0)
     {
-        If ((Not (Quiescence)) And ((Ply == 1) Or (Horizon > 2)))
+        If ((Not (Quiescence)) And ((Ply == 1) Or (Horizon > 3)))
         {
             If ((Glob.IsSearchTimeout == 0) And ((Not (InitialDeepening)) Or (Not ((Ret.SearchImpl.Move == "")))))
             {
@@ -10155,15 +10275,6 @@ Define SearchImpl(string Ply)(bool InitialDeepening)(bool Quiescence)(bool ShowP
         If (PickMoveRes[Ply] == 1)
         {
             Call //("Show progress and collect statistics");
-            If (ShowProgress And ((Ply == 1) Or (Horizon > 2)))
-            {
-                SI.Now = (Sensing.DaysSince2000() * 86400);
-                If (SI.Now > (Glob.PrevProgressUpdate + 1))
-                {
-                    Call OnProgressChanged((((SI.Now - Glob.ThinkTimeStart) / Glob.ThinkTimeLimitSearch) * 100));
-                    Glob.PrevProgressUpdate = SI.Now;
-                }
-            }
             List.ReplaceItem(PutsInCheck, Ply, 0);
             List.ReplaceItem(SearchExtensionTagged, Ply, 0);
             List.ReplaceItem(SearchExtension, Ply, 0);
@@ -10420,7 +10531,7 @@ Define SearchImpl(string Ply)(bool InitialDeepening)(bool Quiescence)(bool ShowP
         If ((Not (Quiescence)) And (Not ((BestMoves[Ply] == ""))))
         {
             Call StoreKillerMove(Ply)(BestMoves[Ply])(Horizon)((1 == 0))((1 == 0))((1 == 1));
-            If (PickedPseudoLegalMovesCount[Ply] < MovesCount[Ply])
+            If ((PickedPseudoLegalMovesCount[Ply] < MovesCount[Ply]) And (Moves[(((Ply - 1) * Const.MaxMovesPerGeneration) + BestMoveListIdx[Ply])] == BestMoves[Ply]))
             {
                 Call StoreKillerMoveMalus(Ply)(Horizon)(BestMoveListIdx[Ply]);
             }
@@ -10566,7 +10677,48 @@ Define Search_ComputeReduction(string Ply)(string Horizon)(bool Cutnode) (warp=t
             }
             If (1 == 1)
             {
-                Call GetHistoryStatScore(SourcePieces[Ply])(floor((AppliedMove[Ply] / 100)))(floor((AppliedMove[Ply] % 100)))(AppliedMove[Ply])(Ply);
+                Search.CR.HistFrom = floor((AppliedMove[Ply] / 100));
+                Search.CR.HistTo = floor((AppliedMove[Ply] % 100));
+                If (Search.CR.HistFrom == 0)
+                {
+                    If ((AppliedMove[Ply] == 65) Or (AppliedMove[Ply] == 66))
+                    {
+                        Search.CR.HistFrom = VirtualBoard[5];
+                    }
+                    Else
+                    {
+                        Search.CR.HistFrom = VirtualBoard[61];
+                    }
+                    If (AppliedMove[Ply] == 65)
+                    {
+                        Search.CR.HistTo = VirtualBoard[8];
+                    }
+                    Else
+                    {
+                        If (AppliedMove[Ply] == 66)
+                        {
+                            Search.CR.HistTo = VirtualBoard[1];
+                        }
+                        Else
+                        {
+                            If (AppliedMove[Ply] == 67)
+                            {
+                                Search.CR.HistTo = VirtualBoard[64];
+                            }
+                            Else
+                            {
+                                Search.CR.HistTo = VirtualBoard[57];
+                            }
+                        }
+                    }
+                }
+                Search.CR.KPHash = Glob.KPHash;
+                If (abs(SourcePieces[Ply]) == GoK_BlackPawn)
+                {
+                    Glob.KPHash = PreviousBoardHashKP[Ply];
+                }
+                Call GetHistoryStatScore(SourcePieces[Ply])(Search.CR.HistFrom)(Search.CR.HistTo)(AppliedMove[Ply])(Ply);
+                Glob.KPHash = Search.CR.KPHash;
                 If (1 == 1)
                 {
                     Ret.Search_ComputeReduction.Reduction += (0 - Operator.Round(((Ret.GetHistoryStatScore.Score / 82000) * 128)));
@@ -10575,7 +10727,7 @@ Define Search_ComputeReduction(string Ply)(string Horizon)(bool Cutnode) (warp=t
             If (1 == 1)
             {
                 Call GetImproving(Ply);
-                If (Ret.GetImproving.IsImproving == 1)
+                If (Not ((Ret.GetImproving.IsImproving == 0)))
                 {
                     Ret.Search_ComputeReduction.Reduction += -128;
                 }
@@ -10859,7 +11011,7 @@ Define Search_DetectDrawByRepetition(string Ply)(bool Quiescence) (warp=true)
             Search.DDBR.Idx = (Ply - 2);
             Repeat Until ((Search.DDBR.Idx < 2) Or (Search.DDBR.Count > 2))
             {
-                If (((Glob.CurrentBoardHash + 0) == PreviousBoardHash[Search.DDBR.Idx]) And (CastlingState[Ply] == CastlingState[Search.DDBR.Idx]))
+                If (((Glob.CurrentBoardHash + 0) == PreviousBoardHash[Search.DDBR.Idx]) And (CastlingState[Ply] == CastlingState[(Search.DDBR.Idx - 1)]))
                 {
                     Search.DDBR.Count += 1;
                 }
@@ -11322,31 +11474,11 @@ Define Search_OnBestRootMoveFound(string Move)(string Eval) (warp=true)
     }
     If (Eval > Glob.SearchAlpha)
     {
-        Call OnEvaluationChanged(Eval);
         If (1 == 1)
         {
             Call Log(Glob.IdxDeepening)(" : ")(Move)(" : ")(Eval)("")("")("");
         }
     }
-    If (Move == GoK_BlackKingsideCastling)
-    {
-        Stg_BestMoveFromIdx = VirtualBoard[5];
-        Stg_BestMoveToIdx = VirtualBoard[7];
-    }
-    Else
-    {
-        If (Move == GoK_BlackQueensideCastling)
-        {
-            Stg_BestMoveFromIdx = VirtualBoard[5];
-            Stg_BestMoveToIdx = VirtualBoard[3];
-        }
-        Else
-        {
-            Stg_BestMoveFromIdx = floor((Move / 100));
-            Stg_BestMoveToIdx = floor((Move % 100));
-        }
-    }
-    Event.Broadcast("UI_ShowBestMove");
 }
 
 Define Search_ProbeCut(string Ply)(bool InitialDeepening)(bool Quiescence)(bool ShowProgress)(string Horizon)(bool Cutnode)(string ExcludedMove) (warp=true)
