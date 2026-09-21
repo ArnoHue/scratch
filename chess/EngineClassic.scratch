@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess Version 6.9248.1734 (21.09.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess Version 6.9248.1740 (21.09.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.Level = 4;
@@ -2410,7 +2410,7 @@ Define ClearTT (warp=true)
     }
     Else
     {
-        Call ClearTTImpl(524288);
+        Call ClearTTImpl(2097152);
     }
 }
 
@@ -2421,6 +2421,8 @@ Define ClearTTImpl(string Size) (warp=true)
     {
         List.Add(TTNodeEntry, 0);
         List.Add(TTNodeEntry, 0);
+        List.Add(TTNodeEntry, Const.EmptyVal);
+        List.Add(TTNodeEntry, Const.EmptyVal);
         List.Add(TTNodeEntry, Const.EmptyVal);
         List.Add(TTNodeEntry, Const.EmptyVal);
         List.Add(TTNodeEntry, Const.EmptyVal);
@@ -3642,13 +3644,11 @@ Define EvaluatePawnsImpl(string Ply) (warp=true)
     Ret.EvaluatePawnsImpl.Score = 0;
     Call TaperedEval.Init;
     Glob.IsPawnEvalCached = 0;
-    PEC.Meta = (CastlingState[Ply] + 0);
-    PEC.Idx = ((((PEC.Meta * 67) + Glob.KPHash) % 262144) + 1);
-    If ((PawnEvalCacheMeta[PEC.Idx] == PEC.Meta) And (PawnEvalCacheKey[PEC.Idx] == Glob.KPHash))
+    If (Not ((NodeTTPawnMg[(Ply + 1)] == Const.EmptyVal)))
     {
         Glob.IsPawnEvalCached = 1;
-        TaperedEval.Mg += PawnEvalCacheMg[PEC.Idx];
-        TaperedEval.Eg += PawnEvalCacheEg[PEC.Idx];
+        TaperedEval.Mg += NodeTTPawnMg[(Ply + 1)];
+        TaperedEval.Eg += NodeTTPawnEg[(Ply + 1)];
     }
     If (1 == 1)
     {
@@ -4048,7 +4048,7 @@ Define EvaluatePawnsImpl(string Ply) (warp=true)
     EvalP.Side = 1;
     If (Glob.IsPawnEvalCached == 0)
     {
-        Call PawnEvalCacheStore(PEC.Idx)(Glob.KPHash)(PEC.Meta)(TaperedEval.Mg)(TaperedEval.Eg);
+        Call TTStoreNode(Glob.KPHash)((Ply + 1))(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(TaperedEval.Mg)(TaperedEval.Eg);
     }
     Repeat (2)
     {
@@ -7028,7 +7028,7 @@ Define GetStaticEval(string Ply) (warp=true)
         Call Evaluate((Ply - 1))((1 == 1));
         Call AdjustEvalScore(Ply)(Ret.Evaluate.Score);
         List.ReplaceItem(NodeTTStaticEval, Ply, Ret.Evaluate.Score);
-        Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(Const.EmptyVal)(Const.EmptyVal)(Const.TTType.None)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Ret.Evaluate.Score);
+        Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(Const.EmptyVal)(Const.EmptyVal)(Const.TTType.None)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Ret.Evaluate.Score)(Const.EmptyVal)(Const.EmptyVal);
     }
 }
 
@@ -7487,7 +7487,9 @@ Define InitBoard (warp=true)
     Const.TTType.HighBound = 2;
     Const.TTType.LowBound = 3;
     Const.TTType.Exact = 4;
-    Const.TTNodeEntrySize = 9;
+    TTNodeColIdx.PawnMg = 9;
+    TTNodeColIdx.PawnEg = 10;
+    Const.TTNodeEntrySize = 11;
     Const.MaxPlyStackFrames = 60;
     Const.Profile.TTNodeProbe = 0;
     Const.Profile.TTNodeHit = 64;
@@ -7764,6 +7766,8 @@ Define InitBoard (warp=true)
         List.Add(HashMove, Const.EmptyVal);
         List.Add(LMRState, 0);
         List.Add(NodeTTStaticEval, Const.EmptyVal);
+        List.Add(NodeTTPawnMg, Const.EmptyVal);
+        List.Add(NodeTTPawnEg, Const.EmptyVal);
         List.Add(NodeTTChecked, Const.EmptyVal);
         List.Add(NodeTTMove, Const.EmptyVal);
         List.Add(NodeTTQSMeta, Const.EmptyVal);
@@ -7791,17 +7795,6 @@ Define InitBoard (warp=true)
     {
         List.Add(PersistedBoardAttackedSnapshot, 0);
         List.Add(PersistedBoardAttackerSnapshot, 0);
-    }
-    List.DeleteAll(PawnEvalCacheKey);
-    List.DeleteAll(PawnEvalCacheMeta);
-    List.DeleteAll(PawnEvalCacheMg);
-    List.DeleteAll(PawnEvalCacheEg);
-    Repeat (262144)
-    {
-        List.Add(PawnEvalCacheKey, -1);
-        List.Add(PawnEvalCacheMeta, -1);
-        List.Add(PawnEvalCacheMg, 0);
-        List.Add(PawnEvalCacheEg, 0);
     }
     List.DeleteItem(PV, all);
     List.DeleteItem(PVRaw, all);
@@ -11932,14 +11925,6 @@ Define PadInto(string value)(string width)(bool rightJustify) (warp=true)
     }
 }
 
-Define PawnEvalCacheStore(string Idx)(string Key)(string Meta)(string Mg)(string Eg) (warp=true)
-{
-    List.ReplaceItem(PawnEvalCacheKey, Idx, Key);
-    List.ReplaceItem(PawnEvalCacheMeta, Idx, Meta);
-    List.ReplaceItem(PawnEvalCacheMg, Idx, Mg);
-    List.ReplaceItem(PawnEvalCacheEg, Idx, Eg);
-}
-
 Define Perft(string PerftPly)(string PerftHorizon)(string PerftStaged) (warp=true)
 {
     If (PerftHorizon == 0)
@@ -14143,7 +14128,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
                 List.ReplaceItem(SearchEval, Ply, StaticEval[Ply]);
                 If (1 == 1)
                 {
-                    Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Const.EmptyVal)(Const.TTType.LowBound)(Const.EmptyVal)(-1)(0)(NodeTTStaticEval[Ply]);
+                    Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Const.EmptyVal)(Const.TTType.LowBound)(Const.EmptyVal)(-1)(0)(NodeTTStaticEval[Ply])(Const.EmptyVal)(Const.EmptyVal);
                 }
                 Stop(this script);
             }
@@ -14450,7 +14435,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
             If Quiescence
             {
                 Call IsQuiescentCheckCond(Ply);
-                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(Const.EmptyVal)(-1)(Ret.IsQuiescentCheckCond.IsTrue)(NodeTTStaticEval[Ply]);
+                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(Const.EmptyVal)(-1)(Ret.IsQuiescentCheckCond.IsTrue)(NodeTTStaticEval[Ply])(Const.EmptyVal)(Const.EmptyVal);
             }
             Else
             {
@@ -14485,7 +14470,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
                         List.ReplaceItem(CorrHistNP, Ret.GetCorrHistIndices.NPIdx, ((CorrHistNP[Ret.GetCorrHistIndices.NPIdx] + Search.Main.CorrBonus) - floor(((CorrHistNP[Ret.GetCorrHistIndices.NPIdx] * abs(Search.Main.CorrBonus)) / 1024))));
                     }
                 }
-                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(Const.EmptyVal)(Horizon)(Const.EmptyVal)(NodeTTStaticEval[Ply]);
+                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(Const.EmptyVal)(Horizon)(Const.EmptyVal)(NodeTTStaticEval[Ply])(Const.EmptyVal)(Const.EmptyVal);
             }
         }
         If (MovesIdxBestMove[Ply] > 0)
@@ -14735,7 +14720,7 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
                                                         Search.Pruning.NodeType = "B";
                                                         If (1 == 1)
                                                         {
-                                                            Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(AppliedMove[Ply])(Search.Pruning.NodeType)(Const.EmptyVal)((Horizon - (2 + (2 * Search.Pruning.IsImproving))))(Const.EmptyVal)(NodeTTStaticEval[Ply]);
+                                                            Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(AppliedMove[Ply])(Search.Pruning.NodeType)(Const.EmptyVal)((Horizon - (2 + (2 * Search.Pruning.IsImproving))))(Const.EmptyVal)(NodeTTStaticEval[Ply])(Const.EmptyVal)(Const.EmptyVal);
                                                         }
                                                         Init.Search.IsInProbeCut = 0;
                                                         Stop(this script);
@@ -15122,7 +15107,7 @@ Define StoreAttackInfo(string Ply)(string StorePly) (warp=true)
                 SAI.SliceStart += 1;
             }
             List.ReplaceItem(CheckedState, StorePly, Glob.IsOppSideChecked);
-            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.EmptyVal)(Const.EmptyVal)(Const.TTType.None)(CheckedState[StorePly])(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal);
+            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.EmptyVal)(Const.EmptyVal)(Const.TTType.None)(CheckedState[StorePly])(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal);
         }
     }
     Else
@@ -15139,7 +15124,7 @@ Define StoreAttackInfo(string Ply)(string StorePly) (warp=true)
                 SAI.SliceStart += 1;
             }
             List.ReplaceItem(CheckedState, StorePly, Glob.IsOwnSideChecked);
-            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.EmptyVal)(Const.EmptyVal)(Const.TTType.None)(CheckedState[StorePly])(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal);
+            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.EmptyVal)(Const.EmptyVal)(Const.TTType.None)(CheckedState[StorePly])(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal)(Const.EmptyVal);
         }
     }
 }
@@ -15555,6 +15540,8 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
     Ret.TTProbeNode.Horizon = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.Horizon)];
     Ret.TTProbeNode.QSMeta = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.QSMeta)];
     Ret.TTProbeNode.StaticEval = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.StaticEval)];
+    Ret.TTProbeNode.PawnMg = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.PawnMg)];
+    Ret.TTProbeNode.PawnEg = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.PawnEg)];
     List.ReplaceItem(TTNodeEntry, (TTPN.HashBucket + TTNodeColIdx.Age), Glob.TTCurrentAge);
 }
 
@@ -15567,6 +15554,14 @@ Define TTProbeNodeAtPly(string Ply) (warp=true)
     List.ReplaceItem(NodeTTMove, Ply, Const.EmptyVal);
     List.ReplaceItem(NodeTTChecked, Ply, Const.EmptyVal);
     List.ReplaceItem(NodeTTStaticEval, Ply, Const.EmptyVal);
+    List.ReplaceItem(NodeTTPawnMg, Ply, Const.EmptyVal);
+    List.ReplaceItem(NodeTTPawnEg, Ply, Const.EmptyVal);
+    Call TTProbeNode(Glob.KPHash)(Ply);
+    If (Ret.TTProbeNode.Hit == 1)
+    {
+        List.ReplaceItem(NodeTTPawnMg, Ply, Ret.TTProbeNode.PawnMg);
+        List.ReplaceItem(NodeTTPawnEg, Ply, Ret.TTProbeNode.PawnEg);
+    }
     Call TTProbeNode(Glob.CurrentBoardHash)(Ply);
     List.ReplaceItem(NodeTTHit, Ply, Ret.TTProbeNode.Hit);
     If (Ret.TTProbeNode.Hit == 1)
@@ -15585,7 +15580,7 @@ Define TTProbeNodeAtPly(string Ply) (warp=true)
     }
 }
 
-Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string QSMeta)(string StaticEval) (warp=true)
+Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string QSMeta)(string StaticEval)(string PawnMg)(string PawnEg) (warp=true)
 {
     If (Glob.IsSearchTimeout == 1)
     {
@@ -15596,10 +15591,10 @@ Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(
         Stop(this script);
     }
     Call GetTTNodeHash(BoardHash)(Ply);
-    Call TTStoreNodeImpl(Ret.GetTTNodeHash.Hash)(Ply)(Score)(BestMove)(Type)(Checked)(Horizon)(QSMeta)(StaticEval);
+    Call TTStoreNodeImpl(Ret.GetTTNodeHash.Hash)(Ply)(Score)(BestMove)(Type)(Checked)(Horizon)(QSMeta)(StaticEval)(PawnMg)(PawnEg);
 }
 
-Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string QSMeta)(string StaticEval) (warp=true)
+Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string QSMeta)(string StaticEval)(string PawnMg)(string PawnEg) (warp=true)
 {
     TTSNI.FirstBucket = ((NodeHash % (floor((List.Length(TTNodeEntry) / Const.TTNodeEntrySize)) - 5)) + 1);
     TTSNI.FirstBucket = (((TTSNI.FirstBucket - 1) * Const.TTNodeEntrySize) + 1);
@@ -15632,6 +15627,10 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         }
         TTSNI.HashBucket += Const.TTNodeEntrySize;
     }
+    If ((Score == Const.EmptyVal) And ((Not ((PawnMg == Const.EmptyVal))) And ((TTSNI.UpdateIdx == 0) And (TTSNI.EmptySlot == 0))))
+    {
+        Stop(this script);
+    }
     If (TTSNI.UpdateIdx > 0)
     {
         TTSNI.HashBucket = TTSNI.UpdateIdx;
@@ -15653,6 +15652,11 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         {
             List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Checked), Checked);
         }
+        If (Not ((PawnMg == Const.EmptyVal)))
+        {
+            List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.PawnMg), PawnMg);
+            List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.PawnEg), PawnEg);
+        }
         If (Not ((StaticEval == Const.EmptyVal)))
         {
             List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.StaticEval), StaticEval);
@@ -15671,6 +15675,8 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
     Else
     {
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Hash), NodeHash);
+        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.PawnMg), PawnMg);
+        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.PawnEg), PawnEg);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Horizon), Horizon);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Type), Type);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Score), Score);
