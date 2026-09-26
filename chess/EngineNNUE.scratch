@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.1938 (26.09.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.1940 (26.09.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     NNUE.DN.IsDecoded = 0;
@@ -2277,6 +2277,8 @@ Define Evaluate(string Ply)(bool ForceFullEval) (warp=true)
             Call NNUE_UpdateAccStack(Ply);
             Call NNUE_Public_Evaluate((Ply + 1));
             Ret.Evaluate.Score = Operator.Round(Ret.NNUE_Public_Evaluate.Score);
+            Call EvaluatePostProcess(Ply)(Ret.Evaluate.Score);
+            Ret.Evaluate.Score = Ret.EvaluatePostProcess.Score;
         }
         Else
         {
@@ -2451,6 +2453,8 @@ Define EvaluatePostProcess(string Ply)(string Score) (warp=true)
         }
         Eval.PP.WhiteQueener = 99;
         Eval.PP.BlackQueener = 99;
+        Eval.PP.BlackFastest = 99;
+        Eval.PP.WhiteFastest = 99;
         Eval.PP.Side = 1;
         Repeat (2)
         {
@@ -2477,22 +2481,36 @@ Define EvaluatePostProcess(string Ply)(string Score) (warp=true)
                 If (Not ((Eval.PP.OurForwardRank == 0)))
                 {
                     Eval.PP.NFwd = ((Not ((Eval.PP.OurForwardRank == 0))) * (Eval.PP.OurForwardRank + ((Eval.PP.Side == 2) * (9 - (2 * Eval.PP.OurForwardRank)))));
-                    If (Eval.PP.NFwd > 2)
+                    If (Eval.PP.NFwd > 1)
                     {
                         Eval.PP.NBack = ((Not ((PawnAdvancePerFile[(Eval.PP.Idx + Eval.PP.TheirOffset)] == 0))) * (PawnAdvancePerFile[(Eval.PP.Idx + Eval.PP.TheirOffset)] + ((Eval.PP.Side == 2) * (9 - (2 * PawnAdvancePerFile[(Eval.PP.Idx + Eval.PP.TheirOffset)])))));
                         If (Eval.PP.NFwd > Eval.PP.NBack)
                         {
                             Eval.PP.NAdj = ((Not ((PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) - 1)] == 0))) * (PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) - 1)] + ((Eval.PP.Side == 2) * (9 - (2 * PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) - 1)])))));
-                            If ((Eval.PP.Idx == 1) Or (Eval.PP.NFwd > Eval.PP.NAdj))
+                            If ((Eval.PP.Idx == 1) Or (Not ((Eval.PP.NFwd < Eval.PP.NAdj))))
                             {
                                 Eval.PP.NAdj = ((Not ((PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) + 1)] == 0))) * (PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) + 1)] + ((Eval.PP.Side == 2) * (9 - (2 * PawnAdvancePerFile[((Eval.PP.Idx + Eval.PP.TheirOffset) + 1)])))));
-                                If ((Eval.PP.Idx == 8) Or (Eval.PP.NFwd > Eval.PP.NAdj))
+                                If ((Eval.PP.Idx == 8) Or (Not ((Eval.PP.NFwd < Eval.PP.NAdj))))
                                 {
                                     Eval.PP.TargetIdx = (Eval.PP.PromoBase + Eval.PP.Idx);
                                     Eval.PP.Delta = (8 - Eval.PP.NFwd);
                                     If (Eval.PP.Delta > 5)
                                     {
                                         Eval.PP.Delta = 5;
+                                    }
+                                    If (Eval.PP.Side == 1)
+                                    {
+                                        If (Eval.PP.Delta < Eval.PP.BlackFastest)
+                                        {
+                                            Eval.PP.BlackFastest = Eval.PP.Delta;
+                                        }
+                                    }
+                                    Else
+                                    {
+                                        If (Eval.PP.Delta < Eval.PP.WhiteFastest)
+                                        {
+                                            Eval.PP.WhiteFastest = Eval.PP.Delta;
+                                        }
                                     }
                                     If ((ChebyshevDistance[((Eval.PP.TheirKingIdx * 100) + Eval.PP.TargetIdx)] - (((Ply + Eval.PP.Side) + 1) % 2)) > Eval.PP.Delta)
                                     {
@@ -2532,13 +2550,13 @@ Define EvaluatePostProcess(string Ply)(string Score) (warp=true)
             }
             Eval.PP.Side += 1;
         }
-        If (Eval.PP.WhiteQueener < Eval.PP.BlackQueener)
+        If ((Eval.PP.WhiteQueener < Eval.PP.BlackQueener) And (((2 * Eval.PP.BlackFastest) + ((Ply + 2) % 2)) > (((2 * Eval.PP.WhiteQueener) + ((Ply + 3) % 2)) + 1)))
         {
             Ret.EvaluatePostProcess.Score += ((GoK_WhiteQueen - GoK_WhitePawn) + 100);
         }
         Else
         {
-            If (Eval.PP.BlackQueener < Eval.PP.WhiteQueener)
+            If ((Eval.PP.BlackQueener < Eval.PP.WhiteQueener) And (((2 * Eval.PP.WhiteFastest) + ((Ply + 3) % 2)) > (((2 * Eval.PP.BlackQueener) + ((Ply + 2) % 2)) + 1)))
             {
                 Ret.EvaluatePostProcess.Score += ((GoK_BlackQueen - GoK_BlackPawn) - 100);
             }
