@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.1940 (26.09.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.1945 (26.09.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.Level = 4;
@@ -997,7 +997,7 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Ply)(bool CalcAtta
         }
         Stop(this script);
     }
-    If ((Not ((CheckedState[Ply] == Const.Null))) And (CheckedState[Ply] == 1))
+    If (CheckedState[Ply] == 1)
     {
         If (Not ((BoardAttackedEvasionTarget[(TargetIdx + 0)] == 1)))
         {
@@ -2475,7 +2475,6 @@ Define ClearTTImpl(string Size) (warp=true)
         List.Add(TTNodeEntry, Const.Null);
         List.Add(TTNodeEntry, Const.Null);
         List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
     }
 }
 
@@ -2590,6 +2589,8 @@ Define Evaluate(string Ply)(bool FullEval) (warp=true)
         Eval.MgTotal = 0;
         Eval.EgTotal = 0;
         Eval.PassedCount = 0;
+        Eval.OwnPassedCount = 0;
+        Eval.OppPassedCount = 0;
         Call EvaluateBoard;
         Eval.BoardScore = Ret.EvaluateBoard.Score;
         Call PrepareEvalPiecesData(Ply);
@@ -2656,10 +2657,6 @@ Define Evaluate(string Ply)(bool FullEval) (warp=true)
             Call Log("Eval.Imbalance = ")(Operator.Round(((Eval.OwnImbalance - Eval.OppImbalance) / 1)))("")("")("")("")("")("");
             Call Log("Eval.Total (pre-DrawScale)= ")(Ret.Evaluate.Score)("")("")("")("")("")("");
         }
-        If (1 == 1)
-        {
-            Call EvaluateDrawScaling(Ply)(Ret.Evaluate.Score);
-        }
         Eval.OppositeBishops.ScaleFactor = 128;
         If ((Glob.OwnBishopCountLocal == 1) And (Glob.OppBishopCountLocal == 1))
         {
@@ -2687,11 +2684,11 @@ Define Evaluate(string Ply)(bool FullEval) (warp=true)
                     {
                         If (Eval.OppositeBishops.StrongSide == 1)
                         {
-                            Eval.OppositeBishops.StrongPieceCount = Eval.DS.OwnPasserCount;
+                            Eval.OppositeBishops.StrongPieceCount = Eval.OwnPassedCount;
                         }
                         Else
                         {
-                            Eval.OppositeBishops.StrongPieceCount = Eval.DS.OppPasserCount;
+                            Eval.OppositeBishops.StrongPieceCount = Eval.OppPassedCount;
                         }
                         Eval.OppositeBishops.ScaleFactor = (36 + (8 * Eval.OppositeBishops.StrongPieceCount));
                     }
@@ -2878,304 +2875,6 @@ Define EvaluateBoard (warp=true)
     Ret.EvaluateBoard.Score += Ret.TaperedEval.GetSum.Score;
     Eval.MgTotal += Ret.EvaluateBoard.Score;
     Eval.EgTotal += Ret.EvaluateBoard.Score;
-}
-
-Define EvaluateDrawScaling(string Ply)(string Score) (warp=true)
-{
-    Ret.EvaluateDrawScaling.Score = Score;
-    Eval.DS.NonPawnMat = ((Glob.OwnQueenCountLocal * 1000) + ((Glob.OwnRookCountLocal * 525) + (((Glob.OwnNonQueenMajorMinorCountLocal - Glob.OwnRookCountLocal) * 350) + ((Glob.OppQueenCountLocal * 1000) + ((Glob.OppRookCountLocal * 525) + ((Glob.OppNonQueenMajorMinorCountLocal - Glob.OppRookCountLocal) * 350))))));
-    Eval.DS.TotalNonPawnPieces = ((Glob.OwnNonQueenMajorMinorCountLocal + Glob.OwnQueenCountLocal) + (Glob.OppNonQueenMajorMinorCountLocal + Glob.OppQueenCountLocal));
-    If ((Eval.DS.NonPawnMat > 3450) And (Eval.DS.TotalNonPawnPieces > 6))
-    {
-        Stop(this script);
-    }
-    Eval.DS.PreDrawScaleEval = Ret.EvaluateDrawScaling.Score;
-    Eval.DS.DrawDelta = 0;
-    Eval.DS.CannotWinLoserPawns = 0;
-    Eval.DS.WinDelta = 0;
-    Eval.DS.OwnMinorCount = (Glob.OwnNonQueenMajorMinorCountLocal - Glob.OwnRookCountLocal);
-    Eval.DS.OppMinorCount = (Glob.OppNonQueenMajorMinorCountLocal - Glob.OppRookCountLocal);
-    Eval.DS.PawnDiff = abs((Glob.OwnPawnCountLocal - Glob.OppPawnCountLocal));
-    Eval.DS.OwnPiecesNP = (Glob.OwnQueenCountLocal + (Glob.OwnRookCountLocal + Eval.DS.OwnMinorCount));
-    Eval.DS.OppPiecesNP = (Glob.OppQueenCountLocal + (Glob.OppRookCountLocal + Eval.DS.OppMinorCount));
-    Eval.DS.FiftyMoveCount = (BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] + 0);
-    Eval.DS.OwnPasserCount = 0;
-    Eval.DS.OppPasserCount = 0;
-    Eval.DS.OwnIsolatedCount = 0;
-    Eval.DS.OppIsolatedCount = 0;
-    Eval.DS.Side = 1;
-    Repeat (2)
-    {
-        If (Eval.DS.Side == 1)
-        {
-            Eval.DS.FwdOff = Const.PawnAdvance.OwnFront;
-            Eval.DS.AdjOff = Const.PawnAdvance.OppRear;
-            Eval.DS.Dir = 1;
-        }
-        Else
-        {
-            Eval.DS.FwdOff = Const.PawnAdvance.OppFront;
-            Eval.DS.AdjOff = Const.PawnAdvance.OwnRear;
-            Eval.DS.Dir = -1;
-        }
-        Eval.DS.PasserCount = 0;
-        Eval.DS.IsoCount = 0;
-        Eval.DS.File = 1;
-        Repeat (8)
-        {
-            Eval.DS.Fwd = (PawnAdvancePerFile[(Eval.DS.File + Eval.DS.FwdOff)] + 0);
-            If (Not ((Eval.DS.Fwd == 0)))
-            {
-                Eval.DS.Blocked = 0;
-                Eval.DS.AdjRank = (PawnAdvancePerFile[(Eval.DS.File + Eval.DS.AdjOff)] + 0);
-                If ((Not ((Eval.DS.AdjRank == 0))) And (((Eval.DS.AdjRank - Eval.DS.Fwd) * Eval.DS.Dir) > 0))
-                {
-                    Eval.DS.Blocked = 1;
-                }
-                If (Eval.DS.File > 1)
-                {
-                    Eval.DS.AdjRank = (PawnAdvancePerFile[((Eval.DS.File - 1) + Eval.DS.AdjOff)] + 0);
-                    If ((Not ((Eval.DS.AdjRank == 0))) And (((Eval.DS.AdjRank - Eval.DS.Fwd) * Eval.DS.Dir) > 0))
-                    {
-                        Eval.DS.Blocked = 1;
-                    }
-                }
-                If (Eval.DS.File < 8)
-                {
-                    Eval.DS.AdjRank = (PawnAdvancePerFile[((Eval.DS.File + 1) + Eval.DS.AdjOff)] + 0);
-                    If ((Not ((Eval.DS.AdjRank == 0))) And (((Eval.DS.AdjRank - Eval.DS.Fwd) * Eval.DS.Dir) > 0))
-                    {
-                        Eval.DS.Blocked = 1;
-                    }
-                }
-                If (Eval.DS.Blocked == 0)
-                {
-                    Eval.DS.PasserCount += 1;
-                }
-                Eval.DS.LeftPawnCount = 0;
-                Eval.DS.RightPawnCount = 0;
-                If (Eval.DS.File > 1)
-                {
-                    If (Eval.DS.Side == 1)
-                    {
-                        Eval.DS.LeftPawnCount = (PawnCount[(Eval.DS.File - 1)] + 0);
-                    }
-                    Else
-                    {
-                        Eval.DS.LeftPawnCount = (PawnCount[((Eval.DS.File - 1) + 8)] + 0);
-                    }
-                }
-                If (Eval.DS.File < 8)
-                {
-                    If (Eval.DS.Side == 1)
-                    {
-                        Eval.DS.RightPawnCount = (PawnCount[(Eval.DS.File + 1)] + 0);
-                    }
-                    Else
-                    {
-                        Eval.DS.RightPawnCount = (PawnCount[((Eval.DS.File + 1) + 8)] + 0);
-                    }
-                }
-                If ((Eval.DS.LeftPawnCount == 0) And (Eval.DS.RightPawnCount == 0))
-                {
-                    Eval.DS.IsoCount += 1;
-                }
-            }
-            Eval.DS.File += 1;
-        }
-        If (Eval.DS.Side == 1)
-        {
-            Eval.DS.OwnPasserCount = Eval.DS.PasserCount;
-            Eval.DS.OwnIsolatedCount = Eval.DS.IsoCount;
-        }
-        Else
-        {
-            Eval.DS.OppPasserCount = Eval.DS.PasserCount;
-            Eval.DS.OppIsolatedCount = Eval.DS.IsoCount;
-        }
-        Eval.DS.Side += 1;
-    }
-    If (((Eval.DS.OwnPiecesNP + Glob.OwnPawnCountLocal) == 0) And (Eval.DS.NonPawnMat > 450))
-    {
-        Stop(this script);
-    }
-    If (((Eval.DS.OppPiecesNP + Glob.OppPawnCountLocal) == 0) And (Eval.DS.NonPawnMat > 450))
-    {
-        Stop(this script);
-    }
-    If (Ret.EvaluateDrawScaling.Score == 0)
-    {
-        Stop(this script);
-    }
-    If (Ret.EvaluateDrawScaling.Score > 0)
-    {
-        Eval.DS.EvalSign = -1;
-        Eval.DS.WinQueenCount = Glob.OwnQueenCountLocal;
-        Eval.DS.WinRookCount = Glob.OwnRookCountLocal;
-        Eval.DS.WinMinorCount = Eval.DS.OwnMinorCount;
-        Eval.DS.WinPawnCount = Glob.OwnPawnCountLocal;
-        Eval.DS.WinPasserCount = Eval.DS.OwnPasserCount;
-        Eval.DS.WinIsolatedCount = Eval.DS.OwnIsolatedCount;
-        Eval.DS.LosePasserCount = Eval.DS.OppPasserCount;
-        Eval.DS.LoseIsolatedCount = Eval.DS.OppIsolatedCount;
-        Eval.DS.LosePawnCount = Glob.OppPawnCountLocal;
-        Eval.DS.WinBishopCount = Glob.OwnBishopCountLocal;
-        Eval.DS.LoseQueenCount = Glob.OppQueenCountLocal;
-        Eval.DS.LoseRookCount = Glob.OppRookCountLocal;
-        Eval.DS.LoseMinorCount = Eval.DS.OppMinorCount;
-    }
-    Else
-    {
-        Eval.DS.EvalSign = 1;
-        Eval.DS.WinQueenCount = Glob.OppQueenCountLocal;
-        Eval.DS.WinRookCount = Glob.OppRookCountLocal;
-        Eval.DS.WinMinorCount = Eval.DS.OppMinorCount;
-        Eval.DS.WinPawnCount = Glob.OppPawnCountLocal;
-        Eval.DS.WinPasserCount = Eval.DS.OppPasserCount;
-        Eval.DS.WinIsolatedCount = Eval.DS.OppIsolatedCount;
-        Eval.DS.LosePasserCount = Eval.DS.OwnPasserCount;
-        Eval.DS.LoseIsolatedCount = Eval.DS.OwnIsolatedCount;
-        Eval.DS.LosePawnCount = Glob.OwnPawnCountLocal;
-        Eval.DS.WinBishopCount = Glob.OppBishopCountLocal;
-        Eval.DS.LoseQueenCount = Glob.OwnQueenCountLocal;
-        Eval.DS.LoseRookCount = Glob.OwnRookCountLocal;
-        Eval.DS.LoseMinorCount = Eval.DS.OwnMinorCount;
-    }
-    If (((Eval.DS.WinQueenCount == 0) And (Eval.DS.WinRookCount == 0)) And (((Eval.DS.WinMinorCount < 2) Or (((Eval.DS.WinMinorCount == 2) And (Eval.DS.WinBishopCount == 0)) And (((Eval.DS.LoseQueenCount == 0) And (Eval.DS.LoseRookCount == 0)) And ((Eval.DS.LoseMinorCount == 0) And (Eval.DS.LosePawnCount == 0))))) And (Eval.DS.WinPawnCount == 0)))
-    {
-        Eval.DS.DrawDelta = (Eval.DS.EvalSign * 999);
-        Eval.DS.CannotWinLoserPawns = Eval.DS.LosePawnCount;
-    }
-    If ((Eval.DS.DrawDelta == 0) And (Eval.DS.TotalNonPawnPieces > 0))
-    {
-        Eval.DS.OwnMat = ((Glob.OwnQueenCountLocal * 1000) + ((Glob.OwnRookCountLocal * 525) + (Eval.DS.OwnMinorCount * 350)));
-        Eval.DS.OppMat = ((Glob.OppQueenCountLocal * 1000) + ((Glob.OppRookCountLocal * 525) + (Eval.DS.OppMinorCount * 350)));
-        Eval.DS.MatDiff = ((Eval.DS.OwnMat - Eval.DS.OppMat) * (0 - Eval.DS.EvalSign));
-        If ((Eval.DS.MatDiff > 50) And (Eval.DS.MatDiff < 525))
-        {
-            If (Eval.DS.WinPawnCount == 0)
-            {
-                Eval.DS.DrawDelta = (Eval.DS.EvalSign * 350);
-            }
-            Else
-            {
-                If (((Eval.DS.WinPasserCount == 0) And (Eval.DS.WinIsolatedCount == Eval.DS.WinPawnCount)) And (Eval.DS.LosePasserCount < 2))
-                {
-                    Eval.DS.DrawDelta = (Eval.DS.EvalSign * 50);
-                }
-                Else
-                {
-                    If (Not ((Eval.DS.WinPasserCount > Eval.DS.LosePasserCount)))
-                    {
-                        Eval.DS.DrawDelta = (Eval.DS.EvalSign * 30);
-                    }
-                }
-            }
-        }
-    }
-    If ((Eval.DS.DrawDelta == 0) And ((Glob.OwnQueenCountLocal + Glob.OppQueenCountLocal) == 0))
-    {
-        If (((Glob.OwnRookCountLocal > 0) And (Glob.OppRookCountLocal > 0)) And ((Eval.DS.OwnMinorCount + Eval.DS.OppMinorCount) == 0))
-        {
-            If (Eval.DS.PawnDiff < 2)
-            {
-                If ((Eval.DS.OwnIsolatedCount + Eval.DS.OppIsolatedCount) == 0)
-                {
-                    Eval.DS.DrawDelta = (Eval.DS.EvalSign * 100);
-                }
-                Else
-                {
-                    If ((Eval.DS.LoseIsolatedCount < 2) And (Eval.DS.WinPasserCount < 2))
-                    {
-                        Eval.DS.DrawDelta = (Eval.DS.EvalSign * 50);
-                    }
-                }
-            }
-        }
-    }
-    If ((Eval.DS.DrawDelta == 0) And ((Glob.OwnQueenCountLocal + Glob.OppQueenCountLocal) == 0))
-    {
-        If (((Glob.OwnRookCountLocal + Glob.OppRookCountLocal) == 0) And ((Glob.OwnPawnCountLocal + Glob.OppPawnCountLocal) < 7))
-        {
-            If ((Eval.DS.OwnMinorCount == 1) And (Eval.DS.OppMinorCount == 1))
-            {
-                If (Eval.DS.PawnDiff < 2)
-                {
-                    If ((Eval.DS.OwnPasserCount + Eval.DS.OppPasserCount) == 0)
-                    {
-                        Eval.DS.DrawDelta = (Eval.DS.EvalSign * 50);
-                    }
-                    Else
-                    {
-                        If (Eval.DS.WinPasserCount == 0)
-                        {
-                            Eval.DS.DrawDelta = (Eval.DS.EvalSign * 35);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    If ((Eval.DS.DrawDelta == 0) And ((Glob.OwnPawnCountLocal + Glob.OppPawnCountLocal) < 8))
-    {
-        If (Eval.DS.NonPawnMat < 3451)
-        {
-            If ((((Eval.DS.OwnPasserCount + Eval.DS.OppPasserCount) + (Eval.DS.OwnIsolatedCount + Eval.DS.OppIsolatedCount)) == 0) And (abs(Ret.EvaluateDrawScaling.Score) < 60))
-            {
-                Eval.DS.DrawDelta = (Eval.DS.EvalSign * 45);
-            }
-        }
-    }
-    If (Eval.DS.NonPawnMat == 0)
-    {
-        Eval.DS.WinDelta += ((0 - Eval.DS.EvalSign) * (85 * (Eval.DS.WinPawnCount - Eval.DS.LosePawnCount)));
-        If ((Eval.DS.WinPasserCount > 0) And (Eval.DS.LosePasserCount == 0))
-        {
-            Eval.DS.WinDelta += ((0 - Eval.DS.EvalSign) * 35);
-        }
-        Eval.DS.WinDelta += ((0 - Eval.DS.EvalSign) * (25 * Eval.DS.LoseIsolatedCount));
-    }
-    If ((Eval.DS.NonPawnMat > 0) And ((Eval.DS.OwnMinorCount + Eval.DS.OppMinorCount) == 0))
-    {
-        If ((Eval.DS.WinPawnCount > Eval.DS.LosePawnCount) And (Eval.DS.WinPasserCount > (Eval.DS.LosePasserCount + 1)))
-        {
-            Eval.DS.WinDelta += ((0 - Eval.DS.EvalSign) * 85);
-        }
-    }
-    If (Not ((Eval.DS.WinDelta == 0)))
-    {
-        Eval.DS.PreWinEval = Ret.EvaluateDrawScaling.Score;
-        Ret.EvaluateDrawScaling.Score += Eval.DS.WinDelta;
-        If (((Eval.DS.PreWinEval > 0) And (Ret.EvaluateDrawScaling.Score < 0)) Or ((Eval.DS.PreWinEval < 0) And (Ret.EvaluateDrawScaling.Score > 0)))
-        {
-            Ret.EvaluateDrawScaling.Score = 0;
-        }
-    }
-    If (Not ((Eval.DS.DrawDelta == 0)))
-    {
-        Ret.EvaluateDrawScaling.Score += Eval.DS.DrawDelta;
-        If (((Eval.DS.PreDrawScaleEval > 0) And (Ret.EvaluateDrawScaling.Score < 0)) Or ((Eval.DS.PreDrawScaleEval < 0) And (Ret.EvaluateDrawScaling.Score > 0)))
-        {
-            Ret.EvaluateDrawScaling.Score = 0;
-        }
-    }
-    If (Eval.DS.CannotWinLoserPawns > 0)
-    {
-        Ret.EvaluateDrawScaling.Score += (Eval.DS.EvalSign * (85 * Eval.DS.CannotWinLoserPawns));
-    }
-    If (Eval.DebugLog == 1)
-    {
-        Call Log("Eval.DrawScale.NonPawnMat = ")(Eval.DS.NonPawnMat)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.50MR = ")(Eval.DS.FiftyMoveCount)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.PassersOwn = ")(Eval.DS.OwnPasserCount)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.PassersOpp = ")(Eval.DS.OppPasserCount)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.IsolatedOwn = ")(Eval.DS.OwnIsolatedCount)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.IsolatedOpp = ")(Eval.DS.OppIsolatedCount)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.WinDelta = ")(Eval.DS.WinDelta)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.DrawDelta = ")(Eval.DS.DrawDelta)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.PreScaleEval = ")(Eval.DS.PreDrawScaleEval)("")("")("")("")("")("");
-        Call Log("Eval.DrawScale.PostScaleEval = ")(Ret.EvaluateDrawScaling.Score)("")("")("")("")("")("");
-    }
 }
 
 Define EvaluateMajorsMinors(string Ply) (warp=true)
@@ -4283,6 +3982,14 @@ Define EvaluatePawnsImpl(string Ply) (warp=true)
                     {
                         EvalP.PasserActive = 1;
                         Eval.PassedCount += 1;
+                        If (EvalP.Side == 1)
+                        {
+                            Eval.OwnPassedCount += 1;
+                        }
+                        Else
+                        {
+                            Eval.OppPassedCount += 1;
+                        }
                         If (Board[EvalP.BlockerIdx] == (GoK_OppPawn * EvalP.Factor))
                         {
                             EvalP.HasHelper = 0;
@@ -6247,7 +5954,7 @@ Define GenerateMovesForSourceEx(string Ply)(string SourceIdx)(bool CalcAttackSta
 
 Define GenerateMovesImpl(string Ply)(bool CalcAttackState)(bool CapturesOnly)(bool IsBlackMove) (warp=true)
 {
-    If (((Not ((CheckedState[Ply] == Const.Null))) And (CheckedState[Ply] == 1)) And (Not (CalcAttackState)))
+    If ((CheckedState[Ply] == 1) And (Not (CalcAttackState)))
     {
         Call PrepareEvasionMask(Ply);
     }
@@ -6976,7 +6683,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         Stop(this script);
     }
     Call Comment("1: Hash moves, handled by staged move generator / PickMove()");
-    If ((Not ((CheckedState[Ply] == Const.Null))) And (CheckedState[Ply] == 1))
+    If (CheckedState[Ply] == 1)
     {
         If ((abs(SourcePieceParam) == GoK_OwnKing) Or (BoardAttackedEvasionTarget[ToIdx] == 1))
         {
@@ -7346,7 +7053,7 @@ Define GetStaticEval(string Ply) (warp=true)
         Call Evaluate((Ply - 1))((1 == 1));
         Call AdjustEvalScore(Ply)(Ret.Evaluate.Score);
         List.ReplaceItem(NodeTTStaticEval, Ply, Ret.Evaluate.Score);
-        Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(Const.Null)(Const.Null)(Const.TTType.None)(Const.Null)(Const.Null)(Const.Null)(Ret.Evaluate.Score);
+        Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(Const.Null)(Const.Null)(Const.TTType.None)(Const.Null)(Const.Null)(Ret.Evaluate.Score);
     }
 }
 
@@ -7811,14 +7518,13 @@ Define InitBoard (warp=true)
     TTNodeColIdx.BestMove = 3;
     TTNodeColIdx.Score = 4;
     TTNodeColIdx.Type = 5;
-    TTNodeColIdx.Checked = 6;
-    TTNodeColIdx.Horizon = 7;
-    TTNodeColIdx.StaticEval = 8;
+    TTNodeColIdx.Horizon = 6;
+    TTNodeColIdx.StaticEval = 7;
     Const.TTType.None = 1;
     Const.TTType.HighBound = 2;
     Const.TTType.LowBound = 3;
     Const.TTType.Exact = 4;
-    Const.TTNodeEntrySize = 9;
+    Const.TTNodeEntrySize = 8;
     Const.PickPhase.Done = 0;
     Const.PlyExtension.MultiCut = -99;
     Const.MaxPlyStackFrames = 60;
@@ -8054,7 +7760,6 @@ Define InitBoard (warp=true)
     List.DeleteItem(HashMove, all);
     List.DeleteItem(LMRState, all);
     List.DeleteAll(NodeTTStaticEval);
-    List.DeleteAll(NodeTTChecked);
     List.DeleteAll(NodeTTMove);
     List.DeleteAll(NodeTTQSMeta);
     List.DeleteAll(NodeTTHorizon);
@@ -8097,7 +7802,6 @@ Define InitBoard (warp=true)
         List.Add(HashMove, Const.Null);
         List.Add(LMRState, Const.Null);
         List.Add(NodeTTStaticEval, Const.Null);
-        List.Add(NodeTTChecked, Const.Null);
         List.Add(NodeTTMove, Const.Null);
         List.Add(NodeTTQSMeta, Const.Null);
         List.Add(NodeTTHorizon, Const.Null);
@@ -14414,7 +14118,6 @@ Define Search_InitStack(string Ply)(bool Quiescence) (warp=true)
     {
         List.ReplaceItem(CastlingState, 1, Operator.Join(Operator.Join(Operator.Join(Glob.HasOwnCastled, Glob.HasOwnKingMoved), Operator.Join(Glob.HasOwnRookKSMoved, Glob.HasOwnRookQSMoved)), Operator.Join(Operator.Join(Glob.HasOppCastled, Glob.HasOppKingMoved), Operator.Join(Glob.HasOppRookKSMoved, Glob.HasOppRookQSMoved))));
         Call SetInitialEnPassantTarget(1);
-        List.ReplaceItem(CheckedState, 1, Const.Null);
     }
     Else
     {
@@ -14428,7 +14131,6 @@ Define Search_InitStack(string Ply)(bool Quiescence) (warp=true)
     List.ReplaceItem(PlyExtension, Ply, 0);
     List.ReplaceItem(PV, (((Ply - 1) * Const.MaxPlyStackFrames) + 1), 0);
     List.ReplaceItem(AlphasOld, Ply, Alphas[Ply]);
-    List.ReplaceItem(PutsInCheck, Ply, 0);
     List.ReplaceItem(LMRState, Ply, 0);
     If Quiescence
     {
@@ -14581,7 +14283,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
                 List.ReplaceItem(SearchEval, Ply, StaticEval[Ply]);
                 If (1 == 1)
                 {
-                    Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Const.Null)(Const.TTType.LowBound)(Const.Null)(-1)(0)(NodeTTStaticEval[Ply]);
+                    Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Const.Null)(Const.TTType.LowBound)(-1)(0)(NodeTTStaticEval[Ply]);
                 }
                 Stop(this script);
             }
@@ -14681,7 +14383,6 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
         If (PickMoveRes[Ply] == 1)
         {
             Call Comment("Show progress and collect statistics");
-            List.ReplaceItem(PutsInCheck, Ply, 0);
             List.ReplaceItem(ReductionBase, Ply, Const.Null);
             List.ReplaceItem(PlyExtension, Ply, 0);
             Call Comment("Check detection for current move: does it put the opponent in check");
@@ -14888,7 +14589,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
             If Quiescence
             {
                 Call IsQuiescentCheckCond(Ply);
-                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(Const.Null)(-1)(Ret.IsQuiescentCheckCond.IsTrue)(NodeTTStaticEval[Ply]);
+                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(-1)(Ret.IsQuiescentCheckCond.IsTrue)(NodeTTStaticEval[Ply]);
             }
             Else
             {
@@ -14923,7 +14624,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
                         List.ReplaceItem(CorrHistNP, Ret.GetCorrHistIndices.NPIdx, ((CorrHistNP[Ret.GetCorrHistIndices.NPIdx] + Search.Main.CorrBonus) - floor(((CorrHistNP[Ret.GetCorrHistIndices.NPIdx] * abs(Search.Main.CorrBonus)) / 1024))));
                     }
                 }
-                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(Const.Null)(Horizon)(Const.Null)(NodeTTStaticEval[Ply]);
+                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(Search.Main.BestMoveStore)(ScoreTypes[Ply])(Horizon)(Const.Null)(NodeTTStaticEval[Ply]);
             }
         }
         If (MovesIdxBestMove[Ply] > 0)
@@ -15061,12 +14762,13 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
         {
             Call Profile_CountByHorizon(Const.Profile.NMP_Inv)(Horizon)(Ply);
         }
-        Search.Pruning.Eval = StaticEval[Ply];
+        Call GetCalibratedEval(Ply);
+        Search.Pruning.Eval = Ret.GetCalibratedEval.Score;
         If (Not ((Search.Pruning.Eval == Const.Null)))
         {
             If ((Horizon > 2) And (Not ((AppliedMove[(Ply - 1)] == 0))))
             {
-                If (Not ((Search.Pruning.Eval < Betas[Ply])))
+                If ((Not ((Search.Pruning.Eval < Betas[Ply]))) And (Not ((Search.Pruning.Eval < StaticEval[Ply]))))
                 {
                     If (((PlyIsOwn[Ply] == 1) And ((Glob.OwnQueenCountLocal + Glob.OwnNonQueenMajorMinorCountLocal) > 0)) Or ((PlyIsOwn[Ply] == 0) And ((Glob.OppQueenCountLocal + Glob.OppNonQueenMajorMinorCountLocal) > 0)))
                     {
@@ -15177,7 +14879,7 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
                                                         Search.Pruning.NodeType = Const.TTType.LowBound;
                                                         If (1 == 1)
                                                         {
-                                                            Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(AppliedMove[Ply])(Search.Pruning.NodeType)(Const.Null)((Horizon - (2 + (2 * Search.Pruning.IsImproving))))(Const.Null)(NodeTTStaticEval[Ply]);
+                                                            Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(AppliedMove[Ply])(Search.Pruning.NodeType)((Horizon - (2 + (2 * Search.Pruning.IsImproving))))(Const.Null)(NodeTTStaticEval[Ply]);
                                                         }
                                                         Init.Search.IsInProbeCut = 0;
                                                         Stop(this script);
@@ -15588,7 +15290,7 @@ Define StoreAttackInfo(string Ply)(string StorePly) (warp=true)
             {
                 List.ReplaceItem(CheckedState, StorePly, Glob.IsOppSideChecked);
             }
-            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.Null)(Const.Null)(Const.TTType.None)(CheckedState[StorePly])(Const.Null)(Const.Null)(Const.Null);
+            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.Null)(Const.Null)(Const.TTType.None)(Const.Null)(Const.Null)(Const.Null);
         }
     }
     Else
@@ -15608,7 +15310,7 @@ Define StoreAttackInfo(string Ply)(string StorePly) (warp=true)
             {
                 List.ReplaceItem(CheckedState, StorePly, Glob.IsOwnSideChecked);
             }
-            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.Null)(Const.Null)(Const.TTType.None)(CheckedState[StorePly])(Const.Null)(Const.Null)(Const.Null);
+            Call TTStoreNode(Glob.CurrentBoardHash)(StorePly)(Const.Null)(Const.Null)(Const.TTType.None)(Const.Null)(Const.Null)(Const.Null);
         }
     }
 }
@@ -16020,7 +15722,6 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
     Ret.TTProbeNode.BestMove = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.BestMove)];
     Ret.TTProbeNode.Score = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.Score)];
     Ret.TTProbeNode.Type = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.Type)];
-    Ret.TTProbeNode.Checked = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.Checked)];
     Ret.TTProbeNode.Horizon = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.Horizon)];
     Ret.TTProbeNode.QSMeta = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.QSMeta)];
     Ret.TTProbeNode.StaticEval = TTNodeEntry[(TTPN.HashBucket + TTNodeColIdx.StaticEval)];
@@ -16034,7 +15735,6 @@ Define TTProbeNodeAtPly(string Ply) (warp=true)
     List.ReplaceItem(NodeTTHorizon, Ply, Const.Null);
     List.ReplaceItem(NodeTTQSMeta, Ply, Const.Null);
     List.ReplaceItem(NodeTTMove, Ply, Const.Null);
-    List.ReplaceItem(NodeTTChecked, Ply, Const.Null);
     List.ReplaceItem(NodeTTStaticEval, Ply, Const.Null);
     Call TTProbeNode(Glob.CurrentBoardHash)(Ply);
     List.ReplaceItem(NodeTTHit, Ply, Ret.TTProbeNode.Hit);
@@ -16045,12 +15745,11 @@ Define TTProbeNodeAtPly(string Ply) (warp=true)
         List.ReplaceItem(NodeTTHorizon, Ply, Ret.TTProbeNode.Horizon);
         List.ReplaceItem(NodeTTQSMeta, Ply, Ret.TTProbeNode.QSMeta);
         List.ReplaceItem(NodeTTMove, Ply, Ret.TTProbeNode.BestMove);
-        List.ReplaceItem(NodeTTChecked, Ply, Ret.TTProbeNode.Checked);
         List.ReplaceItem(NodeTTStaticEval, Ply, Ret.TTProbeNode.StaticEval);
     }
 }
 
-Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string QSMeta)(string StaticEval) (warp=true)
+Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(string Type)(string Horizon)(string QSMeta)(string StaticEval) (warp=true)
 {
     If (Glob.IsSearchTimeout == 1)
     {
@@ -16061,10 +15760,10 @@ Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(
         Stop(this script);
     }
     Call GetTTNodeHash(BoardHash)(Ply);
-    Call TTStoreNodeImpl(Ret.GetTTNodeHash.Hash)(Ply)(Score)(BestMove)(Type)(Checked)(Horizon)(QSMeta)(StaticEval);
+    Call TTStoreNodeImpl(Ret.GetTTNodeHash.Hash)(Ply)(Score)(BestMove)(Type)(Horizon)(QSMeta)(StaticEval);
 }
 
-Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMove)(string Type)(string Checked)(string Horizon)(string QSMeta)(string StaticEval) (warp=true)
+Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMove)(string Type)(string Horizon)(string QSMeta)(string StaticEval) (warp=true)
 {
     TTSNI.FirstBucket = ((NodeHash % (floor((List.Length(TTNodeEntry) / Const.TTNodeEntrySize)) - 5)) + 1);
     TTSNI.FirstBucket = (((TTSNI.FirstBucket - 1) * Const.TTNodeEntrySize) + 1);
@@ -16121,10 +15820,6 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
     }
     If (Not ((TTSNI.UpdateIdx == Const.Null)))
     {
-        If (Not ((Checked == Const.Null)))
-        {
-            List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Checked), Checked);
-        }
         If (Not ((StaticEval == Const.Null)))
         {
             List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.StaticEval), StaticEval);
@@ -16150,7 +15845,6 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Type), Type);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Score), Score);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.BestMove), BestMove);
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Checked), Checked);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.StaticEval), StaticEval);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.QSMeta), QSMeta);
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + TTNodeColIdx.Age), Glob.TTCurrentAge);
