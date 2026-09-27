@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.1944 (26.09.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.1951 (26.09.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     NNUE.DN.IsDecoded = 0;
@@ -1429,9 +1429,21 @@ Define AdjustEvalScore(string Ply)(string RawEval) (warp=true)
         {
             AES.CorrSum += (53 * CorrHistVal[Ret.GetCorrHistIndices.CorrIdx]);
         }
-        If (CorrHistNPKey[Ret.GetCorrHistIndices.NPIdx] == Ret.GetCorrHistIndices.NPKey)
+        If (CorrHistNPBlackKey[Ret.GetCorrHistIndices.NPBlackIdx] == Ret.GetCorrHistIndices.NPBlackKey)
         {
-            AES.CorrSum += (65 * CorrHistNP[Ret.GetCorrHistIndices.NPIdx]);
+            AES.CorrSum += (65 * CorrHistNPBlack[Ret.GetCorrHistIndices.NPBlackIdx]);
+        }
+        If (CorrHistNPWhiteKey[Ret.GetCorrHistIndices.NPWhiteIdx] == Ret.GetCorrHistIndices.NPWhiteKey)
+        {
+            AES.CorrSum += (65 * CorrHistNPWhite[Ret.GetCorrHistIndices.NPWhiteIdx]);
+        }
+        If (Not ((Ret.GetCorrHistIndices.ContIdx2 == Const.Null)))
+        {
+            AES.CorrSum += (76 * CorrHistCont[Ret.GetCorrHistIndices.ContIdx2]);
+        }
+        If (Not ((Ret.GetCorrHistIndices.ContIdx4 == Const.Null)))
+        {
+            AES.CorrSum += (76 * CorrHistCont[Ret.GetCorrHistIndices.ContIdx4]);
         }
         List.ReplaceItem(StaticEval, Ply, (StaticEval[Ply] + Operator.Round((AES.CorrSum / 512))));
     }
@@ -1459,6 +1471,8 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
     List.ReplaceItem(PutsInCheck, Ply, 0);
     List.ReplaceItem(PreviousBoardHash, Ply, Glob.CurrentBoardHash);
     List.ReplaceItem(PreviousBoardHashKP, Ply, Glob.KPHash);
+    List.ReplaceItem(PreviousNPHashBlack, Ply, Glob.NPHashBlack);
+    List.ReplaceItem(PreviousNPHashWhite, Ply, Glob.NPHashWhite);
     Call GetCurrentMove(Ply);
     AM.Move = Ret.GetCurrentMove.Move;
     List.ReplaceItem(AppliedMove, Ply, AM.Move);
@@ -1479,6 +1493,17 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
         AM.MoveKey = ((((PlySign[Ply] + 1) * 30000) + (PieceIdxLookup[abs(AM.SourcePiece)] * 10000)) + ((AM.SourceIdx * 100) + AM.TargetIdx));
         Call Comment("Incremental Zobrist hash update via move-to-hash lookup table");
         Glob.CurrentBoardHash += MoveToHash[AM.MoveKey];
+        If (Not ((abs(AM.SourcePiece) == GoK_BlackPawn)))
+        {
+            If (AM.SourcePiece > 0)
+            {
+                Glob.NPHashBlack += MoveToHash[AM.MoveKey];
+            }
+            Else
+            {
+                Glob.NPHashWhite += MoveToHash[AM.MoveKey];
+            }
+        }
         If (abs(AM.SourcePiece) == GoK_BlackPawn)
         {
             Glob.KPHash += MoveToHash[AM.MoveKey];
@@ -1496,6 +1521,17 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
                     {
                         Call GetPiecePosHash(AM.TargetPiece)(AM.SqIdx);
                         Glob.CurrentBoardHash = (Glob.CurrentBoardHash - Ret.GetPiecePosHash.Hash);
+                        If (Not ((abs(AM.TargetPiece) == GoK_BlackPawn)))
+                        {
+                            If (AM.TargetPiece > 0)
+                            {
+                                Glob.NPHashBlack = (Glob.NPHashBlack - Ret.GetPiecePosHash.Hash);
+                            }
+                            Else
+                            {
+                                Glob.NPHashWhite = (Glob.NPHashWhite - Ret.GetPiecePosHash.Hash);
+                            }
+                        }
                         Glob.KPHash = (Glob.KPHash - Ret.GetPiecePosHash.Hash);
                     }
                 }
@@ -1561,10 +1597,32 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
                 Call Comment("promotions => Zobrist hash update");
                 Call GetPiecePosHash(AM.SourcePiece)(AM.TargetIdx);
                 Glob.CurrentBoardHash = (Glob.CurrentBoardHash - Ret.GetPiecePosHash.Hash);
+                If (Not ((abs(AM.SourcePiece) == GoK_BlackPawn)))
+                {
+                    If (AM.SourcePiece > 0)
+                    {
+                        Glob.NPHashBlack = (Glob.NPHashBlack - Ret.GetPiecePosHash.Hash);
+                    }
+                    Else
+                    {
+                        Glob.NPHashWhite = (Glob.NPHashWhite - Ret.GetPiecePosHash.Hash);
+                    }
+                }
                 Glob.KPHash = (Glob.KPHash - Ret.GetPiecePosHash.Hash);
                 List.ReplaceItem(Board, AM.TargetIdx, PromotionPieces[Ply]);
                 Call GetPiecePosHash(PromotionPieces[Ply])(AM.TargetIdx);
                 Glob.CurrentBoardHash = (Glob.CurrentBoardHash + Ret.GetPiecePosHash.Hash);
+                If (Not ((abs(PromotionPieces[Ply]) == GoK_BlackPawn)))
+                {
+                    If (PromotionPieces[Ply] > 0)
+                    {
+                        Glob.NPHashBlack += Ret.GetPiecePosHash.Hash;
+                    }
+                    Else
+                    {
+                        Glob.NPHashWhite += Ret.GetPiecePosHash.Hash;
+                    }
+                }
             }
         }
         Call Comment("King or rook move => update castling meta state");
@@ -1641,6 +1699,17 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
             Call Comment("Captures => incremental positional eval and Zobrist hash update");
             AM.MoveKey = ((((PlySign[(Ply + 1)] + 1) * 30000) + (PieceIdxLookup[abs(AM.TargetPiece)] * 10000)) + (TargetPiecesIdx[Ply] * 100));
             Glob.CurrentBoardHash += MoveToHash[AM.MoveKey];
+            If (Not ((abs(AM.TargetPiece) == GoK_BlackPawn)))
+            {
+                If (AM.TargetPiece > 0)
+                {
+                    Glob.NPHashBlack += MoveToHash[AM.MoveKey];
+                }
+                Else
+                {
+                    Glob.NPHashWhite += MoveToHash[AM.MoveKey];
+                }
+            }
             If ((abs(AM.TargetPiece) == GoK_BlackPawn) Or (abs(AM.TargetPiece) == GoK_BlackKing))
             {
                 Glob.KPHash += MoveToHash[AM.MoveKey];
@@ -1962,6 +2031,8 @@ Define CalcBoardStats (warp=true)
     Glob.BlackKingIdx = Const.Null;
     Glob.WhiteKingIdx = Const.Null;
     Glob.CurrentBoardHash = 0;
+    Glob.NPHashBlack = 0;
+    Glob.NPHashWhite = 0;
     Glob.KPHash = 0;
     CBS.SqIdx = 1;
     Repeat (8)
@@ -2000,6 +2071,17 @@ Define CalcBoardStats (warp=true)
         }
         Call GetPiecePosHash(Board[CBS.SqIdx])(CBS.SqIdx);
         Glob.CurrentBoardHash = (Glob.CurrentBoardHash + Ret.GetPiecePosHash.Hash);
+        If (Not ((abs(Board[CBS.SqIdx]) == GoK_BlackPawn)))
+        {
+            If (Board[CBS.SqIdx] > 0)
+            {
+                Glob.NPHashBlack += Ret.GetPiecePosHash.Hash;
+            }
+            Else
+            {
+                Glob.NPHashWhite += Ret.GetPiecePosHash.Hash;
+            }
+        }
         If ((abs(Board[CBS.SqIdx]) == GoK_BlackPawn) Or (abs(Board[CBS.SqIdx]) == GoK_BlackKing))
         {
             Glob.KPHash = (Glob.KPHash + Ret.GetPiecePosHash.Hash);
@@ -2197,12 +2279,25 @@ Define Comment(string Comment) (warp=true)
 Define CreateCurrentBoardHash (warp=true)
 {
     Glob.CurrentBoardHash = 0;
+    Glob.NPHashBlack = 0;
+    Glob.NPHashWhite = 0;
     Glob.KPHash = 0;
     CCBH.SqIdx = 1;
     Repeat (64)
     {
         Call GetPiecePosHash(Board[CCBH.SqIdx])(CCBH.SqIdx);
         Glob.CurrentBoardHash = (Glob.CurrentBoardHash + Ret.GetPiecePosHash.Hash);
+        If (Not ((abs(Board[CCBH.SqIdx]) == GoK_BlackPawn)))
+        {
+            If (Board[CCBH.SqIdx] > 0)
+            {
+                Glob.NPHashBlack += Ret.GetPiecePosHash.Hash;
+            }
+            Else
+            {
+                Glob.NPHashWhite += Ret.GetPiecePosHash.Hash;
+            }
+        }
         If ((abs(Board[CCBH.SqIdx]) == GoK_BlackPawn) Or (abs(Board[CCBH.SqIdx]) == GoK_BlackKing))
         {
             Glob.KPHash = (Glob.KPHash + Ret.GetPiecePosHash.Hash);
@@ -3659,8 +3754,29 @@ Define GetCorrHistIndices(string Ply) (warp=true)
     Call GetPiecePosHash(Board[Glob.BlackKingIdx])(Glob.BlackKingIdx);
     Ret.GetCorrHistIndices.PawnKey = (Ret.GetCorrHistIndices.PawnKey - Ret.GetPiecePosHash.Hash);
     Ret.GetCorrHistIndices.CorrIdx = ((PlyCorrOffset[Ply] + (Ret.GetCorrHistIndices.PawnKey % 100000)) + 1);
-    Ret.GetCorrHistIndices.NPKey = (Glob.CurrentBoardHash - Glob.KPHash);
-    Ret.GetCorrHistIndices.NPIdx = ((PlyCorrOffset[Ply] + (Ret.GetCorrHistIndices.NPKey % 100000)) + 1);
+    Ret.GetCorrHistIndices.NPBlackKey = Glob.NPHashBlack;
+    Ret.GetCorrHistIndices.NPBlackIdx = ((PlyCorrOffset[Ply] + (Ret.GetCorrHistIndices.NPBlackKey % 100000)) + 1);
+    Ret.GetCorrHistIndices.NPWhiteKey = Glob.NPHashWhite;
+    Ret.GetCorrHistIndices.NPWhiteIdx = ((PlyCorrOffset[Ply] + (Ret.GetCorrHistIndices.NPWhiteKey % 100000)) + 1);
+    Ret.GetCorrHistIndices.ContIdx2 = Const.Null;
+    Ret.GetCorrHistIndices.ContIdx4 = Const.Null;
+    If (Ply > 2)
+    {
+        If ((Not ((AppliedMove[(Ply - 1)] == 0))) And (Not ((AppliedMove[(Ply - 2)] == 0))))
+        {
+            Get.CHI.PieceTo1 = ((((PieceIdxLookup[abs(SourcePieces[(Ply - 1)])] - 1) + (6 * (SourcePieces[(Ply - 1)] < 0))) * 64) + floor((AppliedMove[(Ply - 1)] % 100)));
+            Get.CHI.PieceTo2 = ((((PieceIdxLookup[abs(SourcePieces[(Ply - 2)])] - 1) + (6 * (SourcePieces[(Ply - 2)] < 0))) * 64) + floor((AppliedMove[(Ply - 2)] % 100)));
+            Ret.GetCorrHistIndices.ContIdx2 = ((((PlyIsOwn[Ply] * 646416) + (Get.CHI.PieceTo1 * 804)) + Get.CHI.PieceTo2) + 1);
+            If (Ply > 4)
+            {
+                If (Not ((AppliedMove[(Ply - 4)] == 0)))
+                {
+                    Get.CHI.PieceTo4 = ((((PieceIdxLookup[abs(SourcePieces[(Ply - 4)])] - 1) + (6 * (SourcePieces[(Ply - 4)] < 0))) * 64) + floor((AppliedMove[(Ply - 4)] % 100)));
+                    Ret.GetCorrHistIndices.ContIdx4 = ((((PlyIsOwn[Ply] * 646416) + (Get.CHI.PieceTo1 * 804)) + Get.CHI.PieceTo4) + 1);
+                }
+            }
+        }
+    }
 }
 
 Define GetCurrentMove(num Ply) (warp=true)
@@ -4875,15 +4991,30 @@ Define InitBoard (warp=true)
     {
         List.Add(CorrHistKey, 0);
     }
-    List.DeleteAll(CorrHistNP);
+    List.DeleteAll(CorrHistNPBlack);
     Repeat (200000)
     {
-        List.Add(CorrHistNP, 0);
+        List.Add(CorrHistNPBlack, 0);
     }
-    List.DeleteAll(CorrHistNPKey);
+    List.DeleteAll(CorrHistNPBlackKey);
     Repeat (200000)
     {
-        List.Add(CorrHistNPKey, 0);
+        List.Add(CorrHistNPBlackKey, 0);
+    }
+    List.DeleteAll(CorrHistNPWhite);
+    Repeat (200000)
+    {
+        List.Add(CorrHistNPWhite, 0);
+    }
+    List.DeleteAll(CorrHistNPWhiteKey);
+    Repeat (200000)
+    {
+        List.Add(CorrHistNPWhiteKey, 0);
+    }
+    List.DeleteAll(CorrHistCont);
+    Repeat (1292832)
+    {
+        List.Add(CorrHistCont, 0);
     }
     List.DeleteItem(HistoryCounterMoves, all);
     Repeat (10000)
@@ -4949,6 +5080,8 @@ Define InitBoard (warp=true)
     List.DeleteItem(TargetPieces, all);
     List.DeleteItem(PreviousBoardHash, all);
     List.DeleteItem(PreviousBoardHashKP, all);
+    List.DeleteAll(PreviousNPHashBlack);
+    List.DeleteAll(PreviousNPHashWhite);
     List.DeleteItem(NodeTypes, all);
     List.DeleteItem(PickMoveRes, all);
     List.DeleteItem(PickPhase, all);
@@ -4994,6 +5127,8 @@ Define InitBoard (warp=true)
         List.Add(TargetPieces, Const.Null);
         List.Add(PreviousBoardHash, 0);
         List.Add(PreviousBoardHashKP, 0);
+        List.Add(PreviousNPHashBlack, 0);
+        List.Add(PreviousNPHashWhite, 0);
         List.Add(NodeTypes, Const.Null);
         List.Add(PickMoveRes, Const.Null);
         List.Add(PickPhase, Const.Null);
@@ -9805,6 +9940,8 @@ Define RevertMove(num Ply) (warp=true)
     }
     Glob.CurrentBoardHash = (PreviousBoardHash[Ply] + 0);
     Glob.KPHash = (PreviousBoardHashKP[Ply] + 0);
+    Glob.NPHashBlack = PreviousNPHashBlack[Ply];
+    Glob.NPHashWhite = PreviousNPHashWhite[Ply];
     List.ReplaceItem(AppliedMove, Ply, Const.Null);
     List.ReplaceItem(SourcePieces, Ply, 0);
     List.ReplaceItem(TargetPiecesIdx, Ply, 0);
@@ -10361,12 +10498,26 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
                             List.ReplaceItem(CorrHistKey, Ret.GetCorrHistIndices.CorrIdx, Ret.GetCorrHistIndices.PawnKey);
                         }
                         List.ReplaceItem(CorrHistVal, Ret.GetCorrHistIndices.CorrIdx, ((CorrHistVal[Ret.GetCorrHistIndices.CorrIdx] + SI.CorrBonus) - floor(((CorrHistVal[Ret.GetCorrHistIndices.CorrIdx] * abs(SI.CorrBonus)) / 1024))));
-                        If (Not ((CorrHistNPKey[Ret.GetCorrHistIndices.NPIdx] == Ret.GetCorrHistIndices.NPKey)))
+                        If (Not ((CorrHistNPBlackKey[Ret.GetCorrHistIndices.NPBlackIdx] == Ret.GetCorrHistIndices.NPBlackKey)))
                         {
-                            List.ReplaceItem(CorrHistNP, Ret.GetCorrHistIndices.NPIdx, 0);
-                            List.ReplaceItem(CorrHistNPKey, Ret.GetCorrHistIndices.NPIdx, Ret.GetCorrHistIndices.NPKey);
+                            List.ReplaceItem(CorrHistNPBlack, Ret.GetCorrHistIndices.NPBlackIdx, 0);
+                            List.ReplaceItem(CorrHistNPBlackKey, Ret.GetCorrHistIndices.NPBlackIdx, Ret.GetCorrHistIndices.NPBlackKey);
                         }
-                        List.ReplaceItem(CorrHistNP, Ret.GetCorrHistIndices.NPIdx, ((CorrHistNP[Ret.GetCorrHistIndices.NPIdx] + SI.CorrBonus) - floor(((CorrHistNP[Ret.GetCorrHistIndices.NPIdx] * abs(SI.CorrBonus)) / 1024))));
+                        List.ReplaceItem(CorrHistNPBlack, Ret.GetCorrHistIndices.NPBlackIdx, ((CorrHistNPBlack[Ret.GetCorrHistIndices.NPBlackIdx] + SI.CorrBonus) - floor(((CorrHistNPBlack[Ret.GetCorrHistIndices.NPBlackIdx] * abs(SI.CorrBonus)) / 1024))));
+                        If (Not ((CorrHistNPWhiteKey[Ret.GetCorrHistIndices.NPWhiteIdx] == Ret.GetCorrHistIndices.NPWhiteKey)))
+                        {
+                            List.ReplaceItem(CorrHistNPWhite, Ret.GetCorrHistIndices.NPWhiteIdx, 0);
+                            List.ReplaceItem(CorrHistNPWhiteKey, Ret.GetCorrHistIndices.NPWhiteIdx, Ret.GetCorrHistIndices.NPWhiteKey);
+                        }
+                        List.ReplaceItem(CorrHistNPWhite, Ret.GetCorrHistIndices.NPWhiteIdx, ((CorrHistNPWhite[Ret.GetCorrHistIndices.NPWhiteIdx] + SI.CorrBonus) - floor(((CorrHistNPWhite[Ret.GetCorrHistIndices.NPWhiteIdx] * abs(SI.CorrBonus)) / 1024))));
+                        If (Not ((Ret.GetCorrHistIndices.ContIdx2 == Const.Null)))
+                        {
+                            List.ReplaceItem(CorrHistCont, Ret.GetCorrHistIndices.ContIdx2, ((CorrHistCont[Ret.GetCorrHistIndices.ContIdx2] + SI.CorrBonus) - floor(((CorrHistCont[Ret.GetCorrHistIndices.ContIdx2] * abs(SI.CorrBonus)) / 1024))));
+                        }
+                        If (Not ((Ret.GetCorrHistIndices.ContIdx4 == Const.Null)))
+                        {
+                            List.ReplaceItem(CorrHistCont, Ret.GetCorrHistIndices.ContIdx4, ((CorrHistCont[Ret.GetCorrHistIndices.ContIdx4] + SI.CorrBonus) - floor(((CorrHistCont[Ret.GetCorrHistIndices.ContIdx4] * abs(SI.CorrBonus)) / 1024))));
+                        }
                     }
                 }
                 Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(SI.BestMoveStore)(NodeTypes[Ply])(Horizon)(Const.Null)(NodeTTStaticEval[Ply]);
@@ -11837,7 +11988,7 @@ Define StoreKillerMove(string Ply)(string Move)(string Horizon)(bool Malus)(bool
                     List.ReplaceItem(KillerMoves, (SKM.KillerSlot + 1), KillerMoves[SKM.KillerSlot]);
                     List.ReplaceItem(KillerMoves, SKM.KillerSlot, Move);
                 }
-                If (Ply > 1)
+                If ((Ply > 1) And (Not ((AppliedMove[(Ply - 1)] == 0))))
                 {
                     List.ReplaceItem(HistoryCounterMoves, (PlyCMOffset[Ply] + ((PieceIdxLookup[abs(SourcePieces[(Ply - 1)])] * 100) + floor((AppliedMove[(Ply - 1)] % 100)))), Move);
                 }
@@ -11863,7 +12014,7 @@ Define StoreKillerMove(string Ply)(string Move)(string Horizon)(bool Malus)(bool
             }
             If (Not (Malus))
             {
-                If (Ply > 1)
+                If ((Ply > 1) And (Not ((AppliedMove[(Ply - 1)] == 0))))
                 {
                     List.ReplaceItem(HistoryCounterMoves, (PlyCMOffset[Ply] + ((PieceIdxLookup[abs(SourcePieces[(Ply - 1)])] * 100) + floor((AppliedMove[(Ply - 1)] % 100)))), Move);
                 }
@@ -11888,17 +12039,17 @@ Define StoreKillerMove(string Ply)(string Move)(string Horizon)(bool Malus)(bool
         }
         If (Ply > 2)
         {
-            If (1 == 1)
+            If (Not ((AppliedMove[(Ply - 2)] == 0)))
             {
                 SKM.HistoryMoveScoreIdx = ((((PieceIdxLookup[abs(SourcePieces[(Ply - 2)])] * 68) + floor((AppliedMove[(Ply - 2)] % 100))) * 408) + SKM.KillerSlot);
                 List.ReplaceItem(HistoryContinuation2, (PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx), (HistoryContinuation2[(PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx)] + (SKM.HistoryBonus - floor((HistoryContinuation2[(PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx)] * (abs(SKM.HistoryBonus) / 29952))))));
             }
-            If ((Ply > 4) And (CheckedState[Ply] == 0))
+            If (((Ply > 4) And (CheckedState[Ply] == 0)) And (Not ((AppliedMove[(Ply - 4)] == 0))))
             {
                 SKM.HistoryMoveScoreIdx = ((((PieceIdxLookup[abs(SourcePieces[(Ply - 4)])] * 68) + floor((AppliedMove[(Ply - 4)] % 100))) * 408) + SKM.KillerSlot);
                 List.ReplaceItem(HistoryContinuation3, (PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx), (HistoryContinuation3[(PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx)] + ((SKM.HistoryBonus / 1) - floor((HistoryContinuation3[(PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx)] * (abs((SKM.HistoryBonus / 1)) / 29952))))));
             }
-            If ((Ply > 6) And (CheckedState[Ply] == 0))
+            If (((Ply > 6) And (CheckedState[Ply] == 0)) And (Not ((AppliedMove[(Ply - 6)] == 0))))
             {
                 SKM.HistoryMoveScoreIdx = ((((PieceIdxLookup[abs(SourcePieces[(Ply - 6)])] * 68) + floor((AppliedMove[(Ply - 6)] % 100))) * 408) + SKM.KillerSlot);
                 List.ReplaceItem(HistoryContinuation4, (PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx), (HistoryContinuation4[(PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx)] + (SKM.HistoryBonus - floor((HistoryContinuation4[(PlyContOffset[Ply] + SKM.HistoryMoveScoreIdx)] * (abs(SKM.HistoryBonus) / 29952))))));
@@ -12306,12 +12457,34 @@ Define UpdateMoveHashPosEval(string Piece)(string SourceIdx)(string TargetIdx)(b
 {
     Call GetPiecePosHash(Piece)(SourceIdx);
     Glob.CurrentBoardHash = (Glob.CurrentBoardHash - Ret.GetPiecePosHash.Hash);
+    If (Not ((abs(Piece) == GoK_BlackPawn)))
+    {
+        If (Piece > 0)
+        {
+            Glob.NPHashBlack = (Glob.NPHashBlack - Ret.GetPiecePosHash.Hash);
+        }
+        Else
+        {
+            Glob.NPHashWhite = (Glob.NPHashWhite - Ret.GetPiecePosHash.Hash);
+        }
+    }
     If ((abs(Piece) == GoK_BlackPawn) Or (abs(Piece) == GoK_BlackKing))
     {
         Glob.KPHash = (Glob.KPHash - Ret.GetPiecePosHash.Hash);
     }
     Call GetPiecePosHash(Piece)(TargetIdx);
     Glob.CurrentBoardHash = (Glob.CurrentBoardHash + Ret.GetPiecePosHash.Hash);
+    If (Not ((abs(Piece) == GoK_BlackPawn)))
+    {
+        If (Piece > 0)
+        {
+            Glob.NPHashBlack += Ret.GetPiecePosHash.Hash;
+        }
+        Else
+        {
+            Glob.NPHashWhite += Ret.GetPiecePosHash.Hash;
+        }
+    }
     If ((abs(Piece) == GoK_BlackPawn) Or (abs(Piece) == GoK_BlackKing))
     {
         Glob.KPHash = (Glob.KPHash + Ret.GetPiecePosHash.Hash);
