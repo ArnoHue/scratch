@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2012 (01.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2014 (01.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.IsNetworkDecoded = 0;
@@ -4805,7 +4805,6 @@ Define InitBoard (warp=true)
     Const.TTNodeCol.StaticEvalIdx = 7;
     Const.TTNodeEntrySize = 8;
     Const.PickPhase.Done = 0;
-    Const.PlyExtension.MultiCut = -99;
     Const.TTType.None = 1;
     Const.TTType.HighBound = 2;
     Const.TTType.LowBound = 3;
@@ -4833,7 +4832,6 @@ Define InitBoard (warp=true)
     Const.Profile.PVSReSearches = 1216;
     Const.Profile.FullCalls = 1280;
     Const.Profile.Ext = 1344;
-    Const.Profile.ExtSingular = 1408;
     Const.Profile.TTStaticProbe = 1472;
     Const.Profile.TTStaticHit = 1536;
     Const.Profile.TTMoveProbe = 1600;
@@ -5030,13 +5028,11 @@ Define InitBoard (warp=true)
     List.DeleteItem(EnPassantTarget, all);
     List.DeleteItem(CastlingState, all);
     List.DeleteItem(StaticEval, all);
-    List.DeleteItem(SingularAlphaBeta, all);
-    List.DeleteItem(TTEval, all);
     List.DeleteItem(StaticEval, all);
-    List.DeleteItem(SingularAlphaBeta, all);
-    List.DeleteItem(TTEval, all);
     List.DeleteItem(HashMove, all);
     List.DeleteItem(LMRState, all);
+    List.DeleteItem(ProbCutBeta, all);
+    List.DeleteItem(IIDState, all);
     List.DeleteItem(RazorState, all);
     List.DeleteItem(CapturesSearchedCount, all);
     List.DeleteItem(QuietsSearchedCount, all);
@@ -5080,10 +5076,10 @@ Define InitBoard (warp=true)
         List.Add(EnPassantTarget, Const.Null);
         List.Add(CastlingState, 0);
         List.Add(StaticEval, Const.Null);
-        List.Add(SingularAlphaBeta, Const.Null);
-        List.Add(TTEval, Const.Null);
         List.Add(HashMove, Const.Null);
         List.Add(LMRState, Const.Null);
+        List.Add(IIDState, 0);
+        List.Add(ProbCutBeta, Const.Null);
         List.Add(RazorState, 0);
         List.Add(QuietsSearchedCount, 0);
         List.Add(CapturesSearchedCount, 0);
@@ -8295,7 +8291,6 @@ Define PrintStats (warp=true)
     Call PS.SummaryRow("Non-PV search")(Const.Profile.PVSCalls)(Const.Profile.PVSReSearches)((1 == 1));
     Call PS.CountRow("Full Search")(Const.Profile.FullCalls);
     Call PS.CountRow("Extensions")(Const.Profile.Ext);
-    Call PS.CountRow("Singular extensions")(Const.Profile.ExtSingular);
     Call Log("============================================================")("")("")("")("")("")("")("");
     Call Log("------------------------------------------------------------")("")("")("")("")("")("")("");
     Call Log("Per-horizon invocations and runtime, s (Q = quiescence)")("")("")("")("")("")("")("");
@@ -9009,8 +9004,71 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
             {
                 Stop(this script);
             }
+            If ((Horizon > 4) And (abs(Betas[Ply]) < Const.AbsMinCheckmateEval))
+            {
+                Call GetImproving(Ply);
+                List.ReplaceItem(ProbCutBeta, Ply, (Betas[Ply] + (73 - (19 * (Not (((Not ((Ret.GetImproving.IsImproving == Const.Null))) And (Ret.GetImproving.IsImproving == 0))))))));
+                If (Not ((((NodeTTHit[Ply] == 1) And ((Not ((NodeTTScore[Ply] == Const.Null))) And (Not ((NodeTTHorizon[Ply] == Const.Null))))) And ((Not ((NodeTTHorizon[Ply] < (Horizon - 3)))) And (NodeTTScore[Ply] < ProbCutBeta[Ply])))))
+                {
+                    Call PrepareCheckInfo(Ply);
+                    List.ReplaceItem(PickPhase, Ply, 1);
+                    List.ReplaceItem(PickMoveRes, Ply, 1);
+                    List.ReplaceItem(PickedPseudoLegalMovesCount, Ply, 0);
+                    Repeat Until (PickMoveRes[Ply] == 0)
+                    {
+                        Call PickMove(Ply)((1 == 1))((1 == 1));
+                        If (PickMoveRes[Ply] == 1)
+                        {
+                            Call GivesCheckFast(Ply);
+                            List.ReplaceItem(PutsInCheck, Ply, Ret.GivesCheckFast.GivesCheck);
+                            Call SEE(Ply)((1 == 0));
+                            If (Not ((Ret.SEE.Gain < (ProbCutBeta[Ply] - StaticEval[Ply]))))
+                            {
+                                Call SearchImpl((0 - ProbCutBeta[Ply]))((0 - (ProbCutBeta[Ply] - 1)))(0)((Ply + 1))((1 == 1))((1 == 1))(Const.Null);
+                                SI.ProbCutScore = SearchEval[(Ply + 1)];
+                                If (Not ((SI.ProbCutScore == Const.Null)))
+                                {
+                                    SI.ProbCutScore = (0 - SI.ProbCutScore);
+                                }
+                                If (Not ((SI.ProbCutScore == Const.Null)))
+                                {
+                                    If (Not ((SI.ProbCutScore < ProbCutBeta[Ply])))
+                                    {
+                                        Call SearchNextPly((0 - ProbCutBeta[Ply]))((0 - (ProbCutBeta[Ply] - 1)))(Horizon)(3)(Ply)((Not (Cutnode)))((1 == 0))(Const.Null);
+                                        SI.ProbCutScore = SearchEval[(Ply + 1)];
+                                        If (Not ((SI.ProbCutScore == Const.Null)))
+                                        {
+                                            SI.ProbCutScore = (0 - SI.ProbCutScore);
+                                        }
+                                        If (Not ((SI.ProbCutScore == Const.Null)))
+                                        {
+                                            If (Not ((SI.ProbCutScore < ProbCutBeta[Ply])))
+                                            {
+                                                SI.ProbCutMove = AppliedMove[Ply];
+                                                Call RevertMove(Ply);
+                                                List.ReplaceItem(SearchEval, Ply, SI.ProbCutScore);
+                                                Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SI.ProbCutScore)(SI.ProbCutMove)(Const.TTType.LowBound)((Horizon - 3))(Const.Null)(NodeTTStaticEval[Ply]);
+                                                Stop(this script);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Call RevertMove(Ply);
+                        }
+                    }
+                }
+            }
         }
         Call Search_InternalIterativeDeepening(Horizon)(Ply)(Cutnode)(Quiescence);
+        If (IIDState[Ply] == 1)
+        {
+            List.ReplaceItem(IIDState, Ply, 2);
+            Call SearchImpl(Alphas[Ply])(Betas[Ply])((Horizon - 3))(Ply)(Cutnode)(Quiescence)(ExcludedMove);
+            Call SearchImpl(AlphasOld[Ply])(Betas[Ply])(Horizon)(Ply)(Cutnode)(Quiescence)(ExcludedMove);
+            List.ReplaceItem(IIDState, Ply, 0);
+            Stop(this script);
+        }
     }
     Else
     {
@@ -9124,131 +9182,123 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
             {
                 Call NNUE_OnApplyMove(Ply);
                 Call Search_DetectExtensions(Horizon)(Ply)(Cutnode)(Quiescence)(ExcludedMove);
-                If (SearchExtension[Ply] == Const.PlyExtension.MultiCut)
+                Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
+                If (Not (Quiescence))
                 {
-                    Call RevertMove(Ply);
-                    List.ReplaceItem(PickPhase, Ply, Const.PickPhase.Done);
-                }
-                Else
-                {
-                    Call //("Late move reduction and PV search (null window), will prune all moves that are not worth covering with full depth + current window search");
-                    If (Not (Quiescence))
-                    {
-                        Call GetCurrentMove(Ply);
-                        If ((TargetPieces[Ply] == 0) And (PromotionPieces[Ply] == 0))
-                        {
-                            If (QuietsSearchedCount[Ply] < 64)
-                            {
-                                List.ReplaceItem(QuietsSearchedCount, Ply, (QuietsSearchedCount[Ply] + 1));
-                                List.ReplaceItem(QuietsSearched, (((Ply - 1) * 64) + QuietsSearchedCount[Ply]), Ret.GetCurrentMove.Move);
-                            }
-                        }
-                        Else
-                        {
-                            If ((Not ((TargetPieces[Ply] == 0))) And (CapturesSearchedCount[Ply] < 32))
-                            {
-                                List.ReplaceItem(CapturesSearchedCount, Ply, (CapturesSearchedCount[Ply] + 1));
-                                List.ReplaceItem(CapturesSearched, (((Ply - 1) * 64) + CapturesSearchedCount[Ply]), Ret.GetCurrentMove.Move);
-                            }
-                        }
-                    }
-                    Call Search_Core(Horizon)(Ply)(Cutnode)(Quiescence);
-                    SI.NodeEval = Ret.Search_Core.NodeEval;
-                    If ((Ply == 1) And (Glob.IsSearchTimeout == 0))
-                    {
-                        List.Add(SearchRootMovesDone, AppliedMove[Ply]);
-                    }
-                    Call //("Revert applied move, restore board to previous state");
-                    Call RevertMove(Ply);
                     Call GetCurrentMove(Ply);
-                    If (Glob.IsSearchTimeout == 1)
+                    If ((TargetPieces[Ply] == 0) And (PromotionPieces[Ply] == 0))
                     {
-                        If (Quiescence[Ply] == 0)
+                        If (QuietsSearchedCount[Ply] < 64)
                         {
-                            Glob.MoveCount += MovesCount[Ply];
+                            List.ReplaceItem(QuietsSearchedCount, Ply, (QuietsSearchedCount[Ply] + 1));
+                            List.ReplaceItem(QuietsSearched, (((Ply - 1) * 64) + QuietsSearchedCount[Ply]), Ret.GetCurrentMove.Move);
                         }
-                        Else
-                        {
-                            Glob.MoveCountQuiescence += MovesCount[Ply];
-                        }
-                        Stop(this script);
                     }
-                    If (Not ((SI.NodeEval == Const.Null)))
+                    Else
                     {
-                        Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
-                        If ((SearchEval[Ply] == Const.Null) Or (SI.NodeEval > SearchEval[Ply]))
+                        If ((Not ((TargetPieces[Ply] == 0))) And (CapturesSearchedCount[Ply] < 32))
                         {
-                            List.ReplaceItem(SearchEval, Ply, SI.NodeEval);
-                            If ((Ply == 1) And (Glob.IsSearchTimeout == 0))
-                            {
-                                If (Not ((SI.NodeEval < (0 - Const.AbsMaxCheckmateEval))))
-                                {
-                                    Call GetCurrentMove(Ply);
-                                    Ret.SearchImpl.Move = Ret.GetCurrentMove.Move;
-                                    Ret.SearchImpl.Eval = SI.NodeEval;
-                                }
-                            }
-                            If (SI.NodeEval > Alphas[Ply])
+                            List.ReplaceItem(CapturesSearchedCount, Ply, (CapturesSearchedCount[Ply] + 1));
+                            List.ReplaceItem(CapturesSearched, (((Ply - 1) * 64) + CapturesSearchedCount[Ply]), Ret.GetCurrentMove.Move);
+                        }
+                    }
+                }
+                Call Search_Core(Horizon)(Ply)(Cutnode)(Quiescence);
+                SI.NodeEval = Ret.Search_Core.NodeEval;
+                If ((Ply == 1) And (Glob.IsSearchTimeout == 0))
+                {
+                    List.Add(SearchRootMovesDone, AppliedMove[Ply]);
+                }
+                Call //("Revert applied move, restore board to previous state");
+                Call RevertMove(Ply);
+                Call GetCurrentMove(Ply);
+                If (Glob.IsSearchTimeout == 1)
+                {
+                    If (Quiescence[Ply] == 0)
+                    {
+                        Glob.MoveCount += MovesCount[Ply];
+                    }
+                    Else
+                    {
+                        Glob.MoveCountQuiescence += MovesCount[Ply];
+                    }
+                    Stop(this script);
+                }
+                If (Not ((SI.NodeEval == Const.Null)))
+                {
+                    Call //("Compare node evaluation with search window, adapt node evaluation result and alpha/beta funnel accordingly");
+                    If ((SearchEval[Ply] == Const.Null) Or (SI.NodeEval > SearchEval[Ply]))
+                    {
+                        List.ReplaceItem(SearchEval, Ply, SI.NodeEval);
+                        If ((Ply == 1) And (Glob.IsSearchTimeout == 0))
+                        {
+                            If (Not ((SI.NodeEval < (0 - Const.AbsMaxCheckmateEval))))
                             {
                                 Call GetCurrentMove(Ply);
-                                List.ReplaceItem(BestMoves, Ply, Ret.GetCurrentMove.Move);
-                                List.ReplaceItem(BestMoveListIdx, Ply, MovesIdx[Ply]);
-                                Call UpdatePV(Ply)(Ret.GetCurrentMove.Move);
-                                If Quiescence
+                                Ret.SearchImpl.Move = Ret.GetCurrentMove.Move;
+                                Ret.SearchImpl.Eval = SI.NodeEval;
+                            }
+                        }
+                        If (SI.NodeEval > Alphas[Ply])
+                        {
+                            Call GetCurrentMove(Ply);
+                            List.ReplaceItem(BestMoves, Ply, Ret.GetCurrentMove.Move);
+                            List.ReplaceItem(BestMoveListIdx, Ply, MovesIdx[Ply]);
+                            Call UpdatePV(Ply)(Ret.GetCurrentMove.Move);
+                            If Quiescence
+                            {
+                                If ((Not (((Betas[Ply] - Alphas[Ply]) == 1))) And (SI.NodeEval < Betas[Ply]))
                                 {
-                                    If ((Not (((Betas[Ply] - Alphas[Ply]) == 1))) And (SI.NodeEval < Betas[Ply]))
+                                    List.ReplaceItem(Alphas, Ply, SI.NodeEval);
+                                }
+                                Else
+                                {
+                                    Call //("Quiescence cutoff");
+                                    List.ReplaceItem(MovesIdx, Ply, (MovesCount[Ply] + 1));
+                                    List.ReplaceItem(PickPhase, Ply, Const.PickPhase.Done);
+                                }
+                            }
+                            Else
+                            {
+                                List.ReplaceItem(Alphas, Ply, SI.NodeEval);
+                                If ((Ply == 1) And (Glob.IsSearchTimeout == 0))
+                                {
+                                    If (Not ((SI.NodeEval < (0 - Const.AbsMaxCheckmateEval))))
                                     {
-                                        List.ReplaceItem(Alphas, Ply, SI.NodeEval);
+                                        Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
+                                        If (SI.NodeEval > Glob.SearchAlpha)
+                                        {
+                                            Call Search_OnBestRootMoveFound(Ret.SearchImpl.Move)(Ret.SearchImpl.Eval);
+                                            If ((SI.NodeEval > (Const.AbsMaxCheckmateEval - (List.Length(BoardHistoryFiftyMoves) + Horizon))) And (SI.NodeEval < Glob.SearchBeta))
+                                            {
+                                                Glob.IsSearchTimeout = 1;
+                                                Stop(this script);
+                                            }
+                                            If (Not ((Ret.SearchImpl.Eval < Glob.SearchBeta)))
+                                            {
+                                                Call //("AW fail high => terminate immediately");
+                                                Stop(this script);
+                                            }
+                                        }
                                     }
-                                    Else
+                                }
+                                If (Not ((SI.NodeEval < Betas[Ply])))
+                                {
+                                    If (Ply > 1)
                                     {
-                                        Call //("Quiescence cutoff");
+                                        Call //("Full search cutoff");
                                         List.ReplaceItem(MovesIdx, Ply, (MovesCount[Ply] + 1));
                                         List.ReplaceItem(PickPhase, Ply, Const.PickPhase.Done);
                                     }
                                 }
-                                Else
-                                {
-                                    List.ReplaceItem(Alphas, Ply, SI.NodeEval);
-                                    If ((Ply == 1) And (Glob.IsSearchTimeout == 0))
-                                    {
-                                        If (Not ((SI.NodeEval < (0 - Const.AbsMaxCheckmateEval))))
-                                        {
-                                            Call //("Best move found for depth = 1, special handling (re-use history for iterative deepening order, logging, move preview visualization)");
-                                            If (SI.NodeEval > Glob.SearchAlpha)
-                                            {
-                                                Call Search_OnBestRootMoveFound(Ret.SearchImpl.Move)(Ret.SearchImpl.Eval);
-                                                If ((SI.NodeEval > (Const.AbsMaxCheckmateEval - (List.Length(BoardHistoryFiftyMoves) + Horizon))) And (SI.NodeEval < Glob.SearchBeta))
-                                                {
-                                                    Glob.IsSearchTimeout = 1;
-                                                    Stop(this script);
-                                                }
-                                                If (Not ((Ret.SearchImpl.Eval < Glob.SearchBeta)))
-                                                {
-                                                    Call //("AW fail high => terminate immediately");
-                                                    Stop(this script);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    If (Not ((SI.NodeEval < Betas[Ply])))
-                                    {
-                                        If (Ply > 1)
-                                        {
-                                            Call //("Full search cutoff");
-                                            List.ReplaceItem(MovesIdx, Ply, (MovesCount[Ply] + 1));
-                                            List.ReplaceItem(PickPhase, Ply, Const.PickPhase.Done);
-                                        }
-                                    }
-                                }
                             }
                         }
-                        If (Not (Quiescence))
+                    }
+                    If (Not (Quiescence))
+                    {
+                        If ((LMRState[Ply] == 2) Or (LMRState[Ply] == 3))
                         {
-                            If ((LMRState[Ply] == 2) Or (LMRState[Ply] == 3))
-                            {
-                                Call StoreKillerMove(Ply)(Ret.GetCurrentMove.Move)(Horizon)((LMRState[Ply] == 3))((1 == 1))((1 == 1));
-                            }
+                            Call StoreKillerMove(Ply)(Ret.GetCurrentMove.Move)(Horizon)((LMRState[Ply] == 3))((1 == 1))((1 == 1));
                         }
                     }
                 }
@@ -9872,75 +9922,6 @@ Define Search_DetectExtensions(string Horizon)(string Ply)(bool Cutnode)(bool Qu
 {
     If (Not (Quiescence))
     {
-        Call //("Singular extensions");
-        If ((Ply > 1) And ((ExcludedMove == Const.Null) And (1 == 0)))
-        {
-            If ((((TargetPieces[Ply] == 0) And (CheckedState[Ply] == 0)) And (Horizon > (3 + (2 * (Not (((Betas[Ply] - Alphas[Ply]) == 1))))))) And ((AppliedMove[Ply] == HashMove[Ply]) And (ExcludedMove == Const.Null)))
-            {
-                Call TTProbeNode(PreviousBoardHash[Ply])(Ply);
-                If ((Ret.TTProbeNode.Hit == 1) And ((Not ((Ret.TTProbeNode.Score == Const.Null))) And (Not ((Ret.TTProbeNode.Horizon == Const.Null)))))
-                {
-                    If (Not (((Ret.TTProbeNode.Horizon == Const.Null) Or (Ret.TTProbeNode.Horizon < (Horizon - 3)))))
-                    {
-                        If (Ret.TTProbeNode.Type == Const.TTType.LowBound)
-                        {
-                            If (abs(Ret.TTProbeNode.Score) < Const.AbsMinCheckmateEval)
-                            {
-                                List.ReplaceItem(TTEval, Ply, Ret.TTProbeNode.Score);
-                                List.ReplaceItem(SingularAlphaBeta, Ply, Ret.TTProbeNode.Score);
-                                Call RevertMove(Ply);
-                                List.ReplaceItem(Moves, (((Ply - 1) * Const.MaxMovesPerGeneration) + MovesIdx[Ply]), 0);
-                                List.ReplaceItem(MovesScore, (((Ply - 1) * Const.MaxMovesPerGeneration) + MovesIdx[Ply]), 0);
-                                Call ApplyMove(Ply)((1 == 1));
-                                Call SkipSearchFrameEnter((Ply + 1))(Quiescence);
-                                List.ReplaceItem(SingularAlphaBeta, Ply, (SingularAlphaBeta[Ply] + (0 - (Horizon * 3))));
-                                Search.DE.Reduction = floor((Horizon / 2));
-                                Glob.IsInNullMove += 1;
-                                Call SearchNextPly((SingularAlphaBeta[Ply] - 1))(SingularAlphaBeta[Ply])(Horizon)(Search.DE.Reduction)((Ply + 1))(Cutnode)(Quiescence)(HashMove[Ply]);
-                                Glob.IsInNullMove += -1;
-                                Call SkipSearchFrameExit((Ply + 1));
-                                Call RevertMove(Ply);
-                                List.ReplaceItem(Moves, (((Ply - 1) * Const.MaxMovesPerGeneration) + MovesIdx[Ply]), HashMove[Ply]);
-                                List.ReplaceItem(MovesScore, (((Ply - 1) * Const.MaxMovesPerGeneration) + MovesIdx[Ply]), 9100000);
-                                Call ApplyMove(Ply)((1 == 1));
-                                If (SearchEval[(Ply + 2)] < SingularAlphaBeta[Ply])
-                                {
-                                    List.ReplaceItem(SearchExtension, Ply, 1);
-                                    If (Glob.ProfilerMode == Const.ProfilerMode.On)
-                                    {
-                                        Call Profile_CountByHorizon(Const.Profile.ExtSingular)(Horizon)(Ply);
-                                    }
-                                    If (Glob.ProfilerMode == Const.ProfilerMode.On)
-                                    {
-                                        Call Profile_CountByHorizon(Const.Profile.Ext)(Horizon)(Ply);
-                                    }
-                                    Stop(this script);
-                                }
-                                If (Not ((SingularAlphaBeta[Ply] < Betas[Ply])))
-                                {
-                                    List.ReplaceItem(SearchEval, Ply, SingularAlphaBeta[Ply]);
-                                    List.ReplaceItem(SearchExtension, Ply, Const.PlyExtension.MultiCut);
-                                    Stop(this script);
-                                }
-                                If (1 == 0)
-                                {
-                                    If (Not ((TTEval[Ply] < Betas[Ply])))
-                                    {
-                                        List.ReplaceItem(SearchExtension, Ply, -2);
-                                        Stop(this script);
-                                    }
-                                    If ((Not ((TTEval[Ply] > SearchEval[(Ply + 2)]))) And (Not ((TTEval[Ply] > Alphas[Ply]))))
-                                    {
-                                        List.ReplaceItem(SearchExtension, Ply, -1);
-                                        Stop(this script);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
         If ((Horizon > 9) And ((PutsInCheck[Ply] == 1) And ((StaticEval[Ply] == Const.Null) Or (abs(StaticEval[Ply]) > 29))))
         {
             List.ReplaceItem(SearchExtension, Ply, 1);
@@ -10180,22 +10161,13 @@ Define Search_InitStack(string Ply)(bool Quiescence) (warp=true)
 
 Define Search_InternalIterativeDeepening(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence) (warp=true)
 {
-    If (((Not (Quiescence)) And (Horizon > 5)) And ((CheckedState[Ply] == 0) And (Not (((Betas[Ply] - Alphas[Ply]) == 1)))))
+    If ((((Not (Quiescence)) And (Horizon > 5)) And ((CheckedState[Ply] == 0) And (Not (((Betas[Ply] - Alphas[Ply]) == 1))))) And (IIDState[Ply] == 0))
     {
         If (1 == 0)
         {
-            Call //("IID");
-            Call TTProbeNode(Glob.CurrentBoardHash)(Ply);
-            If ((Ret.TTProbeNode.Hit == 0) Or (Ret.TTProbeNode.BestMove == Const.Null))
+            If (NodeTTMove[Ply] == Const.Null)
             {
-                Call ClearMoveList(Ply);
-                Call AddMoveToList(0)(Ply)(0);
-                List.ReplaceItem(MovesIdx, Ply, 1);
-                Call ApplyMove(Ply)((1 == 1));
-                Call SkipSearchFrameEnter((Ply + 1))(Quiescence);
-                Call SearchImpl(Alphas[Ply])(Betas[Ply])((Horizon - 3))((Ply + 2))(Cutnode)(Quiescence)(Const.Null);
-                Call SkipSearchFrameExit((Ply + 1));
-                Call RevertMove(Ply);
+                List.ReplaceItem(IIDState, Ply, 1);
             }
         }
     }
@@ -10675,20 +10647,6 @@ Define SetInitialEnPassantTarget(string Ply) (warp=true)
             }
         }
     }
-}
-
-Define SkipSearchFrameEnter(string Ply)(bool Quiescence) (warp=true)
-{
-    Call Search_InitStack(Ply)(Quiescence);
-    Call ClearMoveList(Ply);
-    Call AddMoveToList(0)(Ply)(0);
-    List.ReplaceItem(MovesIdx, Ply, 1);
-    Call ApplyMove(Ply)((1 == 1));
-}
-
-Define SkipSearchFrameExit(string Ply) (warp=true)
-{
-    Call RevertMove(Ply);
 }
 
 Define SortList (warp=true)
