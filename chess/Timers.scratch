@@ -1,0 +1,250 @@
+//----- Variables -----------------------------------------------------------------------------------------------------
+
+CenterX = 0
+GlyphIdx = 0
+IsClone = 0
+IsPlayerClock = 0
+IsTimedOut = 0
+Mode = 0
+TickStamp = 0
+TimerId = 0
+TMR.Hundredths = 0
+TMR.Letter = 0
+TMR.Live = 0
+TMR.Minutes = 0
+TMR.Seconds = 0
+TMR.Text = 0
+
+
+
+//----- Green flag events ---------------------------------------------------------------------------------------------
+
+WhenGreenFlagClicked()
+{
+    Looks.Hide();
+    Mode = 0;
+}
+
+
+//----- When greater than events --------------------------------------------------------------------------------------
+
+WhenGreaterThan(TIMER, 0.1)
+{
+    If ((((Mode == 1) And (IsTimedOut == 0)) And (Not ((Timers_PlayerTime == "")))) And (GoK_IsGameSuspended == 0))
+    {
+        Call Refresh;
+        If (IsClone == 0)
+        {
+            Call GetPlayerLive;
+            If (TMR.Live > 0)
+            {
+                Sensing.ResetTimer();
+            }
+            Else
+            {
+                IsTimedOut = 1;
+                Event.Broadcast("Timers_PlayerTimeout");
+            }
+        }
+    }
+}
+
+
+//----- Broadcast received events -------------------------------------------------------------------------------------
+
+WhenBroadcastReceived(GoK_ModeBusy)
+{
+    Mode = 0;
+}
+
+WhenBroadcastReceived(GoK_ModeInput)
+{
+    Mode = 1;
+    Sensing.ResetTimer();
+}
+
+WhenBroadcastReceived(GoK_StartGame)
+{
+    IsClone = 0;
+    IsTimedOut = 0;
+    Mode = 1;
+    TimerId = "White";
+    Call CreateClockClones;
+    TimerId = "Black";
+    Call CreateClockClones;
+}
+
+WhenBroadcastReceived(Stg_TriggerRestart)
+{
+    Control.DeleteThisClone();
+}
+
+WhenBroadcastReceived(Timers_Changed)
+{
+    TickStamp = (Sensing.DaysSince2000() * 86400);
+    IsTimedOut = 0;
+    If (Mode == 1)
+    {
+        Sensing.ResetTimer();
+    }
+    Call Refresh;
+}
+
+
+//----- Start as clone ------------------------------------------------------------------------------------------------
+
+Control.WhenIStartAsClone()
+{
+    IsClone = 1;
+    If (TimerId == "White")
+    {
+        CenterX = 152;
+    }
+    Else
+    {
+        CenterX = 208;
+    }
+    If (GlyphIdx == 0)
+    {
+        If (TimerId == "White")
+        {
+            Looks.SwitchCostumeTo(ButtonWhite);
+        }
+        Else
+        {
+            Looks.SwitchCostumeTo(ButtonBlack);
+        }
+        Motion.GoToXY(CenterX, -128);
+    }
+    Else
+    {
+        Motion.GoToXY((CenterX + (((((GlyphIdx - 4.5) * 6.4) + 3) - (3 * floor((GlyphIdx / 3.5)))) - (1.5 * (1 - ceiling(((GlyphIdx % 3) / 2)))))), -128);
+    }
+    Call Refresh;
+}
+
+
+//----- Custom blocks -------------------------------------------------------------------------------------------------
+
+Define CreateClockClones (warp=true)
+{
+    GlyphIdx = 0;
+    Repeat (9)
+    {
+        Control.CreateCloneOf(_myself_);
+        GlyphIdx += 1;
+    }
+}
+
+Define GetPlayerLive (warp=true)
+{
+    TMR.Live = (Timers_PlayerTime - ((Sensing.DaysSince2000() * 86400) - TickStamp));
+    If (TMR.Live < 0)
+    {
+        TMR.Live = 0;
+    }
+}
+
+Define Refresh (warp=true)
+{
+    If (IsClone == 0)
+    {
+        Looks.Hide();
+        Stop(this script);
+    }
+    Looks.Show();
+    If (GlyphIdx == 0)
+    {
+        Stop(this script);
+    }
+    If (Timers_PlayerTime == "")
+    {
+        TMR.Live = 0;
+    }
+    Else
+    {
+        If (TimerId == "White")
+        {
+            If (GoK_IsPlayerBlack == 0)
+            {
+                IsPlayerClock = 1;
+            }
+            Else
+            {
+                IsPlayerClock = 0;
+            }
+        }
+        Else
+        {
+            If (GoK_IsPlayerBlack == 1)
+            {
+                IsPlayerClock = 1;
+            }
+            Else
+            {
+                IsPlayerClock = 0;
+            }
+        }
+        If (IsPlayerClock == 1)
+        {
+            If (Mode == 1)
+            {
+                Call GetPlayerLive;
+            }
+            Else
+            {
+                TMR.Live = Timers_PlayerTime;
+            }
+        }
+        Else
+        {
+            TMR.Live = Timers_EngineTime;
+        }
+    }
+    If (TMR.Live > 5999.99)
+    {
+        TMR.Live = 5999.99;
+    }
+    If (TMR.Live < 0)
+    {
+        TMR.Live = 0;
+    }
+    TMR.Minutes = floor((TMR.Live / 60));
+    TMR.Seconds = floor((TMR.Live - (TMR.Minutes * 60)));
+    TMR.Hundredths = floor(((TMR.Live - floor(TMR.Live)) * 100));
+    TMR.Text = Operator.Join(Operator.Join(Operator.Join(Operator.Join(Operator.Join(floor((TMR.Minutes / 10)), (TMR.Minutes % 10)), ":"), Operator.Join(floor((TMR.Seconds / 10)), (TMR.Seconds % 10))), "."), Operator.Join(floor((TMR.Hundredths / 10)), (TMR.Hundredths % 10)));
+    TMR.Letter = Operator.LetterOf(TMR.Text, GlyphIdx);
+    If (TMR.Letter == ":")
+    {
+        Looks.SwitchCostumeTo(TColon);
+    }
+    Else
+    {
+        If (TMR.Letter == ".")
+        {
+            Looks.SwitchCostumeTo(TDot);
+        }
+        Else
+        {
+            Looks.SwitchCostumeTo(Operator.Join("T", TMR.Letter));
+        }
+    }
+}
+
+
+//----- Costumes ------------------------------------------------------------------------------------------------------
+
+ButtonBlack.svg
+ButtonWhite.svg
+T0.svg
+T1.svg
+T2.svg
+T3.svg
+T4.svg
+T5.svg
+T6.svg
+T7.svg
+T8.svg
+T9.svg
+TColon.svg
+TDot.svg
