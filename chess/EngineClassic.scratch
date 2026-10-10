@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2232 (03.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2282 (10.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.Level = 4;
@@ -1045,6 +1045,47 @@ Define $gok_prepare (warp=true)
                     Glob.ClockTimeInc = DCI.ClockPart;
                 }
             }
+        }
+        DCI.ClockValid = 1;
+        If (Not ((Glob.InitialClockTime == (Glob.InitialClockTime + 0))))
+        {
+            DCI.ClockValid = 0;
+        }
+        If (Glob.InitialClockTime < 0)
+        {
+            DCI.ClockValid = 0;
+        }
+        If (Not ((Glob.ClockTimeInc == (Glob.ClockTimeInc + 0))))
+        {
+            DCI.ClockValid = 0;
+        }
+        If (Glob.ClockTimeInc < 0)
+        {
+            DCI.ClockValid = 0;
+        }
+        If (Not ((Glob.ClockStageMoves == (Glob.ClockStageMoves + 0))))
+        {
+            DCI.ClockValid = 0;
+        }
+        If (Glob.ClockStageMoves < 0)
+        {
+            DCI.ClockValid = 0;
+        }
+        If (Not ((Glob.ClockStageTime == (Glob.ClockStageTime + 0))))
+        {
+            DCI.ClockValid = 0;
+        }
+        If (Glob.ClockStageTime < 0)
+        {
+            DCI.ClockValid = 0;
+        }
+        If (DCI.ClockValid == 0)
+        {
+            Glob.InitialClockTime = 0;
+            Glob.ClockTimeInc = 0;
+            Glob.ClockStageMoves = 0;
+            Glob.ClockStageTime = 0;
+            Call Log("DCI clock invalid, no clock set : ")(_dci clock time)("")("")("")("")("")("");
         }
     }
     If (Glob.CurrentClockTime == Const.Null)
@@ -5768,7 +5809,6 @@ Define ExecuteEngineMoveImpl (warp=false)
             EEMI.Move = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
             If (((Glob.ClockTimeInc > 0) Or (Glob.InitialClockTime > 0)) And (Glob.CustomMaxDepth == 0))
             {
-                Glob.CurrentClockTime = (Glob.CurrentClockTime + Glob.ClockTimeInc);
                 Glob.ClockMoveCount += 1;
                 If ((Glob.ClockStageMoves > 0) And (Glob.ClockMoveCount == Glob.ClockStageMoves))
                 {
@@ -6708,9 +6748,9 @@ Define GetBestMoveMedDiff (warp=false)
                 Call OnBestMoveChanged(Glob.BestMove);
             }
             Get.BMMD.Now = (Sensing.DaysSince2000() * 86400);
-            If (Get.BMMD.Now > (Glob.PrevProgressUpdate + 1))
+            If ((Get.BMMD.Now > (Glob.PrevProgressUpdate + 0.5)) Or (Glob.IsDeepeningDone == 1))
             {
-                Call OnProgressChanged((((Get.BMMD.Now - Glob.ThinkTimeStart) / Glob.ThinkTimeLimitSearch) * 100));
+                Call OnProgressChanged((((Get.BMMD.Now - Glob.ThinkTimeStart) / Glob.ProgressLimit) * 100));
                 Glob.PrevProgressUpdate = Get.BMMD.Now;
             }
         }
@@ -6963,6 +7003,7 @@ Define GetBestMoveMedDiff.Prepare (warp=true)
         {
             Glob.ClockTimeInc = 0;
         }
+        Glob.CurrentClockTime = 0;
     }
     If (((Glob.ClockTimeInc > 0) Or (Glob.InitialClockTime > 0)) And (Glob.CustomMaxDepth == 0))
     {
@@ -6994,6 +7035,10 @@ Define GetBestMoveMedDiff.Prepare (warp=true)
         }
         Glob.OptimumThinkTime = ((Get.BMMDP.RemainingTime / Get.BMMDP.MovesToGo) + Glob.ClockTimeInc);
         Glob.MaxThinkTime = (0.8 * Get.BMMDP.RemainingTime);
+        If (Glob.TimeControl == 1)
+        {
+            Glob.MaxThinkTime = (0.8 * Glob.CurrentClockTime);
+        }
         If (Glob.ClockStageMoves > Glob.ClockMoveCount)
         {
             If (Glob.MaxThinkTime > (Get.BMMDP.RemainingTime - ((Get.BMMDP.MovesToGo - 1) * (0.75 * Glob.OptimumThinkTime))))
@@ -7016,8 +7061,26 @@ Define GetBestMoveMedDiff.Prepare (warp=true)
         {
             Glob.DeepeningThinkTimeLimit = Glob.MaxThinkTime;
         }
+        If (Glob.TimeControl == 1)
+        {
+            If (Glob.MaxThinkTime < 0.05)
+            {
+                Glob.MaxThinkTime = 0.05;
+            }
+            If (Glob.DeepeningThinkTimeLimit < 0.05)
+            {
+                Glob.DeepeningThinkTimeLimit = 0.05;
+            }
+        }
         Glob.BestMoveChanges = 0;
-        Glob.MinThinkDepth = (floor((9.5 + (1.66 * ln(Glob.ClockTimeInc)))) - 1);
+        If (Glob.ClockTimeInc > 0)
+        {
+            Glob.MinThinkDepth = (floor((9.5 + (1.66 * ln(Glob.ClockTimeInc)))) - 1);
+        }
+        Else
+        {
+            Glob.MinThinkDepth = 0;
+        }
         If ((Not ((Glob.AvgCompletedDepth == Const.Null))) And (Glob.AvgCompletedDepth < Glob.MinThinkDepth))
         {
             Glob.MinThinkDepth = floor(Glob.AvgCompletedDepth);
@@ -7026,6 +7089,11 @@ Define GetBestMoveMedDiff.Prepare (warp=true)
         Glob.StableBestMove = Const.Null;
         Glob.PrevIterEval = Glob.PrevMoveEval;
         Call Log("TM : ")(Glob.CurrentClockTime)(" : ")(Glob.OptimumThinkTime)(" : ")(Glob.DeepeningThinkTimeLimit)(" : ")(Glob.MinThinkDepth);
+    }
+    Glob.ProgressLimit = Glob.DeepeningThinkTimeLimit;
+    If ((Glob.TimeControl == 1) And (Glob.OptimumThinkTime > 0.05))
+    {
+        Glob.ProgressLimit = Glob.OptimumThinkTime;
     }
     Glob.ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     If (Glob.IsTimeModelLogged == 0)
@@ -16004,4 +16072,3 @@ Define _ClearLists (warp=true)
     List.DeleteItem(HistoryContinuation3, all);
     List.DeleteItem(HistoryContinuation4, all);
 }
-
