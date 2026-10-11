@@ -2,12 +2,13 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2282 (10.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2291 (11.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.IsNetworkDecoded = 0;
-    Glob.Level = 2;
-    GoK_Level = 2;
+    Glob.Level = 4;
+    GoK_Level = 4;
+    GoK_ClockActive = 0;
     If is compiled?
     {
         Glob.IsScratch3 = 0;
@@ -330,30 +331,17 @@ WhenBroadcastReceived(dci register)
     List.Add(_dci engines, "gok_nnue");
 }
 
-WhenBroadcastReceived(GoK_LevelChanged)
+WhenBroadcastReceived(GoK_ClockClicked)
 {
-    If (GoK_Level == 4)
+    Call AskTimeControl;
+    If (Ret.AskTimeControl.IsSet == 1)
     {
-        Call AskTimeControl;
-        If (Ret.AskTimeControl.IsSet == 1)
-        {
-            Glob.Level = 4;
-            Glob.PlayerMoveStart = (Sensing.DaysSince2000() * 86400);
-            Glob.PlayerClockRunning = 1;
-        }
-        Else
-        {
-            If (Not ((Glob.Level == 4)))
-            {
-                GoK_Level = Glob.Level;
-                Event.Broadcast("GoK_LevelChanged");
-            }
-            Stop(this script);
-        }
+        GoK_ClockActive = 1;
+        Glob.PlayerMoveStart = (Sensing.DaysSince2000() * 86400);
+        Glob.PlayerClockRunning = 1;
     }
     Else
     {
-        Glob.Level = GoK_Level;
         Glob.TimeControl = 0;
         Glob.CustomThinkTime = 0;
         Glob.CustomMaxDepth = 0;
@@ -363,7 +351,17 @@ WhenBroadcastReceived(GoK_LevelChanged)
         Glob.ClockStageTime = 0;
         Glob.CurrentClockTime = 0;
         Glob.ClockMoveCount = 0;
+        Glob.PlayerClockTime = 0;
+        Glob.PlayerClockMoveCount = 0;
+        Glob.PlayerClockRunning = 0;
+        GoK_ClockActive = 0;
     }
+    Event.Broadcast("GoK_LevelChanged");
+}
+
+WhenBroadcastReceived(GoK_LevelChanged)
+{
+    Glob.Level = GoK_Level;
     Call PublishTimers(0);
     Call DrawBoardAndWait;
 }
@@ -462,6 +460,12 @@ WhenBroadcastReceived(Stg_SquareClicked)
             {
                 Glob.MoveToIdx = GoK_ScreenIdx[Stg_SquareClickedIdx];
                 Stg_ToSquareIdx = Stg_SquareClickedIdx;
+                If ((Board[Glob.MoveFromIdx] < 0) And (Not ((Glob.MoveFromIdx == Glob.MoveToIdx))))
+                {
+                    Stg_BestMoveFromIdx = Stg_FromSquareIdx;
+                    Stg_BestMoveToIdx = Stg_ToSquareIdx;
+                    Event.BroadcastAndWait("UI_ShowBestMove");
+                }
                 Event.BroadcastAndWait("Stg_ToSquareSelected");
                 If ((Board[Glob.MoveFromIdx] < 0) And (Not ((Glob.MoveFromIdx == Glob.MoveToIdx))))
                 {
@@ -3069,7 +3073,6 @@ Define ExecuteEngineMoveImpl (warp=false)
         Call GetBestMove;
         EEMI.Move = Ret.GetBestMove.Move;
     }
-    Event.BroadcastAndWait("UI_HideBestMove");
     Call OnProgressChanged(100);
     Control.Wait(0);
     Call IsEngineValidMove(EEMI.Move);
@@ -3090,7 +3093,27 @@ Define ExecuteEngineMoveImpl (warp=false)
     {
         Pieces_MovePieceSpecial = "";
     }
+    If (EEMI.Move == GoK_BlackKingsideCastling)
+    {
+        Stg_BestMoveFromIdx = GoK_ScreenIdx[5];
+        Stg_BestMoveToIdx = GoK_ScreenIdx[7];
+    }
+    Else
+    {
+        If (EEMI.Move == GoK_BlackQueensideCastling)
+        {
+            Stg_BestMoveFromIdx = GoK_ScreenIdx[5];
+            Stg_BestMoveToIdx = GoK_ScreenIdx[3];
+        }
+        Else
+        {
+            Stg_BestMoveFromIdx = Pieces_MovePieceFromIdx;
+            Stg_BestMoveToIdx = Pieces_MovePieceToIdx;
+        }
+    }
+    Event.BroadcastAndWait("UI_ShowBestMove");
     Event.BroadcastAndWait("Pieces_MovePiece");
+    Event.BroadcastAndWait("UI_HideBestMove");
     Event.Broadcast("SoundMove");
     List.Add(GameMoves, floor(EEMI.Move));
     Call GetMoveNotation(EEMI.Move);
@@ -3223,6 +3246,7 @@ Define ExecuteUserMoveImpl(string UserMoveParam) (warp=false)
     Stg_ToSquareIdx = -1;
     Event.BroadcastAndWait("Stg_FromSquareSelected");
     Event.BroadcastAndWait("Stg_ToSquareSelected");
+    Event.BroadcastAndWait("UI_HideBestMove");
     Call GenerateMovesPublic(2);
     If (Not (List.ContainsItem(Moves2, UserMoveParam)))
     {
@@ -3803,72 +3827,29 @@ Define GenerateMovesPublic(string Ply) (warp=true)
 
 Define GetBestMove (warp=false)
 {
-    If (Glob.Level == 1)
+    Call GetBestMoveMedDiff;
+    Ret.GetBestMove.Move = Ret.GetBestMoveMedDiff.Move;
+    If ((Glob.IsSkillActive == 1) And (List.Length(RootLineMoves) > 0))
     {
-        Glob.ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
-        Glob.ThinkTimeLimitSearch = 10;
-        Ret.GetBestMove.Move = Const.Null;
-        Get.BME.JuniorDistQuota = 40;
-        Get.BME.JuniorSearchQuota = 20;
-        Call Search(-100000)(100000)(1)(1)((1 == 0));
-        Ret.GetBestMove.Move = Ret.Search.Move;
-        If (Glob.IsSearchTimeout == 0)
+        Get.BME.TopScore = RootLineEvals[1];
+        Get.BME.Delta = (Get.BME.TopScore - RootLineEvals[List.Length(RootLineEvals)]);
+        If (Get.BME.Delta > 100)
         {
-            Call OnEvaluationChanged(Ret.Search.Eval);
+            Get.BME.Delta = 100;
         }
-        If (Not ((Glob.IsDCI == 1)))
+        Get.BME.Weakness = (120 - (2 * Glob.SkillLevel));
+        Get.BME.MaxScore = -1000000;
+        Get.BME.LineIdx = 1;
+        Repeat (List.Length(RootLineMoves))
         {
-            If ((Not ((Ret.GetBestMove.Move == Const.Null))) And (Ret.GetBestMove.Move == GoK_BlackKingsideCastling))
+            Get.BME.Push = floor((((Get.BME.Weakness * (Get.BME.TopScore - RootLineEvals[Get.BME.LineIdx])) + (Get.BME.Delta * Operator.Random(0 , (Get.BME.Weakness - 1)))) / 128));
+            If (Not (((RootLineEvals[Get.BME.LineIdx] + Get.BME.Push) < Get.BME.MaxScore)))
             {
-                Stg_BestMoveFromIdx = GoK_ScreenIdx[5];
-                Stg_BestMoveToIdx = GoK_ScreenIdx[7];
+                Get.BME.MaxScore = (RootLineEvals[Get.BME.LineIdx] + Get.BME.Push);
+                Ret.GetBestMove.Move = RootLineMoves[Get.BME.LineIdx];
             }
-            Else
-            {
-                If ((Not ((Ret.GetBestMove.Move == Const.Null))) And (Ret.GetBestMove.Move == GoK_BlackQueensideCastling))
-                {
-                    Stg_BestMoveFromIdx = GoK_ScreenIdx[5];
-                    Stg_BestMoveToIdx = GoK_ScreenIdx[3];
-                }
-                Else
-                {
-                    If (Not ((Ret.GetBestMove.Move == Const.Null)))
-                    {
-                        Stg_BestMoveFromIdx = GoK_ScreenIdx[floor((Ret.GetBestMove.Move / 100))];
-                    }
-                    If (Not ((Ret.GetBestMove.Move == Const.Null)))
-                    {
-                        Stg_BestMoveToIdx = GoK_ScreenIdx[floor((Ret.GetBestMove.Move % 100))];
-                    }
-                }
-            }
-            Event.Broadcast("UI_ShowBestMove");
+            Get.BME.LineIdx += 1;
         }
-        Get.BME.Rnd = Operator.Random(1 , 100);
-        If (Not ((Ret.GetBestMove.Move == Const.Null)))
-        {
-            If ((Get.BME.Rnd > ((Get.BME.JuniorSearchQuota + 100) / 2)) Or (((BoardAttackedByWhite[floor((Ret.GetBestMove.Move / 100))] == 0) And (Board[floor((Ret.GetBestMove.Move % 100))] == 0)) And (Get.BME.Rnd > Get.BME.JuniorSearchQuota)))
-            {
-                Call GenerateMovesPublic(1);
-                List.ReplaceItem(MovesIdx, 1, Operator.Random(1 , ceiling((List.Length(Moves1) * (Get.BME.JuniorDistQuota / 100)))));
-                Call ApplyMove(1)((1 == 1));
-                Call CalcBoardAttackedByMove(2);
-                Call RevertMove(1);
-                Repeat Until (Glob.IsBlackChecked == 0)
-                {
-                    List.ReplaceItem(MovesIdx, 1, Operator.Random(1 , List.Length(Moves1)));
-                    Call ApplyMove(1)((1 == 1));
-                    Call CalcBoardAttackedByMove(2);
-                    Call RevertMove(1);
-                }
-                Ret.GetBestMove.Move = Moves1[MovesIdx[1]];
-            }
-        }
-    }
-    Else
-    {
-        Call GetBestMoveMedDiff;
-        Ret.GetBestMove.Move = Ret.GetBestMoveMedDiff.Move;
     }
 }
 
@@ -4038,6 +4019,29 @@ Define GetBestMoveMedDiff.Iteration (warp=true)
             Get.BMMDI.IsAspirationDone = 1;
         }
     }
+    If (((Glob.IsSkillActive == 1) And (Glob.IsSearchTimeout == 0)) And (Not ((Glob.DeepeningBestMove == Const.Null))))
+    {
+        List.DeleteAll(RootLineMoves);
+        List.DeleteAll(RootLineEvals);
+        List.Add(RootLineMoves, Glob.DeepeningBestMove);
+        List.Add(RootLineEvals, Glob.BestMoveEval);
+        Get.BMMDI.LineDone = 0;
+        Glob.IsRootExclusion = 1;
+        Repeat Until ((List.Length(RootLineMoves) > 3) Or (Get.BMMDI.LineDone == 1))
+        {
+            Call Search(-100000)(100000)(Glob.IdxDeepening)(1)((1 == 0));
+            If (((Glob.IsSearchTimeout == 0) And (Not ((Ret.Search.Move == Const.Null)))) And (Not ((Ret.Search.Eval == Const.Null))))
+            {
+                List.Add(RootLineMoves, Ret.Search.Move);
+                List.Add(RootLineEvals, Ret.Search.Eval);
+            }
+            Else
+            {
+                Get.BMMDI.LineDone = 1;
+            }
+        }
+        Glob.IsRootExclusion = 0;
+    }
     Glob.DeepeningThinkTimeLimit = Get.BMMDI.SavedLimit;
     Get.BMMDI.IsDeepeningDone = 0;
     If (Glob.IsSearchTimeout == 1)
@@ -4074,6 +4078,10 @@ Define GetBestMoveMedDiff.Iteration (warp=true)
                 }
             }
         }
+    }
+    If ((Glob.IsSkillActive == 1) And (Not ((Glob.IdxDeepening < Glob.SkillPickDepth))))
+    {
+        Get.BMMDI.IsDeepeningDone = 1;
     }
     If (Get.BMMDI.IsDeepeningDone == 1)
     {
@@ -4131,7 +4139,6 @@ Define GetBestMoveMedDiff.Iteration (warp=true)
             Get.BMMDI.DepthTimeGrowth = 1.4;
             If ((((((Sensing.DaysSince2000() * 86400) - Glob.ThinkTimeStart) * Get.BMMDI.DepthTimeGrowth) > Get.BMMDI.SoftThinkTime) And (Not ((Glob.IdxDeepening < Glob.MinThinkDepth)))) Or ((((Sensing.DaysSince2000() * 86400) - Glob.ThinkTimeStart) * 1.9) > Glob.DeepeningThinkTimeLimit))
             {
-                Call Log("TM stop : ")(Glob.IdxDeepening)(" : ")(((Sensing.DaysSince2000() * 86400) - Glob.ThinkTimeStart))(" : ")(Get.BMMDI.SoftThinkTime)(" : ")(Operator.Join(Glob.StableBestMoveCount, Operator.Join(" : ", Glob.BestMoveChanges)));
                 Glob.IsDeepeningDone = 1;
             }
             Glob.PrevIterEval = Glob.BestMoveEval;
@@ -4168,14 +4175,29 @@ Define GetBestMoveMedDiff.Iteration (warp=true)
 
 Define GetBestMoveMedDiff.Prepare (warp=true)
 {
-    Glob.DeepeningMaxSearchPly = (Const.MaxPlyStackFrames - 30);
-    If (Glob.Level == 2)
+    Glob.IsSkillActive = 0;
+    If ((Glob.IsDCI == 0) And (Glob.Level < 6))
     {
-        Glob.DeepeningThinkTimeLimit = 3;
+        Glob.IsSkillActive = 1;
+        If (Glob.Level < 5)
+        {
+            Glob.SkillLevel = ((Glob.Level - 1) * 2);
+            Glob.SkillPickDepth = ((2 * Glob.Level) - 1);
+        }
+        Else
+        {
+            Glob.SkillLevel = 9;
+            Glob.SkillPickDepth = 9;
+        }
     }
-    Else
+    List.DeleteAll(RootLineMoves);
+    List.DeleteAll(RootLineEvals);
+    Glob.IsRootExclusion = 0;
+    Glob.DeepeningMaxSearchPly = (Const.MaxPlyStackFrames - 30);
+    Glob.DeepeningThinkTimeLimit = 10;
+    If ((Glob.IsDCI == 0) And (Glob.IsScratch3 == 1))
     {
-        Glob.DeepeningThinkTimeLimit = 10;
+        Glob.DeepeningThinkTimeLimit = 30;
     }
     If (Glob.CustomThinkTime > 0)
     {
@@ -4277,7 +4299,6 @@ Define GetBestMoveMedDiff.Prepare (warp=true)
         Glob.StableBestMoveCount = 0;
         Glob.StableBestMove = Const.Null;
         Glob.PrevIterEval = Glob.PrevMoveEval;
-        Call Log("TM : ")(Glob.CurrentClockTime)(" : ")(Glob.OptimumThinkTime)(" : ")(Glob.DeepeningThinkTimeLimit)(" : ")(Glob.MinThinkDepth);
     }
     Glob.ProgressLimit = Glob.DeepeningThinkTimeLimit;
     If ((Glob.TimeControl == 1) And (Glob.OptimumThinkTime > 0.05))
@@ -5429,7 +5450,7 @@ Define InitBoard (warp=true)
     Stg_FromSquareIdx = -1;
     Stg_ToSquareIdx = -1;
     Glob.DebugMode = 0;
-    If (Not ((Glob.Level == 4)))
+    If (GoK_ClockActive == 0)
     {
         Glob.TimeControl = 0;
     }
@@ -9284,12 +9305,15 @@ Define Search(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Initia
     Glob.NPS = Operator.Round(((Glob.NodeCount + Glob.NodeCountQuiescence) / Search.Timer));
     If (Not ((Ret.Search.Move == Const.Null)))
     {
-        List.DeleteAll(PVStablePrev);
-        Search.PVStableIdx = 1;
-        Repeat (List.Length(PVStable))
+        If (Glob.IsRootExclusion == 0)
         {
-            List.Add(PVStablePrev, PVStable[Search.PVStableIdx]);
-            Search.PVStableIdx += 1;
+            List.DeleteAll(PVStablePrev);
+            Search.PVStableIdx = 1;
+            Repeat (List.Length(PVStable))
+            {
+                List.Add(PVStablePrev, PVStable[Search.PVStableIdx]);
+                Search.PVStableIdx += 1;
+            }
         }
         Call IsQuietMove(Ret.Search.Move);
         If (Ret.IsQuietMove.IsQuiet == 1)
@@ -9588,7 +9612,16 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
             Call GivesCheckFast(Ply);
             List.ReplaceItem(PutsInCheck, Ply, Ret.GivesCheckFast.GivesCheck);
             Call Search_FutilityPruning(Horizon)(Ply)(Quiescence);
-            If (Ret.Search_FutilityPruning.IsFutile == 1)
+            SI.IsRootExcluded = 0;
+            If ((Ply == 1) And (Glob.IsRootExclusion == 1))
+            {
+                Call GetCurrentMove(Ply);
+                If List.ContainsItem(RootLineMoves, Ret.GetCurrentMove.Move)
+                {
+                    SI.IsRootExcluded = 1;
+                }
+            }
+            If ((Ret.Search_FutilityPruning.IsFutile == 1) Or (SI.IsRootExcluded == 1))
             {
                 If (Glob.ProfilerMode == Const.ProfilerMode.On)
                 {
