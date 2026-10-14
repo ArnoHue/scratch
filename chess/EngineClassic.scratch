@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2327 (13.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2357 (14.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.Level = 4;
@@ -1570,15 +1570,15 @@ Define AdjustEvalScore(string Ply)(string RawEval) (warp=true)
         List.ReplaceItem(StaticEval, Ply, ((((AES.Damped > 0) - (AES.Damped < 0)) * floor(abs(AES.Damped))) * PlySign[Ply]));
         Call GetCorrHistIndices(Ply);
         AES.CorrSum = 0;
-        If (CorrHistKey[Ret.GetCorrHistIndices.CorrIdx] == Ret.GetCorrHistIndices.PawnKey)
+        If (CorrHistKey[Ret.GetCorrHistIndices.CorrIdx] == (floor((Ret.GetCorrHistIndices.PawnKey / 100000)) % 1073741824))
         {
             AES.CorrSum += (53 * CorrHistVal[Ret.GetCorrHistIndices.CorrIdx]);
         }
-        If (CorrHistNonPawnOwnKey[Ret.GetCorrHistIndices.NonPawnOwnIdx] == Ret.GetCorrHistIndices.NonPawnOwnKey)
+        If (CorrHistNonPawnOwnKey[Ret.GetCorrHistIndices.NonPawnOwnIdx] == (floor((Ret.GetCorrHistIndices.NonPawnOwnKey / 100000)) % 1073741824))
         {
             AES.CorrSum += (65 * CorrHistNonPawnOwn[Ret.GetCorrHistIndices.NonPawnOwnIdx]);
         }
-        If (CorrHistNonPawnOppKey[Ret.GetCorrHistIndices.NonPawnOppIdx] == Ret.GetCorrHistIndices.NonPawnOppKey)
+        If (CorrHistNonPawnOppKey[Ret.GetCorrHistIndices.NonPawnOppIdx] == (floor((Ret.GetCorrHistIndices.NonPawnOppKey / 100000)) % 1073741824))
         {
             AES.CorrSum += (65 * CorrHistNonPawnOpp[Ret.GetCorrHistIndices.NonPawnOppIdx]);
         }
@@ -2870,7 +2870,7 @@ Define ClearTT (warp=true)
 {
     If (Glob.IsScratch3 == 1)
     {
-        Call ClearTTImpl(65536);
+        Call ClearTTImpl(40000);
     }
     Else
     {
@@ -2880,17 +2880,26 @@ Define ClearTT (warp=true)
 
 Define ClearTTImpl(string Size) (warp=true)
 {
-    List.DeleteItem(TTNodeEntry, all);
-    Repeat (Size)
+    If (List.Length(TTNodeEntry) == (Size * 5))
     {
-        List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
-        List.Add(TTNodeEntry, Const.Null);
+        ClearTT.EntryIdx = 1;
+        Repeat (List.Length(TTNodeEntry))
+        {
+            List.ReplaceItem(TTNodeEntry, ClearTT.EntryIdx, Const.Null);
+            ClearTT.EntryIdx += 1;
+        }
+    }
+    Else
+    {
+        List.DeleteItem(TTNodeEntry, all);
+        Repeat (Size)
+        {
+            List.Add(TTNodeEntry, Const.Null);
+            List.Add(TTNodeEntry, Const.Null);
+            List.Add(TTNodeEntry, Const.Null);
+            List.Add(TTNodeEntry, Const.Null);
+            List.Add(TTNodeEntry, Const.Null);
+        }
     }
 }
 
@@ -6631,6 +6640,10 @@ Define GetAttackForce(bool Black) (warp=true)
 
 Define GetBestMoveBlitz (warp=false)
 {
+    If (List.Length(TTNodeEntry) == 0)
+    {
+        Call ClearTT;
+    }
     Get.BMB.ThinkTimeLimit = ((Glob.Level - 2) * 2);
     Glob.ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     Glob.IsSearchTimeout = 0;
@@ -6926,6 +6939,10 @@ Define GetBestMoveDeepening.Iteration (warp=true)
 
 Define GetBestMoveDeepening.Prepare (warp=true)
 {
+    If (List.Length(TTNodeEntry) == 0)
+    {
+        Call ClearTT;
+    }
     Glob.DeepeningMaxSearchPly = (Const.MaxPlyStackFrames - 30);
     If (Glob.Level == 5)
     {
@@ -7090,6 +7107,10 @@ Define GetBestMoveDeepening.Prepare (warp=true)
 
 Define GetBestMoveEasy (warp=false)
 {
+    If (List.Length(TTNodeEntry) == 0)
+    {
+        Call ClearTT;
+    }
     Glob.ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     Glob.ThinkTimeLimitSearch = 10;
     Ret.GetBestMoveEasy.Move = Const.Null;
@@ -7204,7 +7225,7 @@ Define GetCorrHistIndices(string Ply) (warp=true)
     Ret.GetCorrHistIndices.NonPawnOppIdx = ((PlyCorrectionBaseIdx[Ply] + (Ret.GetCorrHistIndices.NonPawnOppKey % 100000)) + 1);
     Ret.GetCorrHistIndices.ContIdx2 = Const.Null;
     Ret.GetCorrHistIndices.ContIdx4 = Const.Null;
-    If (Ply > 2)
+    If ((Ply > 2) And (Glob.IsScratch3 == 0))
     {
         If ((Not ((AppliedMove[(Ply - 1)] == 0))) And (Not ((AppliedMove[(Ply - 2)] == 0))))
         {
@@ -8358,18 +8379,15 @@ Define InitBoard (warp=true)
     Const.PawnAdvance.OwnRear = 16;
     Const.PawnAdvance.OwnFront = 24;
     Const.TTNodeCol.HashIdx = 0;
-    Const.TTNodeCol.AgeIdx = 1;
-    Const.TTNodeCol.QSMetaIdx = 2;
-    Const.TTNodeCol.BestMoveIdx = 3;
-    Const.TTNodeCol.ScoreIdx = 4;
-    Const.TTNodeCol.TypeIdx = 5;
-    Const.TTNodeCol.HorizonIdx = 6;
-    Const.TTNodeCol.StaticEvalIdx = 7;
+    Const.TTNodeCol.MetaIdx = 1;
+    Const.TTNodeCol.BestMoveIdx = 2;
+    Const.TTNodeCol.ScoreIdx = 3;
+    Const.TTNodeCol.StaticEvalIdx = 4;
     Const.TTType.None = 1;
     Const.TTType.HighBound = 2;
     Const.TTType.LowBound = 3;
     Const.TTType.Exact = 4;
-    Const.TTNodeEntrySize = 8;
+    Const.TTNodeEntrySize = 5;
     Const.PickPhase.Done = 0;
     Const.MaxPlyStackFrames = 60;
     Const.Profile.TTNodeProbe = 0;
@@ -8479,58 +8497,160 @@ Define InitBoard (warp=true)
     {
         List.Add(HistoryCaptureScores, 0);
     }
-    List.DeleteAll(CorrHistVal);
-    Repeat (200000)
+    If (List.Length(CorrHistVal) == 200000)
     {
-        List.Add(CorrHistVal, 0);
+        Init.Board.ListIdx = 1;
+        Repeat (200000)
+        {
+            List.ReplaceItem(CorrHistVal, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
     }
-    List.DeleteAll(CorrHistKey);
-    Repeat (200000)
+    Else
     {
-        List.Add(CorrHistKey, 0);
+        List.DeleteAll(CorrHistVal);
+        Repeat (200000)
+        {
+            List.Add(CorrHistVal, 0);
+        }
     }
-    List.DeleteAll(CorrHistNonPawnOwn);
-    Repeat (200000)
+    If (List.Length(CorrHistKey) == 200000)
     {
-        List.Add(CorrHistNonPawnOwn, 0);
+        Init.Board.ListIdx = 1;
+        Repeat (200000)
+        {
+            List.ReplaceItem(CorrHistKey, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
     }
-    List.DeleteAll(CorrHistNonPawnOwnKey);
-    Repeat (200000)
+    Else
     {
-        List.Add(CorrHistNonPawnOwnKey, 0);
+        List.DeleteAll(CorrHistKey);
+        Repeat (200000)
+        {
+            List.Add(CorrHistKey, 0);
+        }
     }
-    List.DeleteAll(CorrHistNonPawnOpp);
-    Repeat (200000)
+    If (List.Length(CorrHistNonPawnOwn) == 200000)
     {
-        List.Add(CorrHistNonPawnOpp, 0);
+        Init.Board.ListIdx = 1;
+        Repeat (200000)
+        {
+            List.ReplaceItem(CorrHistNonPawnOwn, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
     }
-    List.DeleteAll(CorrHistNonPawnOppKey);
-    Repeat (200000)
+    Else
     {
-        List.Add(CorrHistNonPawnOppKey, 0);
+        List.DeleteAll(CorrHistNonPawnOwn);
+        Repeat (200000)
+        {
+            List.Add(CorrHistNonPawnOwn, 0);
+        }
     }
-    List.DeleteAll(CorrHistCont);
-    Repeat (1292832)
+    If (List.Length(CorrHistNonPawnOwnKey) == 200000)
     {
-        List.Add(CorrHistCont, 0);
+        Init.Board.ListIdx = 1;
+        Repeat (200000)
+        {
+            List.ReplaceItem(CorrHistNonPawnOwnKey, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
+    }
+    Else
+    {
+        List.DeleteAll(CorrHistNonPawnOwnKey);
+        Repeat (200000)
+        {
+            List.Add(CorrHistNonPawnOwnKey, 0);
+        }
+    }
+    If (List.Length(CorrHistNonPawnOpp) == 200000)
+    {
+        Init.Board.ListIdx = 1;
+        Repeat (200000)
+        {
+            List.ReplaceItem(CorrHistNonPawnOpp, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
+    }
+    Else
+    {
+        List.DeleteAll(CorrHistNonPawnOpp);
+        Repeat (200000)
+        {
+            List.Add(CorrHistNonPawnOpp, 0);
+        }
+    }
+    If (List.Length(CorrHistNonPawnOppKey) == 200000)
+    {
+        Init.Board.ListIdx = 1;
+        Repeat (200000)
+        {
+            List.ReplaceItem(CorrHistNonPawnOppKey, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
+    }
+    Else
+    {
+        List.DeleteAll(CorrHistNonPawnOppKey);
+        Repeat (200000)
+        {
+            List.Add(CorrHistNonPawnOppKey, 0);
+        }
+    }
+    If (List.Length(CorrHistCont) == 1292832)
+    {
+        Init.Board.ListIdx = 1;
+        Repeat (1292832)
+        {
+            List.ReplaceItem(CorrHistCont, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
+    }
+    Else
+    {
+        List.DeleteAll(CorrHistCont);
+        If (Glob.IsScratch3 == 0)
+        {
+            Repeat (1292832)
+            {
+                List.Add(CorrHistCont, 0);
+            }
+        }
     }
     List.DeleteItem(HistoryCounterMoves, all);
     Repeat (10000)
     {
         List.Add(HistoryCounterMoves, 0);
     }
-    List.DeleteItem(HistoryContinuation, all);
-    List.DeleteItem(HistoryContinuation2, all);
-    List.DeleteItem(HistoryContinuation3, all);
-    List.DeleteItem(HistoryContinuation4, all);
-    If (Glob.IsScratch3 == 0)
+    If (List.Length(HistoryContinuation) == 400000)
     {
+        Init.Board.ListIdx = 1;
         Repeat (400000)
         {
-            List.Add(HistoryContinuation, 0);
-            List.Add(HistoryContinuation2, 0);
-            List.Add(HistoryContinuation3, 0);
-            List.Add(HistoryContinuation4, 0);
+            List.ReplaceItem(HistoryContinuation, Init.Board.ListIdx, 0);
+            List.ReplaceItem(HistoryContinuation2, Init.Board.ListIdx, 0);
+            List.ReplaceItem(HistoryContinuation3, Init.Board.ListIdx, 0);
+            List.ReplaceItem(HistoryContinuation4, Init.Board.ListIdx, 0);
+            Init.Board.ListIdx += 1;
+        }
+    }
+    Else
+    {
+        List.DeleteItem(HistoryContinuation, all);
+        List.DeleteItem(HistoryContinuation2, all);
+        List.DeleteItem(HistoryContinuation3, all);
+        List.DeleteItem(HistoryContinuation4, all);
+        If (Glob.IsScratch3 == 0)
+        {
+            Repeat (400000)
+            {
+                List.Add(HistoryContinuation, 0);
+                List.Add(HistoryContinuation2, 0);
+                List.Add(HistoryContinuation3, 0);
+                List.Add(HistoryContinuation4, 0);
+            }
         }
     }
     List.DeleteItem(BoardHistory, all);
@@ -8853,7 +8973,10 @@ Define InitHashLookup (warp=true)
     {
         List.Add(PosPieceHashLookup, Operator.Random(1 , ((65536 * 65536) * 16384)));
     }
-    Call ClearTT;
+    If (List.Length(TTNodeEntry) > 0)
+    {
+        Call ClearTT;
+    }
 }
 
 Define InitHistoryScores (warp=true)
@@ -8956,27 +9079,27 @@ Define InitKingSafety (warp=true)
     List.Add(KnightRankDelta, 2);
     List.DeleteAll(KingOnFileEg);
     List.DeleteAll(BlockedStormEg);
-    List.Add(KingOnFileEg, 5.5);
-    List.Add(KingOnFileEg, -1.5);
+    List.Add(KingOnFileEg, 6);
+    List.Add(KingOnFileEg, -1);
     List.Add(KingOnFileEg, 0);
     List.Add(KingOnFileEg, -2);
     List.Add(BlockedStormEg, 0);
     List.Add(BlockedStormEg, 0);
-    List.Add(BlockedStormEg, 37.5);
+    List.Add(BlockedStormEg, 38);
     List.Add(BlockedStormEg, 7);
-    List.Add(BlockedStormEg, 9.5);
+    List.Add(BlockedStormEg, 10);
     List.Add(BlockedStormEg, 2);
-    List.Add(BlockedStormEg, 2.5);
+    List.Add(BlockedStormEg, 3);
     List.DeleteAll(BishopPawnsMg);
     List.DeleteAll(BishopPawnsEg);
-    List.Add(BishopPawnsMg, 1.5);
+    List.Add(BishopPawnsMg, 2);
     List.Add(BishopPawnsEg, 4);
-    List.Add(BishopPawnsMg, 1.5);
-    List.Add(BishopPawnsEg, 4.5);
+    List.Add(BishopPawnsMg, 2);
+    List.Add(BishopPawnsEg, 5);
     List.Add(BishopPawnsMg, 1);
-    List.Add(BishopPawnsEg, 3.5);
-    List.Add(BishopPawnsMg, 1.5);
-    List.Add(BishopPawnsEg, 3.5);
+    List.Add(BishopPawnsEg, 4);
+    List.Add(BishopPawnsMg, 2);
+    List.Add(BishopPawnsEg, 4);
     List.DeleteAll(PushToEdges);
     Call LoadList("50, 45, 40, 35, 35, 40, 45, 50, 45, 35, 30, 25, 25, 30, 35, 45, 40, 30, 20, 15, 15, 20, 30, 40, 35, 25, 15, 10, 10, 15, 25, 35, 35, 25, 15, 10, 10, 15, 25, 35, 40, 30, 20, 15, 15, 20, 30, 40, 45, 35, 30, 25, 25, 30, 35, 45, 50, 45, 40, 35, 35, 40, 45, 50")("PushToEdges");
     List.DeleteAll(PushClose);
@@ -11131,151 +11254,151 @@ Define LoadList(string Data)(string ListName) (warp=true)
         {
             If (ListName == "PawnPieceSquare")
             {
-                List.Add(PawnPieceSquare, (LL.Token + 0));
+                List.Add(PawnPieceSquare, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnPieceSquareEndgame")
             {
-                List.Add(PawnPieceSquareEndgame, (LL.Token + 0));
+                List.Add(PawnPieceSquareEndgame, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KingPieceSquare")
             {
-                List.Add(KingPieceSquare, (LL.Token + 0));
+                List.Add(KingPieceSquare, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KingPieceSquareEndgame")
             {
-                List.Add(KingPieceSquareEndgame, (LL.Token + 0));
+                List.Add(KingPieceSquareEndgame, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "QueenPieceSquare")
             {
-                List.Add(QueenPieceSquare, (LL.Token + 0));
+                List.Add(QueenPieceSquare, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "QueenPieceSquareEndgame")
             {
-                List.Add(QueenPieceSquareEndgame, (LL.Token + 0));
+                List.Add(QueenPieceSquareEndgame, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "RookPieceSquare")
             {
-                List.Add(RookPieceSquare, (LL.Token + 0));
+                List.Add(RookPieceSquare, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "RookPieceSquareEndgame")
             {
-                List.Add(RookPieceSquareEndgame, (LL.Token + 0));
+                List.Add(RookPieceSquareEndgame, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "BishopPieceSquare")
             {
-                List.Add(BishopPieceSquare, (LL.Token + 0));
+                List.Add(BishopPieceSquare, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "BishopPieceSquareEndgame")
             {
-                List.Add(BishopPieceSquareEndgame, (LL.Token + 0));
+                List.Add(BishopPieceSquareEndgame, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KnightPieceSquare")
             {
-                List.Add(KnightPieceSquare, (LL.Token + 0));
+                List.Add(KnightPieceSquare, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KnightPieceSquareEndgame")
             {
-                List.Add(KnightPieceSquareEndgame, (LL.Token + 0));
+                List.Add(KnightPieceSquareEndgame, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KnightMobilityBonus")
             {
-                List.Add(KnightMobilityBonus, (LL.Token + 0));
+                List.Add(KnightMobilityBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "BishopMobilityBonus")
             {
-                List.Add(BishopMobilityBonus, (LL.Token + 0));
+                List.Add(BishopMobilityBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "RookMobilityBonus")
             {
-                List.Add(RookMobilityBonus, (LL.Token + 0));
+                List.Add(RookMobilityBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "QueenMobilityBonus")
             {
-                List.Add(QueenMobilityBonus, (LL.Token + 0));
+                List.Add(QueenMobilityBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnStorm")
             {
-                List.Add(PawnStorm, (LL.Token + 0));
+                List.Add(PawnStorm, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnShelter")
             {
-                List.Add(PawnShelter, (LL.Token + 0));
+                List.Add(PawnShelter, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KingFlankStart")
             {
-                List.Add(KingFlankStart, (LL.Token + 0));
+                List.Add(KingFlankStart, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KingFlankWidth")
             {
-                List.Add(KingFlankWidth, (LL.Token + 0));
+                List.Add(KingFlankWidth, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PushToEdges")
             {
-                List.Add(PushToEdges, (LL.Token + 0));
+                List.Add(PushToEdges, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PushClose")
             {
-                List.Add(PushClose, (LL.Token + 0));
+                List.Add(PushClose, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "ImbalanceSameSide")
             {
-                List.Add(ImbalanceSameSide, (LL.Token + 0));
+                List.Add(ImbalanceSameSide, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "ImbalanceOppSide")
             {
-                List.Add(ImbalanceOppSide, (LL.Token + 0));
+                List.Add(ImbalanceOppSide, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "ImbalanceOppSideEg")
             {
-                List.Add(ImbalanceOppSideEg, (LL.Token + 0));
+                List.Add(ImbalanceOppSideEg, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "ImbalanceSameSideEg")
             {
-                List.Add(ImbalanceSameSideEg, (LL.Token + 0));
+                List.Add(ImbalanceSameSideEg, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnPassedFilePenalty")
             {
-                List.Add(PawnPassedFilePenalty, (LL.Token + 0));
+                List.Add(PawnPassedFilePenalty, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnPassedRankBonus")
             {
-                List.Add(PawnPassedRankBonus, (LL.Token + 0));
+                List.Add(PawnPassedRankBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnConnectedBonus")
             {
-                List.Add(PawnConnectedBonus, (LL.Token + 0));
+                List.Add(PawnConnectedBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnPhalanxBonus")
             {
-                List.Add(PawnPhalanxBonus, (LL.Token + 0));
+                List.Add(PawnPhalanxBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnPhalanxOpposedBonus")
             {
-                List.Add(PawnPhalanxBonusOpposed, (LL.Token + 0));
+                List.Add(PawnPhalanxBonusOpposed, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PawnLeverBonus")
             {
-                List.Add(PawnLeverBonus, (LL.Token + 0));
+                List.Add(PawnLeverBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "MinorAttackWeight")
             {
-                List.Add(MinorAttackWeight, (LL.Token + 0));
+                List.Add(MinorAttackWeight, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "RookAttackWeight")
             {
-                List.Add(RookAttackWeight, (LL.Token + 0));
+                List.Add(RookAttackWeight, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "PassedPawnCandidateBonus")
             {
-                List.Add(PassedPawnCandidateBonus, (LL.Token + 0));
+                List.Add(PassedPawnCandidateBonus, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "BlockedStorm")
             {
-                List.Add(BlockedStorm, (LL.Token + 0));
+                List.Add(BlockedStorm, Operator.Round((LL.Token + 0)));
             }
             If (ListName == "KingOnFile")
             {
-                List.Add(KingOnFile, (LL.Token + 0));
+                List.Add(KingOnFile, Operator.Round((LL.Token + 0)));
             }
             LL.Token = "";
         }
@@ -14473,6 +14596,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
                     {
                         Call GetCorrHistIndices(Ply);
                         Search.Main.CorrBonus = ((Search.Main.CorrDelta * Horizon) / 4);
+                        Search.Main.CorrBonus = (((Search.Main.CorrBonus > 0) - (Search.Main.CorrBonus < 0)) * floor(abs(Search.Main.CorrBonus)));
                         If (Search.Main.CorrBonus > 171)
                         {
                             Search.Main.CorrBonus = 171;
@@ -14481,22 +14605,22 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
                         {
                             Search.Main.CorrBonus = -171;
                         }
-                        If (Not ((CorrHistKey[Ret.GetCorrHistIndices.CorrIdx] == Ret.GetCorrHistIndices.PawnKey)))
+                        If (Not ((CorrHistKey[Ret.GetCorrHistIndices.CorrIdx] == (floor((Ret.GetCorrHistIndices.PawnKey / 100000)) % 1073741824))))
                         {
                             List.ReplaceItem(CorrHistVal, Ret.GetCorrHistIndices.CorrIdx, 0);
-                            List.ReplaceItem(CorrHistKey, Ret.GetCorrHistIndices.CorrIdx, Ret.GetCorrHistIndices.PawnKey);
+                            List.ReplaceItem(CorrHistKey, Ret.GetCorrHistIndices.CorrIdx, (floor((Ret.GetCorrHistIndices.PawnKey / 100000)) % 1073741824));
                         }
                         List.ReplaceItem(CorrHistVal, Ret.GetCorrHistIndices.CorrIdx, ((CorrHistVal[Ret.GetCorrHistIndices.CorrIdx] + Search.Main.CorrBonus) - (floor(abs(((CorrHistVal[Ret.GetCorrHistIndices.CorrIdx] * abs(Search.Main.CorrBonus)) / 1024))) * ((((CorrHistVal[Ret.GetCorrHistIndices.CorrIdx] * abs(Search.Main.CorrBonus)) / 1024) > 0) - (((CorrHistVal[Ret.GetCorrHistIndices.CorrIdx] * abs(Search.Main.CorrBonus)) / 1024) < 0)))));
-                        If (Not ((CorrHistNonPawnOwnKey[Ret.GetCorrHistIndices.NonPawnOwnIdx] == Ret.GetCorrHistIndices.NonPawnOwnKey)))
+                        If (Not ((CorrHistNonPawnOwnKey[Ret.GetCorrHistIndices.NonPawnOwnIdx] == (floor((Ret.GetCorrHistIndices.NonPawnOwnKey / 100000)) % 1073741824))))
                         {
                             List.ReplaceItem(CorrHistNonPawnOwn, Ret.GetCorrHistIndices.NonPawnOwnIdx, 0);
-                            List.ReplaceItem(CorrHistNonPawnOwnKey, Ret.GetCorrHistIndices.NonPawnOwnIdx, Ret.GetCorrHistIndices.NonPawnOwnKey);
+                            List.ReplaceItem(CorrHistNonPawnOwnKey, Ret.GetCorrHistIndices.NonPawnOwnIdx, (floor((Ret.GetCorrHistIndices.NonPawnOwnKey / 100000)) % 1073741824));
                         }
                         List.ReplaceItem(CorrHistNonPawnOwn, Ret.GetCorrHistIndices.NonPawnOwnIdx, ((CorrHistNonPawnOwn[Ret.GetCorrHistIndices.NonPawnOwnIdx] + Search.Main.CorrBonus) - (floor(abs(((CorrHistNonPawnOwn[Ret.GetCorrHistIndices.NonPawnOwnIdx] * abs(Search.Main.CorrBonus)) / 1024))) * ((((CorrHistNonPawnOwn[Ret.GetCorrHistIndices.NonPawnOwnIdx] * abs(Search.Main.CorrBonus)) / 1024) > 0) - (((CorrHistNonPawnOwn[Ret.GetCorrHistIndices.NonPawnOwnIdx] * abs(Search.Main.CorrBonus)) / 1024) < 0)))));
-                        If (Not ((CorrHistNonPawnOppKey[Ret.GetCorrHistIndices.NonPawnOppIdx] == Ret.GetCorrHistIndices.NonPawnOppKey)))
+                        If (Not ((CorrHistNonPawnOppKey[Ret.GetCorrHistIndices.NonPawnOppIdx] == (floor((Ret.GetCorrHistIndices.NonPawnOppKey / 100000)) % 1073741824))))
                         {
                             List.ReplaceItem(CorrHistNonPawnOpp, Ret.GetCorrHistIndices.NonPawnOppIdx, 0);
-                            List.ReplaceItem(CorrHistNonPawnOppKey, Ret.GetCorrHistIndices.NonPawnOppIdx, Ret.GetCorrHistIndices.NonPawnOppKey);
+                            List.ReplaceItem(CorrHistNonPawnOppKey, Ret.GetCorrHistIndices.NonPawnOppIdx, (floor((Ret.GetCorrHistIndices.NonPawnOppKey / 100000)) % 1073741824));
                         }
                         List.ReplaceItem(CorrHistNonPawnOpp, Ret.GetCorrHistIndices.NonPawnOppIdx, ((CorrHistNonPawnOpp[Ret.GetCorrHistIndices.NonPawnOppIdx] + Search.Main.CorrBonus) - (floor(abs(((CorrHistNonPawnOpp[Ret.GetCorrHistIndices.NonPawnOppIdx] * abs(Search.Main.CorrBonus)) / 1024))) * ((((CorrHistNonPawnOpp[Ret.GetCorrHistIndices.NonPawnOppIdx] * abs(Search.Main.CorrBonus)) / 1024) > 0) - (((CorrHistNonPawnOpp[Ret.GetCorrHistIndices.NonPawnOppIdx] * abs(Search.Main.CorrBonus)) / 1024) < 0)))));
                         If (Not ((Ret.GetCorrHistIndices.ContIdx2 == Const.Null)))
@@ -14587,7 +14711,7 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
                         {
                             If (Glob.ProfilerMode == Const.ProfilerMode.On)
                             {
-                                Call Profile_CountByHorizon(Const.Profile.RazoringHits)(Horizon)(Ply);
+                                List.ReplaceItem(ProfileByHorizon, (Const.Profile.RazoringHits + (Horizon + 1)), (ProfileByHorizon[(Const.Profile.RazoringHits + (Horizon + 1))] + 1));
                             }
                             Stop(this script);
                         }
@@ -14602,12 +14726,12 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
         If (1 == 1)
         {
             Call //("Reverse futility pruning");
-            If (Glob.ProfilerMode == Const.ProfilerMode.On)
-            {
-                Call Profile_CountByHorizon(Const.Profile.RFPCalls)(Horizon)(Ply);
-            }
             If ((Horizon < 8) And (Ply > 1))
             {
+                If (Glob.ProfilerMode == Const.ProfilerMode.On)
+                {
+                    Call Profile_CountByHorizon(Const.Profile.RFPCalls)(Horizon)(Ply);
+                }
                 If (abs(Betas[Ply]) < Const.AbsMinCheckmateEval)
                 {
                     Call GetImproving(Ply);
@@ -14634,16 +14758,16 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
             }
         }
         Call //("Null move pruning");
-        If (Glob.ProfilerMode == Const.ProfilerMode.On)
-        {
-            Call Profile_CountByHorizon(Const.Profile.NMPCalls)(Horizon)(Ply);
-        }
         Call GetCalibratedEval(Ply);
         Search.Pruning.Eval = Ret.GetCalibratedEval.Score;
         If (Not ((Search.Pruning.Eval == Const.Null)))
         {
             If (((Horizon > 2) And (Not ((AppliedMove[(Ply - 1)] == 0)))) And (Not ((RazorState[Ply] == 2))))
             {
+                If (Glob.ProfilerMode == Const.ProfilerMode.On)
+                {
+                    Call Profile_CountByHorizon(Const.Profile.NMPCalls)(Horizon)(Ply);
+                }
                 If ((Not ((Search.Pruning.Eval < Betas[Ply]))) And (Not ((Search.Pruning.Eval < StaticEval[Ply]))))
                 {
                     If (((PlyIsOwn[Ply] == 1) And ((Glob.OwnQueenCount + Glob.OwnNonQueenMajorMinorCount) > 0)) Or ((PlyIsOwn[Ply] == 0) And ((Glob.OppQueenCount + Glob.OppNonQueenMajorMinorCount) > 0)))
@@ -15614,7 +15738,7 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
     TTPN.ProbeIdx = 0;
     Repeat Until ((TTPN.ProbeFound == 1) Or (TTPN.ProbeIdx == 5))
     {
-        If ((Not ((TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.HashIdx)] == Const.Null))) And (TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.HashIdx)] == TTPN.NodeHash))
+        If ((Not ((TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.HashIdx)] == Const.Null))) And (TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.HashIdx)] == (TTPN.NodeHash % 1073741824)))
         {
             TTPN.ProbeFound = 1;
         }
@@ -15631,6 +15755,10 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
     }
     Ret.TTProbeNode.Hit = 1;
     Ret.TTProbeNode.BestMove = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.BestMoveIdx)];
+    If (Not ((Ret.TTProbeNode.BestMove == Const.Null)))
+    {
+        Ret.TTProbeNode.BestMove = (Ret.TTProbeNode.BestMove / 10);
+    }
     Ret.TTProbeNode.Score = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.ScoreIdx)];
     If (Not ((Ret.TTProbeNode.Score == Const.Null)))
     {
@@ -15652,11 +15780,24 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
             }
         }
     }
-    Ret.TTProbeNode.Type = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.TypeIdx)];
-    Ret.TTProbeNode.Horizon = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.HorizonIdx)];
-    Ret.TTProbeNode.QSMeta = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.QSMetaIdx)];
+    TTPN.Meta = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.MetaIdx)];
+    Ret.TTProbeNode.Type = (floor((TTPN.Meta / 256)) % 8);
+    If (Ret.TTProbeNode.Type == 0)
+    {
+        Ret.TTProbeNode.Type = Const.Null;
+    }
+    Ret.TTProbeNode.Horizon = ((TTPN.Meta % 256) - 8);
+    If (Ret.TTProbeNode.Horizon == -8)
+    {
+        Ret.TTProbeNode.Horizon = Const.Null;
+    }
+    Ret.TTProbeNode.QSMeta = ((floor((TTPN.Meta / 2048)) % 4) - 1);
+    If (Ret.TTProbeNode.QSMeta == -1)
+    {
+        Ret.TTProbeNode.QSMeta = Const.Null;
+    }
     Ret.TTProbeNode.StaticEval = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.StaticEvalIdx)];
-    List.ReplaceItem(TTNodeEntry, (TTPN.HashBucket + Const.TTNodeCol.AgeIdx), Glob.TTCurrentAge);
+    List.ReplaceItem(TTNodeEntry, (TTPN.HashBucket + Const.TTNodeCol.MetaIdx), ((TTPN.Meta % 8192) + (8192 * (Glob.TTCurrentAge % 131072))));
 }
 
 Define TTProbeNodeAtPly(string Ply) (warp=true)
@@ -15720,19 +15861,20 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         }
         Else
         {
-            If (TTSNI.Hash == NodeHash)
+            If (TTSNI.Hash == (NodeHash % 1073741824))
             {
                 TTSNI.UpdateIdx = TTSNI.HashBucket;
             }
             Else
             {
-                If (TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.HorizonIdx)] == Const.Null)
+                TTSNI.Meta = TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.MetaIdx)];
+                If ((TTSNI.Meta % 256) == 0)
                 {
                     TTSNI.EntryValue = Const.Null;
                 }
                 Else
                 {
-                    TTSNI.EntryValue = (TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.HorizonIdx)] - (Glob.TTCurrentAge - TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.AgeIdx)]));
+                    TTSNI.EntryValue = (((TTSNI.Meta % 256) - 8) - ((Glob.TTCurrentAge - floor((TTSNI.Meta / 8192))) % 131072));
                 }
                 If ((TTSNI.EvictionSlot == Const.Null) Or ((Not ((TTSNI.EvictionSlotValue == Const.Null))) And ((TTSNI.EntryValue == Const.Null) Or (TTSNI.EntryValue < TTSNI.EvictionSlotValue))))
                 {
@@ -15764,7 +15906,12 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         {
             List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.StaticEvalIdx), StaticEval);
         }
-        TTSNI.StoredHorizon = TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.HorizonIdx)];
+        TTSNI.Meta = TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.MetaIdx)];
+        TTSNI.StoredHorizon = ((TTSNI.Meta % 256) - 8);
+        If (TTSNI.StoredHorizon == -8)
+        {
+            TTSNI.StoredHorizon = Const.Null;
+        }
         TTSNI.IsReplace = 0;
         If (Type == Const.TTType.Exact)
         {
@@ -15795,28 +15942,59 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         {
             If (TTSNI.IsReplace == 1)
             {
-                List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.TypeIdx), Type);
+                TTSNI.HC = 0;
+                If (Not ((Horizon == Const.Null)))
+                {
+                    TTSNI.HC = (Horizon + 8);
+                }
+                TTSNI.TC = 0;
+                If (Not ((Type == Const.Null)))
+                {
+                    TTSNI.TC = Type;
+                }
+                TTSNI.QC = 0;
+                If (Not ((QSMeta == Const.Null)))
+                {
+                    TTSNI.QC = (QSMeta + 1);
+                }
+                List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.MetaIdx), (TTSNI.HC + (256 * (TTSNI.TC + (8 * (TTSNI.QC + (4 * (Glob.TTCurrentAge % 131072))))))));
                 List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.ScoreIdx), Score);
-                List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.HorizonIdx), Horizon);
-                List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.AgeIdx), Glob.TTCurrentAge);
-                List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.QSMetaIdx), QSMeta);
             }
         }
         If (Not ((BestMove == Const.Null)))
         {
-            List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.BestMoveIdx), BestMove);
+            List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.BestMoveIdx), Operator.Round((BestMove * 10)));
         }
     }
     Else
     {
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.HashIdx), NodeHash);
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.HorizonIdx), Horizon);
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.TypeIdx), Type);
+        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.HashIdx), (NodeHash % 1073741824));
+        TTSNI.HC = 0;
+        If (Not ((Horizon == Const.Null)))
+        {
+            TTSNI.HC = (Horizon + 8);
+        }
+        TTSNI.TC = 0;
+        If (Not ((Type == Const.Null)))
+        {
+            TTSNI.TC = Type;
+        }
+        TTSNI.QC = 0;
+        If (Not ((QSMeta == Const.Null)))
+        {
+            TTSNI.QC = (QSMeta + 1);
+        }
+        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.MetaIdx), (TTSNI.HC + (256 * (TTSNI.TC + (8 * (TTSNI.QC + (4 * (Glob.TTCurrentAge % 131072))))))));
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.ScoreIdx), Score);
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.BestMoveIdx), BestMove);
+        If (BestMove == Const.Null)
+        {
+            List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.BestMoveIdx), BestMove);
+        }
+        Else
+        {
+            List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.BestMoveIdx), Operator.Round((BestMove * 10)));
+        }
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.StaticEvalIdx), StaticEval);
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.QSMetaIdx), QSMeta);
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.AgeIdx), Glob.TTCurrentAge);
     }
 }
 
