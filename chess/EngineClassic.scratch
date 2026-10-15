@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2357 (14.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2365 (15.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.Level = 4;
@@ -262,8 +262,16 @@ WhenBroadcastReceived($gok_classic)
     }
     Else
     {
+        DCI.IsClaimAllowed = 1;
+        If (Not ((Glob.PrevMoveEval == Const.Null)))
+        {
+            If (Glob.PrevMoveEval > 0)
+            {
+                DCI.IsClaimAllowed = 0;
+            }
+        }
         Call GetRepetitionCount;
-        If (Ret.GetRepetitionCount.Count > 2)
+        If ((Ret.GetRepetitionCount.Count > 2) And (DCI.IsClaimAllowed == 1))
         {
             List.Add(_dci, "draw?");
             Event.Broadcast("dci message");
@@ -436,6 +444,8 @@ WhenBroadcastReceived($gok_classic draw?)
     Glob.BestMoveEval = 0;
     DCI.SavedClockTime = Glob.CurrentClockTime;
     DCI.SavedClockMoveCount = Glob.ClockMoveCount;
+    DCI.SavedPrevMoveEval = Glob.PrevMoveEval;
+    DCI.SavedAvgCompletedDepth = Glob.AvgCompletedDepth;
     Call GetBestMoveDeepening.Prepare;
     Glob.PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
     Repeat Until (Glob.IsDeepeningDone == 1)
@@ -448,6 +458,8 @@ WhenBroadcastReceived($gok_classic draw?)
     List.DeleteItem(BoardHistoryWasEngineMove, List.Length(BoardHistoryWasEngineMove));
     Glob.CurrentClockTime = DCI.SavedClockTime;
     Glob.ClockMoveCount = DCI.SavedClockMoveCount;
+    Glob.PrevMoveEval = DCI.SavedPrevMoveEval;
+    Glob.AvgCompletedDepth = DCI.SavedAvgCompletedDepth;
     If (Glob.BestMoveEval == Const.Null)
     {
         List.Add(_dci, "decline");
@@ -736,6 +748,8 @@ WhenBroadcastReceived(undo)
 
 Define $gok_prepare (warp=true)
 {
+    Glob.Level = 5;
+    GoK_Level = 5;
     $gok_prepare.TargetIsPlayerBlack = 0;
     If Operator.Contains(_dci fen, " w")
     {
@@ -3826,7 +3840,8 @@ Define EvaluateMajorsMinorsImpl(string Ply) (warp=true)
     {
         EvalMM.OwnMaterial = ((Glob.OwnQueenCount * 9) + ((Glob.OwnRookCount * 5) + ((Glob.OwnNonQueenMajorMinorCount - Glob.OwnRookCount) * 3)));
         EvalMM.OppMaterial = ((Glob.OppQueenCount * 9) + ((Glob.OppRookCount * 5) + ((Glob.OppNonQueenMajorMinorCount - Glob.OppRookCount) * 3)));
-        If ((EvalMM.OwnMaterial + EvalMM.OppMaterial) > 42)
+        EvalMM.NonPawnMaterial = ((2538 * (Glob.OwnQueenCount + Glob.OppQueenCount)) + ((1276 * (Glob.OwnRookCount + Glob.OppRookCount)) + ((825 * (Glob.OwnBishopCount + Glob.OppBishopCount)) + (781 * (((Glob.OwnNonQueenMajorMinorCount + Glob.OppNonQueenMajorMinorCount) - (Glob.OwnRookCount + Glob.OppRookCount)) - (Glob.OwnBishopCount + Glob.OppBishopCount))))));
+        If (Not ((EvalMM.NonPawnMaterial < 11551)))
         {
             EvalMM.BlockedCount = 0;
             EvalMM.Idx = 9;
@@ -4125,7 +4140,7 @@ Define EvaluatePawnsImpl(string Ply) (warp=true)
             EvalP.PStruct.RankBonusIdx = ((2 * EvalP.PStruct.NormRank) - 1);
             If ((EvalP.PStruct.Support > 0) Or (EvalP.PStruct.Phalanx > 0))
             {
-                If (EvalP.PStruct.Phalanx > 0)
+                If ((EvalP.PStruct.Phalanx > 0) And (EvalP.PStruct.Support == 0))
                 {
                     If (EvalP.PStruct.Opposed == 1)
                     {
@@ -4148,7 +4163,33 @@ Define EvaluatePawnsImpl(string Ply) (warp=true)
                 {
                     If (EvalP.PStruct.Opposed == 1)
                     {
-                        Call TaperedEval.Add(-1)(-10)("Eval.Pawns.Isolated.Opposed")(EvalP.PStruct.SqIdx)(1)("");
+                        EvalP.PStruct.IsDoubledIsolated = 0;
+                        If ((PawnAdvancePerFile[(EvalP.PStruct.File + Const.PawnAdvance.OwnRear)] > 0) And (PawnAdvancePerFile[(EvalP.PStruct.File + Const.PawnAdvance.OwnRear)] < EvalP.PStruct.Rank))
+                        {
+                            EvalP.PStruct.IsDoubledIsolated = 1;
+                            If (EvalP.PStruct.File > 1)
+                            {
+                                If (PawnCount[((EvalP.PStruct.File - 1) + 8)] > 0)
+                                {
+                                    EvalP.PStruct.IsDoubledIsolated = 0;
+                                }
+                            }
+                            If (EvalP.PStruct.File < 8)
+                            {
+                                If (PawnCount[((EvalP.PStruct.File + 1) + 8)] > 0)
+                                {
+                                    EvalP.PStruct.IsDoubledIsolated = 0;
+                                }
+                            }
+                        }
+                        If (EvalP.PStruct.IsDoubledIsolated == 1)
+                        {
+                            Call TaperedEval.Add(-6)(-26)("Eval.Pawns.Isolated.Doubled")(EvalP.PStruct.SqIdx)(1)("");
+                        }
+                        Else
+                        {
+                            Call TaperedEval.Add(-1)(-10)("Eval.Pawns.Isolated.Opposed")(EvalP.PStruct.SqIdx)(1)("");
+                        }
                     }
                     Else
                     {
@@ -4229,7 +4270,7 @@ Define EvaluatePawnsImpl(string Ply) (warp=true)
             EvalP.PStruct.RankBonusIdx = ((2 * EvalP.PStruct.NormRank) - 1);
             If ((EvalP.PStruct.Support > 0) Or (EvalP.PStruct.Phalanx > 0))
             {
-                If (EvalP.PStruct.Phalanx > 0)
+                If ((EvalP.PStruct.Phalanx > 0) And (EvalP.PStruct.Support == 0))
                 {
                     If (EvalP.PStruct.Opposed == 1)
                     {
@@ -4252,7 +4293,33 @@ Define EvaluatePawnsImpl(string Ply) (warp=true)
                 {
                     If (EvalP.PStruct.Opposed == 1)
                     {
-                        Call TaperedEval.Add(1)(10)("Eval.Pawns.Isolated.Opposed")(EvalP.PStruct.SqIdx)(2)("");
+                        EvalP.PStruct.IsDoubledIsolated = 0;
+                        If (PawnAdvancePerFile[(EvalP.PStruct.File + Const.PawnAdvance.OppRear)] > EvalP.PStruct.Rank)
+                        {
+                            EvalP.PStruct.IsDoubledIsolated = 1;
+                            If (EvalP.PStruct.File > 1)
+                            {
+                                If (PawnCount[(EvalP.PStruct.File - 1)] > 0)
+                                {
+                                    EvalP.PStruct.IsDoubledIsolated = 0;
+                                }
+                            }
+                            If (EvalP.PStruct.File < 8)
+                            {
+                                If (PawnCount[(EvalP.PStruct.File + 1)] > 0)
+                                {
+                                    EvalP.PStruct.IsDoubledIsolated = 0;
+                                }
+                            }
+                        }
+                        If (EvalP.PStruct.IsDoubledIsolated == 1)
+                        {
+                            Call TaperedEval.Add(6)(26)("Eval.Pawns.Isolated.Doubled")(EvalP.PStruct.SqIdx)(2)("");
+                        }
+                        Else
+                        {
+                            Call TaperedEval.Add(1)(10)("Eval.Pawns.Isolated.Opposed")(EvalP.PStruct.SqIdx)(2)("");
+                        }
                     }
                     Else
                     {
@@ -5817,6 +5884,7 @@ Define ExecuteEngineMoveImpl (warp=false)
             EEMI.Move = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
             If (((Glob.ClockTimeInc > 0) Or (Glob.InitialClockTime > 0)) And (Glob.CustomMaxDepth == 0))
             {
+                Glob.CurrentClockTime = (Glob.CurrentClockTime + Glob.ClockTimeInc);
                 Glob.ClockMoveCount += 1;
                 If ((Glob.ClockStageMoves > 0) And (Glob.ClockMoveCount == Glob.ClockStageMoves))
                 {
@@ -6851,6 +6919,10 @@ Define GetBestMoveDeepening.Iteration (warp=true)
                 }
             }
         }
+    }
+    If ((Glob.IdxDeepening == 1) And (Ret.Search.LegalMoveCount == 1))
+    {
+        Get.BMDI.IsDeepeningDone = 1;
     }
     If (Get.BMDI.IsDeepeningDone == 1)
     {
@@ -7931,7 +8003,7 @@ Define GetRepetitionCount (warp=true)
     Ret.GetRepetitionCount.Count = 1;
     Repeat Until (Get.RC.BoardHistoryIdx < 1)
     {
-        If (BoardHistory[Get.RC.BoardHistoryIdx] == BoardHistory[List.Length(BoardHistory)])
+        If ((BoardHistory[Get.RC.BoardHistoryIdx] == BoardHistory[List.Length(BoardHistory)]) And (BoardHistoryMetaState[Get.RC.BoardHistoryIdx] == BoardHistoryMetaState[List.Length(BoardHistoryMetaState)]))
         {
             Ret.GetRepetitionCount.Count += 1;
         }
@@ -11785,7 +11857,7 @@ Define Perft(string PerftPly)(string PerftHorizon)(string PerftStaged) (warp=tru
         List.ReplaceItem(PickedPseudoLegalMovesCount, PerftPly, 0);
         Repeat Until (PickMoveRes[PerftPly] == 0)
         {
-            Call PickMove(PerftPly)((1 == 0));
+            Call PickMove(PerftPly)((1 == 0))(0);
             If (PickMoveRes[PerftPly] == 1)
             {
                 Call IsCheckedFast((PerftPly + 1));
@@ -11828,7 +11900,7 @@ Define PerftDivide(string PerftDivHorizon)(string PerftDivStaged) (warp=true)
         List.ReplaceItem(PickedPseudoLegalMovesCount, 1, 0);
         Repeat Until (PickMoveRes[1] == 0)
         {
-            Call PickMove(1)((1 == 0));
+            Call PickMove(1)((1 == 0))(0);
             If (PickMoveRes[1] == 1)
             {
                 Call IsCheckedFast(2);
@@ -11902,7 +11974,7 @@ Define PerftValidateCheck(string ValPly) (warp=true)
     }
 }
 
-Define PickMove(string Ply)(bool Quiescence) (warp=true)
+Define PickMove(string Ply)(bool Quiescence)(string Horizon) (warp=true)
 {
     If (Glob.ProfilerMode == Const.ProfilerMode.On)
     {
@@ -12149,7 +12221,7 @@ Define PickMove(string Ply)(bool Quiescence) (warp=true)
     Call //("Phase 6: Full move generator for all moves not found yet");
     If (PickPhase[Ply] == 6)
     {
-        Call CalcBoardAttackedOnDemand(Ply)(Quiescence)((1 == 1))((4 + ((HorizonAtPly[Ply] > 2) * 999)));
+        Call CalcBoardAttackedOnDemand(Ply)(Quiescence)((1 == 1))((4 + ((Horizon > 2) * 999)));
         Call GenerateMovesImplWrapper(Ply)((1 == 0))(Quiescence);
         List.ReplaceItem(MovesIdx, Ply, 0);
         List.ReplaceItem(PickPhase, Ply, 7);
@@ -14284,7 +14356,7 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
             }
         }
         Call //("Invoke move generator and apply next move from list");
-        Call PickMove(Ply)(Quiescence);
+        Call PickMove(Ply)(Quiescence)(Horizon);
         If (PickMoveRes[Ply] == 1)
         {
         }
@@ -14586,7 +14658,15 @@ Define Search_Main(string Alpha)(string Beta)(string Horizon)(string Ply)(bool C
                         }
                         Else
                         {
-                            If ((IsBestMoveQuiet[Ply] == 1) And (Search.Main.ImprovementDelta > 0))
+                            Search.Main.IsBestMoveNoCapture = IsBestMoveQuiet[Ply];
+                            If (Not ((Search.Main.BestMove == floor(Search.Main.BestMove))))
+                            {
+                                If (Board[floor((Search.Main.BestMove % 100))] == 0)
+                                {
+                                    Search.Main.IsBestMoveNoCapture = 1;
+                                }
+                            }
+                            If ((Search.Main.IsBestMoveNoCapture == 1) And (Search.Main.ImprovementDelta > 0))
                             {
                                 Search.Main.IsCorrHistUpdate = 1;
                             }
@@ -14698,7 +14778,7 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
             Call GetCalibratedEval(Ply);
             If (Not ((Ret.GetCalibratedEval.Score == Const.Null)))
             {
-                If (((Ret.GetCalibratedEval.Score + (21 + (150 * Horizon))) < Alphas[Ply]) And (RazorState[Ply] == 0))
+                If (((Ret.GetCalibratedEval.Score + (174 + (129 * (Horizon * Horizon)))) < Alphas[Ply]) And (RazorState[Ply] == 0))
                 {
                     If (Glob.ProfilerMode == Const.ProfilerMode.On)
                     {
@@ -14839,7 +14919,7 @@ Define Search_Pruning(string Horizon)(string Ply)(bool Cutnode)(bool Quiescence)
                 List.ReplaceItem(PickedPseudoLegalMovesCount, Ply, 0);
                 Repeat Until (PickMoveRes[Ply] == 0)
                 {
-                    Call PickMove(Ply)((1 == 1));
+                    Call PickMove(Ply)((1 == 1))(Horizon);
                     If (PickMoveRes[Ply] == 1)
                     {
                         Call GivesCheckFast(Ply);
