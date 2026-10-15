@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2357 (14.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2365 (15.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.IsNetworkDecoded = 0;
@@ -107,8 +107,16 @@ WhenBroadcastReceived($gok_nnue)
     }
     Else
     {
+        DCI.IsClaimAllowed = 1;
+        If (Not ((Glob.PrevMoveEval == Const.Null)))
+        {
+            If (Glob.PrevMoveEval > Const.DrawByRepetitionEval)
+            {
+                DCI.IsClaimAllowed = 0;
+            }
+        }
         Call GetRepetitionCount;
-        If (Ret.GetRepetitionCount.Count > 2)
+        If ((Ret.GetRepetitionCount.Count > 2) And (DCI.IsClaimAllowed == 1))
         {
             List.Add(_dci, "draw?");
             Event.Broadcast("dci message");
@@ -281,6 +289,8 @@ WhenBroadcastReceived($gok_nnue draw?)
     Glob.BestMoveEval = 0;
     DCI.SavedClockTime = Glob.CurrentClockTime;
     DCI.SavedClockMoveCount = Glob.ClockMoveCount;
+    DCI.SavedPrevMoveEval = Glob.PrevMoveEval;
+    DCI.SavedAvgCompletedDepth = Glob.AvgCompletedDepth;
     Call GetBestMoveDeepening.Prepare;
     Glob.PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
     Repeat Until (Glob.IsDeepeningDone == 1)
@@ -293,6 +303,8 @@ WhenBroadcastReceived($gok_nnue draw?)
     List.DeleteItem(BoardHistoryWasEngineMove, List.Length(BoardHistoryWasEngineMove));
     Glob.CurrentClockTime = DCI.SavedClockTime;
     Glob.ClockMoveCount = DCI.SavedClockMoveCount;
+    Glob.PrevMoveEval = DCI.SavedPrevMoveEval;
+    Glob.AvgCompletedDepth = DCI.SavedAvgCompletedDepth;
     If (Glob.BestMoveEval == Const.Null)
     {
         List.Add(_dci, "decline");
@@ -661,6 +673,8 @@ WhenBroadcastReceived(UI_UndoClicked)
 Define $gok_prepare (warp=true)
 {
     List.ReplaceItem(EnPassantTarget, 1, Const.Null);
+    Glob.Level = 6;
+    GoK_Level = 6;
     $gok_prepare.TargetIsPlayerBlack = 0;
     If Operator.Contains(_dci fen, " w")
     {
@@ -2740,11 +2754,6 @@ Define Evaluate(string Ply)(bool ForceFullEval) (warp=true)
             Call EvaluateBoardBasic;
             Call CalcBoardAttackedByMove(2);
             Call StoreAttackInfo(1);
-            If (Glob.ProfilerMode == Const.ProfilerMode.On)
-            {
-                Call ProfilerMethodExit(Ply);
-            }
-            Stop(this script);
         }
     }
     If ForceFullEval
@@ -3083,6 +3092,7 @@ Define ExecuteEngineMoveImpl (warp=false)
             EEMI.Move = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
             If (((Glob.ClockTimeInc > 0) Or (Glob.InitialClockTime > 0)) And (Glob.CustomMaxDepth == 0))
             {
+                Glob.CurrentClockTime = (Glob.CurrentClockTime + Glob.ClockTimeInc);
                 Glob.ClockMoveCount += 1;
                 If ((Glob.ClockStageMoves > 0) And (Glob.ClockMoveCount == Glob.ClockStageMoves))
                 {
@@ -3973,7 +3983,8 @@ Define GetBestMoveDeepening.Iteration (warp=true)
     Get.BMDI.SavedLimit = Glob.DeepeningThinkTimeLimit;
     Repeat Until ((Get.BMDI.IsAspirationDone == 1) Or (Glob.IsSearchTimeout == 1))
     {
-        Get.BMDI.SearchDepth = (Glob.IdxDeepening - Get.BMDI.FailedHighCount);
+        Glob.ThinkTimeLimitSearch = Glob.DeepeningThinkTimeLimit;
+        Get.BMDI.SearchDepth = Glob.IdxDeepening;
         If (Get.BMDI.SearchDepth < 1)
         {
             Get.BMDI.SearchDepth = 1;
@@ -4108,6 +4119,10 @@ Define GetBestMoveDeepening.Iteration (warp=true)
         }
     }
     If ((Glob.Level < 6) And (Not ((Glob.IdxDeepening < ((2 * Glob.Level) - 2)))))
+    {
+        Get.BMDI.IsDeepeningDone = 1;
+    }
+    If ((Glob.IdxDeepening == 1) And (Ret.Search.LegalMoveCount == 1))
     {
         Get.BMDI.IsDeepeningDone = 1;
     }
@@ -4744,7 +4759,7 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         }
     }
     Call //("5. Counter Moves");
-    If (Ply > 1)
+    If ((Ply > 1) And (Not (((AppliedMove[(Ply - 1)] == Const.Null) Or (AppliedMove[(Ply - 1)] == 0)))))
     {
         If ((Not ((AppliedMove[(Ply - 1)] == Const.Null))) And (HistoryCounterMoves[(PlyCounterMoveBaseIdx[Ply] + ((PieceIdxLookup[abs(SourcePieces[(Ply - 1)])] * 100) + floor((AppliedMove[(Ply - 1)] % 100))))] == Move))
         {
@@ -5112,7 +5127,7 @@ Define GetRepetitionCount (warp=true)
     Ret.GetRepetitionCount.Count = 1;
     Repeat Until (Get.RC.BoardHistoryIdx < 1)
     {
-        If (BoardHistory[Get.RC.BoardHistoryIdx] == BoardHistory[List.Length(BoardHistory)])
+        If ((BoardHistory[Get.RC.BoardHistoryIdx] == BoardHistory[List.Length(BoardHistory)]) And (BoardHistoryMetaState[Get.RC.BoardHistoryIdx] == BoardHistoryMetaState[List.Length(BoardHistoryMetaState)]))
         {
             Ret.GetRepetitionCount.Count += 1;
         }
@@ -5531,7 +5546,7 @@ Define InitBoard (warp=true)
     GoK_BlackPawn = 114;
     Const.AbsMinCheckmateEval = (GoK_BlackKing - 10000);
     Const.AbsMaxCheckmateEval = 100000;
-    Const.DrawByRepetitionEval = -20;
+    Const.DrawByRepetitionEval = -19.9;
     Const.Null = 999999999;
     Const.PawnAdvance.WhiteRear = 0;
     Const.PawnAdvance.WhiteFront = 8;
@@ -8536,7 +8551,7 @@ Define PickMove(string Ply)(bool Quiescence)(bool UpdateNNUE) (warp=true)
     {
         Call PrepareCurrentKillerMoves(Ply);
         PM.CounterMove = Const.Null;
-        If (Ply > 1)
+        If ((Ply > 1) And (Not ((AppliedMove[(Ply - 1)] == 0))))
         {
             PM.CounterMove = HistoryCounterMoves[(PlyCounterMoveBaseIdx[Ply] + ((PieceIdxLookup[abs(SourcePieces[(Ply - 1)])] * 100) + floor((AppliedMove[(Ply - 1)] % 100))))];
         }
@@ -9915,7 +9930,7 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
     }
     If ((BoardHistoryFiftyMoves[List.Length(BoardHistoryFiftyMoves)] > 99) And ((PickedLegalMovesCount[Ply] > 0) And (CheckedState[Ply] == 1)))
     {
-        List.ReplaceItem(SearchEval, Ply, ((2 * ((Glob.NodeCount + Glob.NodeCountQuiescence) % 2)) - 1));
+        List.ReplaceItem(SearchEval, Ply, (Const.DrawByRepetitionEval * PlySign[Ply]));
         List.ReplaceItem(BestMoves, Ply, Const.Null);
         List.ReplaceItem(IsBestMoveQuiet, Ply, 0);
     }
@@ -10029,7 +10044,15 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
                         }
                         Else
                         {
-                            If ((IsBestMoveQuiet[Ply] == 1) And (SI.ImpVal > 0))
+                            SI.IsBestMoveNoCapture = IsBestMoveQuiet[Ply];
+                            If (Not ((SI.BestMove == floor(SI.BestMove))))
+                            {
+                                If (Board[floor((SI.BestMove % 100))] == 0)
+                                {
+                                    SI.IsBestMoveNoCapture = 1;
+                                }
+                            }
+                            If ((SI.IsBestMoveNoCapture == 1) And (SI.ImpVal > 0))
                             {
                                 SI.IsCorrHistUpdate = 1;
                             }
@@ -11005,7 +11028,7 @@ Define Search_Razoring(string Horizon)(string Ply)(bool Quiescence) (warp=true)
             }
             If (Not ((StaticEval[Ply] == Const.Null)))
             {
-                Search.Razoring.Margin = (21 + (150 * Horizon));
+                Search.Razoring.Margin = (143 + (106 * (Horizon * Horizon)));
                 Call GetCalibratedEval(Ply);
                 If (Not ((Ret.GetCalibratedEval.Score == Const.Null)))
                 {
@@ -11242,7 +11265,7 @@ Define SEE(string MovePly)(bool WithPinFilter) (warp=true)
                 If (Ret.IsReachableForAttack.IsReachable == 1)
                 {
                     SEE.Pin.IsPinned = 0;
-                    If (WithPinFilter And (Not ((abs(Board[SEE.TargetIdx]) == GoK_WhiteKing))))
+                    If (WithPinFilter And (Not ((abs(Board[SEE.TargetIdx]) == GoK_BlackKing))))
                     {
                         SEE.Pin.AttackerPiece = Board[SEE.SourceIdx];
                         If (SEE.Pin.AttackerPiece > 0)
