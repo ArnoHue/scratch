@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2593 (24.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2603 (24.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.Level = 4;
@@ -2906,6 +2906,23 @@ Define Evaluate(string Ply)(bool FullEval) (warp=true)
         }
         Stop(this script);
     }
+    If FullEval
+    {
+        Eval.Endgame.PieceCount = ((Glob.OwnQueenCount + Glob.OwnNonQueenMajorMinorCount) + (Glob.OppQueenCount + Glob.OppNonQueenMajorMinorCount));
+        If (Eval.Endgame.PieceCount < 4)
+        {
+            Call EvaluateEndgame(Ply);
+            If (Not ((Ret.EvaluateEndgame.Score == Const.Null)))
+            {
+                Ret.Evaluate.Score = Ret.EvaluateEndgame.Score;
+                If (Glob.ProfilerMode > Const.ProfilerMode.Off)
+                {
+                    Call Profile_TimeByHorizon(Const.ProfileTime.EvaluateBaseIdx)(Ply)(1);
+                }
+                Stop(this script);
+            }
+        }
+    }
     If (Glob.ProfilerMode > Const.ProfilerMode.Off)
     {
         Call Profile_MethodEnter(Ply);
@@ -2995,175 +3012,196 @@ Define Evaluate(string Ply)(bool FullEval) (warp=true)
             Call Log("Eval.Imbalance = ")(Operator.Round(((Eval.OwnImbalance - Eval.OppImbalance) / 1)))("")("")("")("")("")("");
             Call Log("Eval.Total (pre-DrawScale)= ")(Ret.Evaluate.Score)("")("")("")("")("")("");
         }
-        Eval.OppositeBishops.ScaleFactor = 128;
-        If ((Glob.OwnBishopCount == 1) And (Glob.OppBishopCount == 1))
+        Eval.Endgame.ScaleFactor = Const.Null;
+        If (Eval.Endgame.PieceCount < 4)
         {
-            Eval.OppositeBishops.OwnBishopIdx = 0;
-            Eval.OppositeBishops.OppBishopIdx = 0;
-            Eval.OppositeBishops.Idx = 1;
-            Repeat (64)
+            Eval.Endgame.StrongSide = (((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) > 0) - ((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) < 0));
+            If (Not ((Eval.Endgame.StrongSide == 0)))
             {
-                If (Board[Eval.OppositeBishops.Idx] == GoK_OwnBishop)
+                Call EvaluateEndgame.Scale(Ply)(Eval.Endgame.StrongSide);
+                Eval.Endgame.ScaleFactor = Ret.EvaluateEndgame.Scale.Factor;
+                If (Eval.Endgame.ScaleFactor == 64)
                 {
-                    Eval.OppositeBishops.OwnBishopIdx = Eval.OppositeBishops.Idx;
-                }
-                If (Board[Eval.OppositeBishops.Idx] == GoK_OppBishop)
-                {
-                    Eval.OppositeBishops.OppBishopIdx = Eval.OppositeBishops.Idx;
-                }
-                Eval.OppositeBishops.Idx += 1;
-            }
-            If (Not ((((IdxToFile[Eval.OppositeBishops.OwnBishopIdx] + IdxToRank[Eval.OppositeBishops.OwnBishopIdx]) % 2) == ((IdxToFile[Eval.OppositeBishops.OppBishopIdx] + IdxToRank[Eval.OppositeBishops.OppBishopIdx]) % 2))))
-            {
-                Eval.OppositeBishops.StrongSide = (((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) > 0) - ((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) < 0));
-                If ((Not ((Eval.OppositeBishops.StrongSide == 0))) And (Not ((((Eval.OppositeBishops.StrongSide == 1) And ((Glob.OwnPawnCount == 0) And ((Ret.TaperedEval.Init.OwnMaterial - Ret.TaperedEval.Init.OppMaterial) < (GoK_OwnBishop + 1)))) Or ((Eval.OppositeBishops.StrongSide == -1) And ((Glob.OppPawnCount == 0) And ((Ret.TaperedEval.Init.OppMaterial - Ret.TaperedEval.Init.OwnMaterial) < (GoK_OwnBishop + 1))))))))
-                {
-                    If ((((Glob.OwnQueenCount + Glob.OppQueenCount) + (Glob.OwnRookCount + Glob.OppRookCount)) == 0) And ((Glob.OwnNonQueenMajorMinorCount == 1) And (Glob.OppNonQueenMajorMinorCount == 1)))
-                    {
-                        If (Eval.OppositeBishops.StrongSide == 1)
-                        {
-                            Eval.OppositeBishops.StrongPieceCount = Glob.EvalOwnPassedCount;
-                        }
-                        Else
-                        {
-                            Eval.OppositeBishops.StrongPieceCount = Glob.EvalOppPassedCount;
-                        }
-                        Eval.OppositeBishops.ScaleFactor = (36 + (8 * Eval.OppositeBishops.StrongPieceCount));
-                    }
-                    Else
-                    {
-                        If (Eval.OppositeBishops.StrongSide == 1)
-                        {
-                            Eval.OppositeBishops.StrongPieceCount = (1 + (Glob.OwnPawnCount + (Glob.OwnQueenCount + Glob.OwnNonQueenMajorMinorCount)));
-                        }
-                        Else
-                        {
-                            Eval.OppositeBishops.StrongPieceCount = (1 + (Glob.OppPawnCount + (Glob.OppQueenCount + Glob.OppNonQueenMajorMinorCount)));
-                        }
-                        Eval.OppositeBishops.ScaleFactor = (44 + (6 * Eval.OppositeBishops.StrongPieceCount));
-                    }
-                    If (Eval.Winnable.PawnsOnBothFlanks == 0)
-                    {
-                        Eval.OppositeBishops.ScaleFactor += -8;
-                    }
-                    If (Eval.OppositeBishops.ScaleFactor > 128)
-                    {
-                        Eval.OppositeBishops.ScaleFactor = 128;
-                    }
-                    Ret.Evaluate.Score += Operator.Round(((((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) * (128 - Glob.TaperedEvalPhase)) * (Eval.OppositeBishops.ScaleFactor - 128)) / 16384));
-                    If (Glob.EvalDebugLog == 1)
-                    {
-                        Call Log("Eval.OppositeBishops.ScaleFactor = ")(Eval.OppositeBishops.ScaleFactor)("")("")("")("")("")("");
-                    }
+                    Eval.Endgame.ScaleFactor = Const.Null;
                 }
             }
         }
-        If (Eval.OppositeBishops.ScaleFactor == 128)
+        If (Not ((Eval.Endgame.ScaleFactor == Const.Null)))
         {
-            Eval.ScaleFactor.StrongSide = (((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) > 0) - ((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) < 0));
-            If (Not ((Eval.ScaleFactor.StrongSide == 0)))
+            Ret.Evaluate.Score += Operator.Round(((((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) * (128 - Glob.TaperedEvalPhase)) * ((2 * Eval.Endgame.ScaleFactor) - 128)) / 16384));
+        }
+        Else
+        {
+            Eval.OppositeBishops.ScaleFactor = 128;
+            If ((Glob.OwnBishopCount == 1) And (Glob.OppBishopCount == 1))
             {
-                If (Eval.ScaleFactor.StrongSide == 1)
+                Eval.OppositeBishops.OwnBishopIdx = 0;
+                Eval.OppositeBishops.OppBishopIdx = 0;
+                Eval.OppositeBishops.Idx = 1;
+                Repeat (64)
                 {
-                    Eval.ScaleFactor.StrongPawnCount = Glob.OwnPawnCount;
-                    Eval.ScaleFactor.StrongMaterial = Ret.TaperedEval.Init.OwnMaterial;
-                    Eval.ScaleFactor.WeakMaterial = Ret.TaperedEval.Init.OppMaterial;
+                    If (Board[Eval.OppositeBishops.Idx] == GoK_OwnBishop)
+                    {
+                        Eval.OppositeBishops.OwnBishopIdx = Eval.OppositeBishops.Idx;
+                    }
+                    If (Board[Eval.OppositeBishops.Idx] == GoK_OppBishop)
+                    {
+                        Eval.OppositeBishops.OppBishopIdx = Eval.OppositeBishops.Idx;
+                    }
+                    Eval.OppositeBishops.Idx += 1;
                 }
-                Else
+                If (Not ((((IdxToFile[Eval.OppositeBishops.OwnBishopIdx] + IdxToRank[Eval.OppositeBishops.OwnBishopIdx]) % 2) == ((IdxToFile[Eval.OppositeBishops.OppBishopIdx] + IdxToRank[Eval.OppositeBishops.OppBishopIdx]) % 2))))
                 {
-                    Eval.ScaleFactor.StrongPawnCount = Glob.OppPawnCount;
-                    Eval.ScaleFactor.StrongMaterial = Ret.TaperedEval.Init.OppMaterial;
-                    Eval.ScaleFactor.WeakMaterial = Ret.TaperedEval.Init.OwnMaterial;
-                }
-                Eval.ScaleFactor.Value = 64;
-                If ((Eval.ScaleFactor.StrongPawnCount == 0) And ((Eval.ScaleFactor.StrongMaterial - Eval.ScaleFactor.WeakMaterial) < (GoK_OwnBishop + 1)))
-                {
-                    If (Eval.ScaleFactor.StrongMaterial < GoK_OwnRook)
+                    Eval.OppositeBishops.StrongSide = (((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) > 0) - ((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) < 0));
+                    If ((Not ((Eval.OppositeBishops.StrongSide == 0))) And (Not ((((Eval.OppositeBishops.StrongSide == 1) And ((Glob.OwnPawnCount == 0) And ((Ret.TaperedEval.Init.OwnMaterial - Ret.TaperedEval.Init.OppMaterial) < (GoK_OwnBishop + 1)))) Or ((Eval.OppositeBishops.StrongSide == -1) And ((Glob.OppPawnCount == 0) And ((Ret.TaperedEval.Init.OppMaterial - Ret.TaperedEval.Init.OwnMaterial) < (GoK_OwnBishop + 1))))))))
                     {
-                        Eval.ScaleFactor.Value = 0;
-                    }
-                    Else
-                    {
-                        If (Eval.ScaleFactor.WeakMaterial < (GoK_OwnBishop + 1))
+                        If ((((Glob.OwnQueenCount + Glob.OppQueenCount) + (Glob.OwnRookCount + Glob.OppRookCount)) == 0) And ((Glob.OwnNonQueenMajorMinorCount == 1) And (Glob.OppNonQueenMajorMinorCount == 1)))
                         {
-                            Eval.ScaleFactor.Value = 4;
-                        }
-                        Else
-                        {
-                            Eval.ScaleFactor.Value = 14;
-                        }
-                    }
-                }
-                Else
-                {
-                    If (Eval.ScaleFactor.StrongSide == 1)
-                    {
-                        Eval.ScaleFactor.WeakPawnCount = Glob.OppPawnCount;
-                    }
-                    Else
-                    {
-                        Eval.ScaleFactor.WeakPawnCount = Glob.OwnPawnCount;
-                    }
-                    If (Eval.ScaleFactor.StrongSide == 1)
-                    {
-                        Eval.ScaleFactor.WeakKingIdx = Glob.OppKingIdx;
-                    }
-                    Else
-                    {
-                        Eval.ScaleFactor.WeakKingIdx = Glob.OwnKingIdx;
-                    }
-                    Eval.ScaleFactor.QueensidePawnCount = 0;
-                    Eval.ScaleFactor.KingsidePawnCount = 0;
-                    Eval.ScaleFactor.File = 1;
-                    Repeat (4)
-                    {
-                        Eval.ScaleFactor.QueensidePawnCount += PawnCount[(Eval.ScaleFactor.File + (8 * (Not ((Eval.ScaleFactor.StrongSide == 1)))))];
-                        Eval.ScaleFactor.KingsidePawnCount += PawnCount[((Eval.ScaleFactor.File + 4) + (8 * (Not ((Eval.ScaleFactor.StrongSide == 1)))))];
-                        Eval.ScaleFactor.File += 1;
-                    }
-                    Eval.ScaleFactor.KingPawn = 0;
-                    Eval.ScaleFactor.PawnListIdx = 1;
-                    Repeat (List.Length(EvalPiecesIdx_Pawns))
-                    {
-                        If (((Board[EvalPiecesIdx_Pawns[Eval.ScaleFactor.PawnListIdx]] * Eval.ScaleFactor.StrongSide) == (0 - GoK_OwnPawn)) And (ChebyshevDistance[((EvalPiecesIdx_Pawns[Eval.ScaleFactor.PawnListIdx] * 100) + Eval.ScaleFactor.WeakKingIdx)] == 1))
-                        {
-                            Eval.ScaleFactor.KingPawn = 1;
-                        }
-                        Eval.ScaleFactor.PawnListIdx += 1;
-                    }
-                    If (((((Glob.OwnRookCount == 1) And (Glob.OwnNonQueenMajorMinorCount == 1)) And (Glob.OwnQueenCount == 0)) And (((Glob.OppRookCount == 1) And (Glob.OppNonQueenMajorMinorCount == 1)) And (Glob.OppQueenCount == 0))) And ((Not (((Eval.ScaleFactor.StrongPawnCount - Eval.ScaleFactor.WeakPawnCount) > 1))) And ((Not (((Eval.ScaleFactor.QueensidePawnCount > 0) == (Eval.ScaleFactor.KingsidePawnCount > 0)))) And (Eval.ScaleFactor.KingPawn == 1))))
-                    {
-                        Eval.ScaleFactor.Value = 36;
-                    }
-                    Else
-                    {
-                        If ((Glob.OwnQueenCount + Glob.OppQueenCount) == 1)
-                        {
-                            If (Glob.OwnQueenCount == 1)
+                            If (Eval.OppositeBishops.StrongSide == 1)
                             {
-                                Eval.ScaleFactor.Value = (37 + (3 * (Glob.OppNonQueenMajorMinorCount - Glob.OppRookCount)));
+                                Eval.OppositeBishops.StrongPieceCount = Glob.EvalOwnPassedCount;
                             }
                             Else
                             {
-                                Eval.ScaleFactor.Value = (37 + (3 * (Glob.OwnNonQueenMajorMinorCount - Glob.OwnRookCount)));
+                                Eval.OppositeBishops.StrongPieceCount = Glob.EvalOppPassedCount;
                             }
+                            Eval.OppositeBishops.ScaleFactor = (36 + (8 * Eval.OppositeBishops.StrongPieceCount));
                         }
                         Else
                         {
-                            Eval.ScaleFactor.Value = (36 + (7 * Eval.ScaleFactor.StrongPawnCount));
-                            If (Eval.ScaleFactor.Value > 64)
+                            If (Eval.OppositeBishops.StrongSide == 1)
                             {
-                                Eval.ScaleFactor.Value = 64;
+                                Eval.OppositeBishops.StrongPieceCount = (1 + (Glob.OwnPawnCount + (Glob.OwnQueenCount + Glob.OwnNonQueenMajorMinorCount)));
                             }
-                            Eval.ScaleFactor.Value += (-4 * (Eval.Winnable.PawnsOnBothFlanks == 0));
+                            Else
+                            {
+                                Eval.OppositeBishops.StrongPieceCount = (1 + (Glob.OppPawnCount + (Glob.OppQueenCount + Glob.OppNonQueenMajorMinorCount)));
+                            }
+                            Eval.OppositeBishops.ScaleFactor = (44 + (6 * Eval.OppositeBishops.StrongPieceCount));
+                        }
+                        If (Eval.Winnable.PawnsOnBothFlanks == 0)
+                        {
+                            Eval.OppositeBishops.ScaleFactor += -8;
+                        }
+                        If (Eval.OppositeBishops.ScaleFactor > 128)
+                        {
+                            Eval.OppositeBishops.ScaleFactor = 128;
+                        }
+                        Ret.Evaluate.Score += Operator.Round(((((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) * (128 - Glob.TaperedEvalPhase)) * (Eval.OppositeBishops.ScaleFactor - 128)) / 16384));
+                        If (Glob.EvalDebugLog == 1)
+                        {
+                            Call Log("Eval.OppositeBishops.ScaleFactor = ")(Eval.OppositeBishops.ScaleFactor)("")("")("")("")("")("");
                         }
                     }
-                    Eval.ScaleFactor.Value += (-4 * (Eval.Winnable.PawnsOnBothFlanks == 0));
                 }
-                Ret.Evaluate.Score += Operator.Round(((((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) * (128 - Glob.TaperedEvalPhase)) * ((2 * Eval.ScaleFactor.Value) - 128)) / 16384));
-                If (Glob.EvalDebugLog == 1)
+            }
+            If (Eval.OppositeBishops.ScaleFactor == 128)
+            {
+                Eval.ScaleFactor.StrongSide = (((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) > 0) - ((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) < 0));
+                If (Not ((Eval.ScaleFactor.StrongSide == 0)))
                 {
-                    Call Log("Eval.ScaleFactor = ")(Eval.ScaleFactor.Value)("")("")("")("")("")("");
+                    If (Eval.ScaleFactor.StrongSide == 1)
+                    {
+                        Eval.ScaleFactor.StrongPawnCount = Glob.OwnPawnCount;
+                        Eval.ScaleFactor.StrongMaterial = Ret.TaperedEval.Init.OwnMaterial;
+                        Eval.ScaleFactor.WeakMaterial = Ret.TaperedEval.Init.OppMaterial;
+                    }
+                    Else
+                    {
+                        Eval.ScaleFactor.StrongPawnCount = Glob.OppPawnCount;
+                        Eval.ScaleFactor.StrongMaterial = Ret.TaperedEval.Init.OppMaterial;
+                        Eval.ScaleFactor.WeakMaterial = Ret.TaperedEval.Init.OwnMaterial;
+                    }
+                    Eval.ScaleFactor.Value = 64;
+                    If ((Eval.ScaleFactor.StrongPawnCount == 0) And ((Eval.ScaleFactor.StrongMaterial - Eval.ScaleFactor.WeakMaterial) < (GoK_OwnBishop + 1)))
+                    {
+                        If (Eval.ScaleFactor.StrongMaterial < GoK_OwnRook)
+                        {
+                            Eval.ScaleFactor.Value = 0;
+                        }
+                        Else
+                        {
+                            If (Eval.ScaleFactor.WeakMaterial < (GoK_OwnBishop + 1))
+                            {
+                                Eval.ScaleFactor.Value = 4;
+                            }
+                            Else
+                            {
+                                Eval.ScaleFactor.Value = 14;
+                            }
+                        }
+                    }
+                    Else
+                    {
+                        If (Eval.ScaleFactor.StrongSide == 1)
+                        {
+                            Eval.ScaleFactor.WeakPawnCount = Glob.OppPawnCount;
+                        }
+                        Else
+                        {
+                            Eval.ScaleFactor.WeakPawnCount = Glob.OwnPawnCount;
+                        }
+                        If (Eval.ScaleFactor.StrongSide == 1)
+                        {
+                            Eval.ScaleFactor.WeakKingIdx = Glob.OppKingIdx;
+                        }
+                        Else
+                        {
+                            Eval.ScaleFactor.WeakKingIdx = Glob.OwnKingIdx;
+                        }
+                        Eval.ScaleFactor.QueensidePawnCount = 0;
+                        Eval.ScaleFactor.KingsidePawnCount = 0;
+                        Eval.ScaleFactor.File = 1;
+                        Repeat (4)
+                        {
+                            Eval.ScaleFactor.QueensidePawnCount += PawnCount[(Eval.ScaleFactor.File + (8 * (Not ((Eval.ScaleFactor.StrongSide == 1)))))];
+                            Eval.ScaleFactor.KingsidePawnCount += PawnCount[((Eval.ScaleFactor.File + 4) + (8 * (Not ((Eval.ScaleFactor.StrongSide == 1)))))];
+                            Eval.ScaleFactor.File += 1;
+                        }
+                        Eval.ScaleFactor.KingPawn = 0;
+                        Eval.ScaleFactor.PawnListIdx = 1;
+                        Repeat (List.Length(EvalPiecesIdx_Pawns))
+                        {
+                            If (((Board[EvalPiecesIdx_Pawns[Eval.ScaleFactor.PawnListIdx]] * Eval.ScaleFactor.StrongSide) == (0 - GoK_OwnPawn)) And (ChebyshevDistance[((EvalPiecesIdx_Pawns[Eval.ScaleFactor.PawnListIdx] * 100) + Eval.ScaleFactor.WeakKingIdx)] == 1))
+                            {
+                                Eval.ScaleFactor.KingPawn = 1;
+                            }
+                            Eval.ScaleFactor.PawnListIdx += 1;
+                        }
+                        If (((((Glob.OwnRookCount == 1) And (Glob.OwnNonQueenMajorMinorCount == 1)) And (Glob.OwnQueenCount == 0)) And (((Glob.OppRookCount == 1) And (Glob.OppNonQueenMajorMinorCount == 1)) And (Glob.OppQueenCount == 0))) And ((Not (((Eval.ScaleFactor.StrongPawnCount - Eval.ScaleFactor.WeakPawnCount) > 1))) And ((Not (((Eval.ScaleFactor.QueensidePawnCount > 0) == (Eval.ScaleFactor.KingsidePawnCount > 0)))) And (Eval.ScaleFactor.KingPawn == 1))))
+                        {
+                            Eval.ScaleFactor.Value = 36;
+                        }
+                        Else
+                        {
+                            If ((Glob.OwnQueenCount + Glob.OppQueenCount) == 1)
+                            {
+                                If (Glob.OwnQueenCount == 1)
+                                {
+                                    Eval.ScaleFactor.Value = (37 + (3 * (Glob.OppNonQueenMajorMinorCount - Glob.OppRookCount)));
+                                }
+                                Else
+                                {
+                                    Eval.ScaleFactor.Value = (37 + (3 * (Glob.OwnNonQueenMajorMinorCount - Glob.OwnRookCount)));
+                                }
+                            }
+                            Else
+                            {
+                                Eval.ScaleFactor.Value = (36 + (7 * Eval.ScaleFactor.StrongPawnCount));
+                                If (Eval.ScaleFactor.Value > 64)
+                                {
+                                    Eval.ScaleFactor.Value = 64;
+                                }
+                                Eval.ScaleFactor.Value += (-4 * (Eval.Winnable.PawnsOnBothFlanks == 0));
+                            }
+                        }
+                        Eval.ScaleFactor.Value += (-4 * (Eval.Winnable.PawnsOnBothFlanks == 0));
+                    }
+                    Ret.Evaluate.Score += Operator.Round(((((Glob.EvalEgTotal + Eval.Winnable.EgAdjust) * (128 - Glob.TaperedEvalPhase)) * ((2 * Eval.ScaleFactor.Value) - 128)) / 16384));
+                    If (Glob.EvalDebugLog == 1)
+                    {
+                        Call Log("Eval.ScaleFactor = ")(Eval.ScaleFactor.Value)("")("")("")("")("")("");
+                    }
                 }
             }
         }
@@ -3223,6 +3261,853 @@ Define EvaluateBoard (warp=true)
     Ret.EvaluateBoard.Score += Ret.TaperedEval.GetSum.Score;
     Glob.EvalMgTotal += Eval.Board.Mg;
     Glob.EvalEgTotal += (Eval.Board.Eg + Glob.TaperedEvalEg);
+}
+
+Define EvaluateEndgame(string Ply) (warp=true)
+{
+    Ret.EvaluateEndgame.Score = Const.Null;
+    EvalEG.StrongSide = 1;
+    Repeat (2)
+    {
+        If (Ret.EvaluateEndgame.Score == Const.Null)
+        {
+            Call EvaluateEndgame.Material(EvalEG.StrongSide);
+            EvalEG.StrongScore = Const.Null;
+            If (Ret.EvaluateEndgame.Material.StrongPawnCount == 0)
+            {
+                If ((Ret.EvaluateEndgame.Material.WeakPiecesAreNone == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount == 1))
+                {
+                    If (Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1)
+                    {
+                        Call EvaluateEndgame.KRKP(Ply)(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KRKP.Score;
+                    }
+                    If (Ret.EvaluateEndgame.Material.StrongPiecesAreQueen == 1)
+                    {
+                        Call EvaluateEndgame.KQKP(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KQKP.Score;
+                    }
+                    If (Ret.EvaluateEndgame.Material.StrongPiecesAreTwoKnights == 1)
+                    {
+                        Call EvaluateEndgame.KNNKP(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KNNKP.Score;
+                    }
+                }
+                If (Ret.EvaluateEndgame.Material.WeakPawnCount == 0)
+                {
+                    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+                    {
+                        Call EvaluateEndgame.KRKB(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KRKB.Score;
+                    }
+                    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreKnight == 1))
+                    {
+                        Call EvaluateEndgame.KRKN(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KRKN.Score;
+                    }
+                    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreQueen == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1))
+                    {
+                        Call EvaluateEndgame.KQKR(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KQKR.Score;
+                    }
+                }
+            }
+            If (Not ((EvalEG.StrongScore == Const.Null)))
+            {
+                Ret.EvaluateEndgame.Score = (EvalEG.StrongSide * floor((EvalEG.StrongScore / 2)));
+            }
+        }
+        EvalEG.StrongSide = (0 - EvalEG.StrongSide);
+    }
+}
+
+Define EvaluateEndgame.KBPKB(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KBPKB.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.KingBlocksBishopPawn(StrongSide);
+    If (Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked == 1)
+    {
+        Ret.EvaluateEndgame.KBPKB.Factor = 0;
+        Stop(this script);
+    }
+    EvalEG.KBPKB.StrongBishopIdx = Ret.EvaluateEndgame.Locate.StrongBishopIdx;
+    EvalEG.KBPKB.WeakBishopIdx = Ret.EvaluateEndgame.Locate.WeakBishopIdx;
+    EvalEG.KBPKB.StrongBishopColour = ((IdxToFile[EvalEG.KBPKB.StrongBishopIdx] + IdxToRank[EvalEG.KBPKB.StrongBishopIdx]) % 2);
+    EvalEG.KBPKB.WeakBishopColour = ((IdxToFile[EvalEG.KBPKB.WeakBishopIdx] + IdxToRank[EvalEG.KBPKB.WeakBishopIdx]) % 2);
+    If (Not ((EvalEG.KBPKB.StrongBishopColour == EvalEG.KBPKB.WeakBishopColour)))
+    {
+        Ret.EvaluateEndgame.KBPKB.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KBPKN(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KBPKN.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.KingBlocksBishopPawn(StrongSide);
+    If (Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked == 1)
+    {
+        Ret.EvaluateEndgame.KBPKN.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KBPsK(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KBPsK.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KBPsK.StrongKingIdx = Ret.EvaluateEndgame.Locate.StrongKingIdx;
+    EvalEG.KBPsK.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KBPsK.StrongBishopIdx = Ret.EvaluateEndgame.Locate.StrongBishopIdx;
+    EvalEG.KBPsK.RelativeRankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KBPsK.RelativeRankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KBPsK.PawnPushIdxDelta = Ret.EvaluateEndgame.Locate.PawnPushIdxDelta;
+    EvalEG.KBPsK.BishopColour = ((IdxToFile[EvalEG.KBPsK.StrongBishopIdx] + IdxToRank[EvalEG.KBPsK.StrongBishopIdx]) % 2);
+    Call EvaluateEndgame.PawnScan(StrongSide)(EvalEG.KBPsK.WeakKingIdx)(0);
+    EvalEG.KBPsK.StrongPawnCount = Ret.EvaluateEndgame.PawnScan.StrongPawnCount;
+    If ((Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount == EvalEG.KBPsK.StrongPawnCount) Or (Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount == EvalEG.KBPsK.StrongPawnCount))
+    {
+        EvalEG.KBPsK.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+        EvalEG.KBPsK.PawnRelativeRank = (EvalEG.KBPsK.RelativeRankBase + (EvalEG.KBPsK.RelativeRankSign * IdxToRank[EvalEG.KBPsK.PawnIdx]));
+        EvalEG.KBPsK.QueeningSqIdx = (EvalEG.KBPsK.PawnIdx + (EvalEG.KBPsK.PawnPushIdxDelta * (7 - EvalEG.KBPsK.PawnRelativeRank)));
+        EvalEG.KBPsK.QueeningSqColour = ((IdxToFile[EvalEG.KBPsK.QueeningSqIdx] + IdxToRank[EvalEG.KBPsK.QueeningSqIdx]) % 2);
+        EvalEG.KBPsK.WeakKingQueeningDistance = ChebyshevDistance[((EvalEG.KBPsK.QueeningSqIdx * 100) + EvalEG.KBPsK.WeakKingIdx)];
+        If ((Not ((EvalEG.KBPsK.QueeningSqColour == EvalEG.KBPsK.BishopColour))) And (EvalEG.KBPsK.WeakKingQueeningDistance < 2))
+        {
+            Ret.EvaluateEndgame.KBPsK.Factor = 0;
+            Stop(this script);
+        }
+    }
+    Call EvaluateEndgame.Material(StrongSide);
+    EvalEG.KBPsK.HasWeakOnlyPawns = 0;
+    If ((Ret.EvaluateEndgame.Material.WeakPiecesAreNone == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount > 0))
+    {
+        EvalEG.KBPsK.HasWeakOnlyPawns = 1;
+    }
+    EvalEG.KBPsK.PawnCount = Ret.EvaluateEndgame.PawnScan.PawnCount;
+    EvalEG.KBPsK.IsAllPawnsOnBOrGFile = 0;
+    If ((Ret.EvaluateEndgame.PawnScan.PawnOnFileBCount == EvalEG.KBPsK.PawnCount) Or (Ret.EvaluateEndgame.PawnScan.PawnOnFileGCount == EvalEG.KBPsK.PawnCount))
+    {
+        EvalEG.KBPsK.IsAllPawnsOnBOrGFile = 1;
+    }
+    If ((EvalEG.KBPsK.IsAllPawnsOnBOrGFile == 1) And (EvalEG.KBPsK.HasWeakOnlyPawns == 1))
+    {
+        EvalEG.KBPsK.WeakPawnIdx = Ret.EvaluateEndgame.PawnScan.WeakFrontPawnIdx;
+        EvalEG.KBPsK.WeakPawnRelativeRank = (EvalEG.KBPsK.RelativeRankBase + (EvalEG.KBPsK.RelativeRankSign * IdxToRank[EvalEG.KBPsK.WeakPawnIdx]));
+        EvalEG.KBPsK.IsWeakPawnBlocked = 0;
+        If ((Board[(EvalEG.KBPsK.WeakPawnIdx - EvalEG.KBPsK.PawnPushIdxDelta)] * StrongSide) == GoK_OwnPawn)
+        {
+            EvalEG.KBPsK.IsWeakPawnBlocked = 1;
+        }
+        EvalEG.KBPsK.WeakPawnColour = ((IdxToFile[EvalEG.KBPsK.WeakPawnIdx] + IdxToRank[EvalEG.KBPsK.WeakPawnIdx]) % 2);
+        EvalEG.KBPsK.IsBishopUseless = 0;
+        If ((Not ((EvalEG.KBPsK.WeakPawnColour == EvalEG.KBPsK.BishopColour))) Or (EvalEG.KBPsK.StrongPawnCount == 1))
+        {
+            EvalEG.KBPsK.IsBishopUseless = 1;
+        }
+        If (((EvalEG.KBPsK.WeakPawnRelativeRank == 6) And (EvalEG.KBPsK.IsWeakPawnBlocked == 1)) And (EvalEG.KBPsK.IsBishopUseless == 1))
+        {
+            EvalEG.KBPsK.StrongKingDistance = ChebyshevDistance[((EvalEG.KBPsK.WeakPawnIdx * 100) + EvalEG.KBPsK.StrongKingIdx)];
+            EvalEG.KBPsK.WeakKingDistance = ChebyshevDistance[((EvalEG.KBPsK.WeakPawnIdx * 100) + EvalEG.KBPsK.WeakKingIdx)];
+            EvalEG.KBPsK.WeakKingRelativeRank = (EvalEG.KBPsK.RelativeRankBase + (EvalEG.KBPsK.RelativeRankSign * IdxToRank[EvalEG.KBPsK.WeakKingIdx]));
+            If ((EvalEG.KBPsK.WeakKingRelativeRank > 5) And ((EvalEG.KBPsK.WeakKingDistance < 3) And (Not ((EvalEG.KBPsK.WeakKingDistance > EvalEG.KBPsK.StrongKingDistance)))))
+            {
+                Ret.EvaluateEndgame.KBPsK.Factor = 0;
+            }
+        }
+    }
+}
+
+Define EvaluateEndgame.KingBlocksBishopPawn(string StrongSide) (warp=true)
+{
+    EvalEG.KingBlocksBishopPawn.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KingBlocksBishopPawn.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    EvalEG.KingBlocksBishopPawn.BishopIdx = Ret.EvaluateEndgame.Locate.StrongBishopIdx;
+    EvalEG.KingBlocksBishopPawn.WeakKingRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KingBlocksBishopPawn.WeakKingIdx]));
+    EvalEG.KingBlocksBishopPawn.PawnRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KingBlocksBishopPawn.PawnIdx]));
+    EvalEG.KingBlocksBishopPawn.KingColour = ((IdxToFile[EvalEG.KingBlocksBishopPawn.WeakKingIdx] + IdxToRank[EvalEG.KingBlocksBishopPawn.WeakKingIdx]) % 2);
+    EvalEG.KingBlocksBishopPawn.BishopColour = ((IdxToFile[EvalEG.KingBlocksBishopPawn.BishopIdx] + IdxToRank[EvalEG.KingBlocksBishopPawn.BishopIdx]) % 2);
+    Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked = 0;
+    If ((IdxToFile[EvalEG.KingBlocksBishopPawn.WeakKingIdx] == IdxToFile[EvalEG.KingBlocksBishopPawn.PawnIdx]) And (EvalEG.KingBlocksBishopPawn.WeakKingRank > EvalEG.KingBlocksBishopPawn.PawnRank))
+    {
+        If ((Not ((EvalEG.KingBlocksBishopPawn.KingColour == EvalEG.KingBlocksBishopPawn.BishopColour))) Or (EvalEG.KingBlocksBishopPawn.WeakKingRank < 6))
+        {
+            Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked = 1;
+        }
+    }
+}
+
+Define EvaluateEndgame.KNNKP(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    EvalEG.KNNKP.PawnRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[Ret.EvaluateEndgame.Locate.WeakPawnIdx]));
+    EvalEG.KNNKP.PawnWeakRelativeRank = (7 - EvalEG.KNNKP.PawnRelativeRank);
+    Ret.EvaluateEndgame.KNNKP.Score = ((208 + (2 * Ret.EvaluateEndgame.PushToEdge.Score)) - (10 * EvalEG.KNNKP.PawnWeakRelativeRank));
+}
+
+Define EvaluateEndgame.KPsK(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KPsK.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PawnScan(StrongSide)(Ret.EvaluateEndgame.Locate.WeakKingIdx)(0);
+    EvalEG.KPsK.StrongPawnCount = Ret.EvaluateEndgame.PawnScan.StrongPawnCount;
+    EvalEG.KPsK.RookPawnCount = (Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount + Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount);
+    If ((EvalEG.KPsK.RookPawnCount == EvalEG.KPsK.StrongPawnCount) And (Ret.EvaluateEndgame.PawnScan.StrongPawnInKingSpanCount == EvalEG.KPsK.StrongPawnCount))
+    {
+        Ret.EvaluateEndgame.KPsK.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KQKP(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KQKP.KingDistance = ChebyshevDistance[((Ret.EvaluateEndgame.Locate.StrongKingIdx * 100) + Ret.EvaluateEndgame.Locate.WeakKingIdx)];
+    Ret.EvaluateEndgame.KQKP.Score = (140 - (20 * EvalEG.KQKP.KingDistance));
+    EvalEG.KQKP.WeakPawnIdx = Ret.EvaluateEndgame.Locate.WeakPawnIdx;
+    EvalEG.KQKP.PawnFile = IdxToFile[EvalEG.KQKP.WeakPawnIdx];
+    EvalEG.KQKP.PawnRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KQKP.WeakPawnIdx]));
+    EvalEG.KQKP.IsDrawishPawn = 0;
+    If ((EvalEG.KQKP.PawnRelativeRank == 1) And (ChebyshevDistance[((Ret.EvaluateEndgame.Locate.WeakKingIdx * 100) + EvalEG.KQKP.WeakPawnIdx)] == 1))
+    {
+        If (((EvalEG.KQKP.PawnFile == 1) Or (EvalEG.KQKP.PawnFile == 3)) Or ((EvalEG.KQKP.PawnFile == 6) Or (EvalEG.KQKP.PawnFile == 8)))
+        {
+            EvalEG.KQKP.IsDrawishPawn = 1;
+        }
+    }
+    If (EvalEG.KQKP.IsDrawishPawn == 0)
+    {
+        Ret.EvaluateEndgame.KQKP.Score += 2474;
+    }
+}
+
+Define EvaluateEndgame.KQKR(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    EvalEG.KQKR.KingDistance = ChebyshevDistance[((Ret.EvaluateEndgame.Locate.StrongKingIdx * 100) + Ret.EvaluateEndgame.Locate.WeakKingIdx)];
+    Ret.EvaluateEndgame.KQKR.Score = ((1302 + Ret.EvaluateEndgame.PushToEdge.Score) + (140 - (20 * EvalEG.KQKR.KingDistance)));
+}
+
+Define EvaluateEndgame.KQKRPs(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KQKRPs.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KQKRPs.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KQKRPs.WeakRookIdx = Ret.EvaluateEndgame.Locate.WeakRookIdx;
+    EvalEG.KQKRPs.WeakKingRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KQKRPs.WeakKingIdx]));
+    EvalEG.KQKRPs.StrongKingRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[Ret.EvaluateEndgame.Locate.StrongKingIdx]));
+    EvalEG.KQKRPs.WeakRookRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KQKRPs.WeakRookIdx]));
+    Call EvaluateEndgame.PawnScan(StrongSide)(EvalEG.KQKRPs.WeakKingIdx)(EvalEG.KQKRPs.WeakRookIdx);
+    If (((EvalEG.KQKRPs.WeakKingRelativeRank > 5) And (Not ((EvalEG.KQKRPs.StrongKingRelativeRank > 4)))) And ((EvalEG.KQKRPs.WeakRookRelativeRank == 5) And (Ret.EvaluateEndgame.PawnScan.HasRookFortressPawn == 1)))
+    {
+        Ret.EvaluateEndgame.KQKRPs.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KRKB(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    Ret.EvaluateEndgame.KRKB.Score = Ret.EvaluateEndgame.PushToEdge.Score;
+}
+
+Define EvaluateEndgame.KRKN(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    EvalEG.KRKN.KingKnightDistance = ChebyshevDistance[((Ret.EvaluateEndgame.Locate.WeakKingIdx * 100) + Ret.EvaluateEndgame.Locate.WeakKnightIdx)];
+    Ret.EvaluateEndgame.KRKN.Score = ((Ret.EvaluateEndgame.PushToEdge.Score + (20 * EvalEG.KRKN.KingKnightDistance)) - 20);
+}
+
+Define EvaluateEndgame.KRKP(string Ply)(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.StrongToMove(Ply)(StrongSide);
+    EvalEG.KRKP.IsStrongToMove = Ret.EvaluateEndgame.StrongToMove.IsStrongToMove;
+    EvalEG.KRKP.StrongKingIdx = Ret.EvaluateEndgame.Locate.StrongKingIdx;
+    EvalEG.KRKP.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KRKP.StrongRookIdx = Ret.EvaluateEndgame.Locate.StrongRookIdx;
+    EvalEG.KRKP.WeakPawnIdx = Ret.EvaluateEndgame.Locate.WeakPawnIdx;
+    EvalEG.KRKP.RelativeRankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KRKP.RelativeRankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KRKP.StrongKingRelativeRank = (EvalEG.KRKP.RelativeRankBase + (EvalEG.KRKP.RelativeRankSign * IdxToRank[EvalEG.KRKP.StrongKingIdx]));
+    EvalEG.KRKP.WeakKingRelativeRank = (EvalEG.KRKP.RelativeRankBase + (EvalEG.KRKP.RelativeRankSign * IdxToRank[EvalEG.KRKP.WeakKingIdx]));
+    EvalEG.KRKP.WeakPawnRelativeRank = (EvalEG.KRKP.RelativeRankBase + (EvalEG.KRKP.RelativeRankSign * IdxToRank[EvalEG.KRKP.WeakPawnIdx]));
+    EvalEG.KRKP.StrongKingPawnDistance = ChebyshevDistance[((EvalEG.KRKP.StrongKingIdx * 100) + EvalEG.KRKP.WeakPawnIdx)];
+    EvalEG.KRKP.WeakKingPawnDistance = ChebyshevDistance[((EvalEG.KRKP.WeakKingIdx * 100) + EvalEG.KRKP.WeakPawnIdx)];
+    EvalEG.KRKP.WeakKingRookDistance = ChebyshevDistance[((EvalEG.KRKP.WeakKingIdx * 100) + EvalEG.KRKP.StrongRookIdx)];
+    EvalEG.KRKP.IsStrongKingInFrontOfPawn = 0;
+    If ((IdxToFile[EvalEG.KRKP.WeakPawnIdx] == IdxToFile[EvalEG.KRKP.StrongKingIdx]) And (EvalEG.KRKP.WeakPawnRelativeRank > EvalEG.KRKP.StrongKingRelativeRank))
+    {
+        EvalEG.KRKP.IsStrongKingInFrontOfPawn = 1;
+    }
+    EvalEG.KRKP.IsWeakKingTooFar = 0;
+    If ((Not (((EvalEG.KRKP.WeakKingPawnDistance + EvalEG.KRKP.IsStrongToMove) < 4))) And (Not ((EvalEG.KRKP.WeakKingRookDistance < 3))))
+    {
+        EvalEG.KRKP.IsWeakKingTooFar = 1;
+    }
+    EvalEG.KRKP.IsPawnSupportedFarAdvanced = 0;
+    If ((EvalEG.KRKP.WeakKingRelativeRank < 3) And (EvalEG.KRKP.WeakKingPawnDistance == 1))
+    {
+        If ((EvalEG.KRKP.StrongKingRelativeRank > 2) And ((EvalEG.KRKP.StrongKingPawnDistance - EvalEG.KRKP.IsStrongToMove) > 2))
+        {
+            EvalEG.KRKP.IsPawnSupportedFarAdvanced = 1;
+        }
+    }
+    If ((EvalEG.KRKP.IsStrongKingInFrontOfPawn == 1) Or (EvalEG.KRKP.IsWeakKingTooFar == 1))
+    {
+        Ret.EvaluateEndgame.KRKP.Score = (1380 - EvalEG.KRKP.StrongKingPawnDistance);
+    }
+    Else
+    {
+        If (EvalEG.KRKP.IsPawnSupportedFarAdvanced == 1)
+        {
+            Ret.EvaluateEndgame.KRKP.Score = (80 - (8 * EvalEG.KRKP.StrongKingPawnDistance));
+        }
+        Else
+        {
+            EvalEG.KRKP.PushSqIdx = (EvalEG.KRKP.WeakPawnIdx - Ret.EvaluateEndgame.Locate.PawnPushIdxDelta);
+            EvalEG.KRKP.QueeningSqIdx = (EvalEG.KRKP.WeakPawnIdx - (Ret.EvaluateEndgame.Locate.PawnPushIdxDelta * EvalEG.KRKP.WeakPawnRelativeRank));
+            EvalEG.KRKP.StrongKingPushDistance = ChebyshevDistance[((EvalEG.KRKP.StrongKingIdx * 100) + EvalEG.KRKP.PushSqIdx)];
+            EvalEG.KRKP.WeakKingPushDistance = ChebyshevDistance[((EvalEG.KRKP.WeakKingIdx * 100) + EvalEG.KRKP.PushSqIdx)];
+            EvalEG.KRKP.PawnQueeningDistance = ChebyshevDistance[((EvalEG.KRKP.WeakPawnIdx * 100) + EvalEG.KRKP.QueeningSqIdx)];
+            Ret.EvaluateEndgame.KRKP.Score = (200 - (8 * ((EvalEG.KRKP.StrongKingPushDistance - EvalEG.KRKP.WeakKingPushDistance) - EvalEG.KRKP.PawnQueeningDistance)));
+        }
+    }
+}
+
+Define EvaluateEndgame.KRPKR(string Ply)(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KRPKR.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.StrongToMove(Ply)(StrongSide);
+    EvalEG.KRPKR.IsStrongToMove = Ret.EvaluateEndgame.StrongToMove.IsStrongToMove;
+    EvalEG.KRPKR.StrongKingIdx = Ret.EvaluateEndgame.Locate.StrongKingIdx;
+    EvalEG.KRPKR.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KRPKR.StrongRookIdx = Ret.EvaluateEndgame.Locate.StrongRookIdx;
+    EvalEG.KRPKR.WeakRookIdx = Ret.EvaluateEndgame.Locate.WeakRookIdx;
+    EvalEG.KRPKR.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    EvalEG.KRPKR.RankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KRPKR.RankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KRPKR.FileBase = -1;
+    EvalEG.KRPKR.FileSign = 1;
+    If (IdxToFile[EvalEG.KRPKR.PawnIdx] > 4)
+    {
+        EvalEG.KRPKR.FileBase = 8;
+        EvalEG.KRPKR.FileSign = -1;
+    }
+    EvalEG.KRPKR.PawnFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.PawnIdx]));
+    EvalEG.KRPKR.PawnRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.PawnIdx]));
+    EvalEG.KRPKR.StrongKingFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.StrongKingIdx]));
+    EvalEG.KRPKR.StrongKingRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.StrongKingIdx]));
+    EvalEG.KRPKR.StrongRookFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.StrongRookIdx]));
+    EvalEG.KRPKR.StrongRookRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.StrongRookIdx]));
+    EvalEG.KRPKR.WeakKingFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.WeakKingIdx]));
+    EvalEG.KRPKR.WeakKingRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.WeakKingIdx]));
+    EvalEG.KRPKR.WeakRookFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.WeakRookIdx]));
+    EvalEG.KRPKR.WeakRookRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.WeakRookIdx]));
+    EvalEG.KRPKR.QueeningSqIdx = (EvalEG.KRPKR.PawnIdx + (Ret.EvaluateEndgame.Locate.PawnPushIdxDelta * (7 - EvalEG.KRPKR.PawnRank)));
+    EvalEG.KRPKR.PushSqIdx = (EvalEG.KRPKR.PawnIdx + Ret.EvaluateEndgame.Locate.PawnPushIdxDelta);
+    EvalEG.KRPKR.WeakKingQueeningDistance = ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.QueeningSqIdx)];
+    EvalEG.KRPKR.StrongKingQueeningDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.QueeningSqIdx)];
+    EvalEG.KRPKR.StrongKingPawnDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.PawnIdx)];
+    EvalEG.KRPKR.WeakKingStrongRookDistance = ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.StrongRookIdx)];
+    EvalEG.KRPKR.IsWeakKingAtQueening = 0;
+    If (EvalEG.KRPKR.WeakKingQueeningDistance < 2)
+    {
+        EvalEG.KRPKR.IsWeakKingAtQueening = 1;
+    }
+    If (((EvalEG.KRPKR.PawnRank < 5) And (EvalEG.KRPKR.IsWeakKingAtQueening == 1)) And (EvalEG.KRPKR.StrongKingRank < 5))
+    {
+        If ((EvalEG.KRPKR.WeakRookRank == 5) Or ((EvalEG.KRPKR.PawnRank < 3) And (Not ((EvalEG.KRPKR.StrongRookRank == 5)))))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    If (((EvalEG.KRPKR.PawnRank == 5) And (EvalEG.KRPKR.IsWeakKingAtQueening == 1)) And ((EvalEG.KRPKR.StrongKingRank + EvalEG.KRPKR.IsStrongToMove) < 6))
+    {
+        If ((EvalEG.KRPKR.WeakRookRank == 0) Or ((EvalEG.KRPKR.IsStrongToMove == 0) And (abs((EvalEG.KRPKR.WeakRookFile - EvalEG.KRPKR.PawnFile)) > 2)))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    If (((EvalEG.KRPKR.PawnRank > 4) And (EvalEG.KRPKR.WeakKingIdx == EvalEG.KRPKR.QueeningSqIdx)) And (EvalEG.KRPKR.WeakRookRank == 0))
+    {
+        If ((EvalEG.KRPKR.IsStrongToMove == 0) Or (EvalEG.KRPKR.StrongKingPawnDistance > 1))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    EvalEG.KRPKR.IsPawnA7RookA8 = 0;
+    If (((EvalEG.KRPKR.PawnFile == 0) And (EvalEG.KRPKR.PawnRank == 6)) And ((EvalEG.KRPKR.StrongRookFile == 0) And (EvalEG.KRPKR.StrongRookRank == 7)))
+    {
+        EvalEG.KRPKR.IsPawnA7RookA8 = 1;
+    }
+    If (((EvalEG.KRPKR.IsPawnA7RookA8 == 1) And (EvalEG.KRPKR.WeakKingRank == 6)) And ((EvalEG.KRPKR.WeakKingFile > 5) And (EvalEG.KRPKR.WeakRookFile == 0)))
+    {
+        If (((EvalEG.KRPKR.WeakRookRank < 3) Or (EvalEG.KRPKR.StrongKingFile > 2)) Or (EvalEG.KRPKR.StrongKingRank < 5))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    If (((EvalEG.KRPKR.PawnRank < 5) And (EvalEG.KRPKR.WeakKingIdx == EvalEG.KRPKR.PushSqIdx)) And ((EvalEG.KRPKR.StrongKingPawnDistance - EvalEG.KRPKR.IsStrongToMove) > 1))
+    {
+        If ((ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.WeakRookIdx)] - EvalEG.KRPKR.IsStrongToMove) > 1)
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    EvalEG.KRPKR.IsRookBehindPawn = 0;
+    If (((Not ((EvalEG.KRPKR.PawnFile == 0))) And (EvalEG.KRPKR.StrongRookFile == EvalEG.KRPKR.PawnFile)) And (EvalEG.KRPKR.StrongRookRank < EvalEG.KRPKR.PawnRank))
+    {
+        EvalEG.KRPKR.IsRookBehindPawn = 1;
+    }
+    EvalEG.KRPKR.IsStrongKingCloserToQueening = 0;
+    If (EvalEG.KRPKR.StrongKingQueeningDistance < ((EvalEG.KRPKR.WeakKingQueeningDistance - 2) + EvalEG.KRPKR.IsStrongToMove))
+    {
+        EvalEG.KRPKR.IsStrongKingCloserToQueening = 1;
+    }
+    If ((((EvalEG.KRPKR.PawnRank == 6) And (Not ((EvalEG.KRPKR.PawnFile == 0)))) And ((EvalEG.KRPKR.StrongRookFile == EvalEG.KRPKR.PawnFile) And (Not ((EvalEG.KRPKR.StrongRookIdx == EvalEG.KRPKR.QueeningSqIdx))))) And (EvalEG.KRPKR.IsStrongKingCloserToQueening == 1))
+    {
+        If (EvalEG.KRPKR.StrongKingQueeningDistance < (EvalEG.KRPKR.WeakKingStrongRookDistance + EvalEG.KRPKR.IsStrongToMove))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = (128 - (2 * EvalEG.KRPKR.StrongKingQueeningDistance));
+            Stop(this script);
+        }
+    }
+    If ((EvalEG.KRPKR.IsRookBehindPawn == 1) And (EvalEG.KRPKR.IsStrongKingCloserToQueening == 1))
+    {
+        EvalEG.KRPKR.StrongKingPushDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.PushSqIdx)];
+        EvalEG.KRPKR.WeakKingPushDistance = ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.PushSqIdx)];
+        If (EvalEG.KRPKR.StrongKingPushDistance < ((EvalEG.KRPKR.WeakKingPushDistance - 2) + EvalEG.KRPKR.IsStrongToMove))
+        {
+            EvalEG.KRPKR.IsWeakKingAwayFromRook = 0;
+            If (Not (((EvalEG.KRPKR.WeakKingStrongRookDistance + EvalEG.KRPKR.IsStrongToMove) < 3)))
+            {
+                EvalEG.KRPKR.IsWeakKingAwayFromRook = 1;
+            }
+            If ((EvalEG.KRPKR.StrongKingQueeningDistance < (EvalEG.KRPKR.WeakKingStrongRookDistance + EvalEG.KRPKR.IsStrongToMove)) And (EvalEG.KRPKR.StrongKingPushDistance < (ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.PawnIdx)] + EvalEG.KRPKR.IsStrongToMove)))
+            {
+                EvalEG.KRPKR.IsWeakKingAwayFromRook = 1;
+            }
+            If (EvalEG.KRPKR.IsWeakKingAwayFromRook == 1)
+            {
+                EvalEG.KRPKR.PawnQueeningDistance = ChebyshevDistance[((EvalEG.KRPKR.PawnIdx * 100) + EvalEG.KRPKR.QueeningSqIdx)];
+                Ret.EvaluateEndgame.KRPKR.Factor = ((128 - (8 * EvalEG.KRPKR.PawnQueeningDistance)) - (2 * EvalEG.KRPKR.StrongKingQueeningDistance));
+                Stop(this script);
+            }
+        }
+    }
+    EvalEG.KRPKR.WeakKingSqNumber = ((EvalEG.KRPKR.WeakKingRank * 8) + EvalEG.KRPKR.WeakKingFile);
+    EvalEG.KRPKR.PawnSqNumber = ((EvalEG.KRPKR.PawnRank * 8) + EvalEG.KRPKR.PawnFile);
+    If ((EvalEG.KRPKR.PawnRank < 4) And (EvalEG.KRPKR.WeakKingSqNumber > EvalEG.KRPKR.PawnSqNumber))
+    {
+        If (EvalEG.KRPKR.WeakKingFile == EvalEG.KRPKR.PawnFile)
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 10;
+            Stop(this script);
+        }
+        EvalEG.KRPKR.KingDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.WeakKingIdx)];
+        If ((abs((EvalEG.KRPKR.WeakKingFile - EvalEG.KRPKR.PawnFile)) == 1) And (EvalEG.KRPKR.KingDistance > 2))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = (24 - (2 * EvalEG.KRPKR.KingDistance));
+        }
+    }
+}
+
+Define EvaluateEndgame.KRPPKRP(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KRPPKRP.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KRPPKRP.RankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KRPPKRP.RankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KRPPKRP.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    EvalEG.KRPPKRP.SecondPawnIdx = Ret.EvaluateEndgame.Locate.SecondStrongPawnIdx;
+    EvalEG.KRPPKRP.WeakPawnIdx = Ret.EvaluateEndgame.Locate.WeakPawnIdx;
+    EvalEG.KRPPKRP.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KRPPKRP.PawnRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.PawnIdx]));
+    EvalEG.KRPPKRP.SecondPawnRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.SecondPawnIdx]));
+    EvalEG.KRPPKRP.WeakPawnRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.WeakPawnIdx]));
+    EvalEG.KRPPKRP.WeakPawnFile = IdxToFile[EvalEG.KRPPKRP.WeakPawnIdx];
+    EvalEG.KRPPKRP.IsPawnBlocked = 0;
+    If ((abs((EvalEG.KRPPKRP.WeakPawnFile - IdxToFile[EvalEG.KRPPKRP.PawnIdx])) < 2) And (EvalEG.KRPPKRP.WeakPawnRank > EvalEG.KRPPKRP.PawnRank))
+    {
+        EvalEG.KRPPKRP.IsPawnBlocked = 1;
+    }
+    EvalEG.KRPPKRP.IsSecondPawnBlocked = 0;
+    If ((abs((EvalEG.KRPPKRP.WeakPawnFile - IdxToFile[EvalEG.KRPPKRP.SecondPawnIdx])) < 2) And (EvalEG.KRPPKRP.WeakPawnRank > EvalEG.KRPPKRP.SecondPawnRank))
+    {
+        EvalEG.KRPPKRP.IsSecondPawnBlocked = 1;
+    }
+    If ((EvalEG.KRPPKRP.IsPawnBlocked == 0) Or (EvalEG.KRPPKRP.IsSecondPawnBlocked == 0))
+    {
+        Stop(this script);
+    }
+    EvalEG.KRPPKRP.FrontPawnRank = EvalEG.KRPPKRP.PawnRank;
+    If (EvalEG.KRPPKRP.SecondPawnRank > EvalEG.KRPPKRP.FrontPawnRank)
+    {
+        EvalEG.KRPPKRP.FrontPawnRank = EvalEG.KRPPKRP.SecondPawnRank;
+    }
+    EvalEG.KRPPKRP.WeakKingFile = IdxToFile[EvalEG.KRPPKRP.WeakKingIdx];
+    EvalEG.KRPPKRP.WeakKingRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.WeakKingIdx]));
+    If ((abs((EvalEG.KRPPKRP.WeakKingFile - IdxToFile[EvalEG.KRPPKRP.PawnIdx])) < 2) And (abs((EvalEG.KRPPKRP.WeakKingFile - IdxToFile[EvalEG.KRPPKRP.SecondPawnIdx])) < 2))
+    {
+        If (EvalEG.KRPPKRP.WeakKingRank > EvalEG.KRPPKRP.FrontPawnRank)
+        {
+            Ret.EvaluateEndgame.KRPPKRP.Factor = (7 * EvalEG.KRPPKRP.FrontPawnRank);
+        }
+    }
+}
+
+Define EvaluateEndgame.Locate(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.Locate.StrongPawnIdx = 0;
+    Ret.EvaluateEndgame.Locate.SecondStrongPawnIdx = 0;
+    Ret.EvaluateEndgame.Locate.StrongBishopIdx = 0;
+    Ret.EvaluateEndgame.Locate.StrongRookIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakPawnIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakBishopIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakKnightIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakRookIdx = 0;
+    EvalEG.Locate.SqIdx = 1;
+    Repeat (64)
+    {
+        EvalEG.Locate.StrongViewPiece = (Board[EvalEG.Locate.SqIdx] * StrongSide);
+        If (EvalEG.Locate.StrongViewPiece == GoK_OwnPawn)
+        {
+            If (Ret.EvaluateEndgame.Locate.StrongPawnIdx == 0)
+            {
+                Ret.EvaluateEndgame.Locate.StrongPawnIdx = EvalEG.Locate.SqIdx;
+            }
+            Else
+            {
+                Ret.EvaluateEndgame.Locate.SecondStrongPawnIdx = EvalEG.Locate.SqIdx;
+            }
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_OwnBishop)
+        {
+            Ret.EvaluateEndgame.Locate.StrongBishopIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_OwnRook)
+        {
+            Ret.EvaluateEndgame.Locate.StrongRookIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_OppPawn)
+        {
+            Ret.EvaluateEndgame.Locate.WeakPawnIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_OppBishop)
+        {
+            Ret.EvaluateEndgame.Locate.WeakBishopIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_OppKnight)
+        {
+            Ret.EvaluateEndgame.Locate.WeakKnightIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_OppRook)
+        {
+            Ret.EvaluateEndgame.Locate.WeakRookIdx = EvalEG.Locate.SqIdx;
+        }
+        EvalEG.Locate.SqIdx += 1;
+    }
+    If (StrongSide == 1)
+    {
+        Ret.EvaluateEndgame.Locate.StrongKingIdx = Glob.OwnKingIdx;
+        Ret.EvaluateEndgame.Locate.WeakKingIdx = Glob.OppKingIdx;
+        Ret.EvaluateEndgame.Locate.RelativeRankBase = -1;
+        Ret.EvaluateEndgame.Locate.RelativeRankSign = 1;
+        Ret.EvaluateEndgame.Locate.PawnPushIdxDelta = 8;
+    }
+    Else
+    {
+        Ret.EvaluateEndgame.Locate.StrongKingIdx = Glob.OppKingIdx;
+        Ret.EvaluateEndgame.Locate.WeakKingIdx = Glob.OwnKingIdx;
+        Ret.EvaluateEndgame.Locate.RelativeRankBase = 8;
+        Ret.EvaluateEndgame.Locate.RelativeRankSign = -1;
+        Ret.EvaluateEndgame.Locate.PawnPushIdxDelta = -8;
+    }
+}
+
+Define EvaluateEndgame.Material(string StrongSide) (warp=true)
+{
+    If (StrongSide == 1)
+    {
+        EvalEG.Material.StrongQueenCount = Glob.OwnQueenCount;
+        EvalEG.Material.StrongRookCount = Glob.OwnRookCount;
+        EvalEG.Material.StrongBishopCount = Glob.OwnBishopCount;
+        EvalEG.Material.StrongMajorMinorCount = Glob.OwnNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.StrongPawnCount = Glob.OwnPawnCount;
+        EvalEG.Material.WeakQueenCount = Glob.OppQueenCount;
+        Ret.EvaluateEndgame.Material.WeakRookCount = Glob.OppRookCount;
+        EvalEG.Material.WeakBishopCount = Glob.OppBishopCount;
+        EvalEG.Material.WeakMajorMinorCount = Glob.OppNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.WeakPawnCount = Glob.OppPawnCount;
+    }
+    Else
+    {
+        EvalEG.Material.StrongQueenCount = Glob.OppQueenCount;
+        EvalEG.Material.StrongRookCount = Glob.OppRookCount;
+        EvalEG.Material.StrongBishopCount = Glob.OppBishopCount;
+        EvalEG.Material.StrongMajorMinorCount = Glob.OppNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.StrongPawnCount = Glob.OppPawnCount;
+        EvalEG.Material.WeakQueenCount = Glob.OwnQueenCount;
+        Ret.EvaluateEndgame.Material.WeakRookCount = Glob.OwnRookCount;
+        EvalEG.Material.WeakBishopCount = Glob.OwnBishopCount;
+        EvalEG.Material.WeakMajorMinorCount = Glob.OwnNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.WeakPawnCount = Glob.OwnPawnCount;
+    }
+    EvalEG.Material.StrongKnightCount = ((EvalEG.Material.StrongMajorMinorCount - EvalEG.Material.StrongRookCount) - EvalEG.Material.StrongBishopCount);
+    EvalEG.Material.StrongPieceCount = (EvalEG.Material.StrongQueenCount + EvalEG.Material.StrongMajorMinorCount);
+    EvalEG.Material.WeakKnightCount = ((EvalEG.Material.WeakMajorMinorCount - Ret.EvaluateEndgame.Material.WeakRookCount) - EvalEG.Material.WeakBishopCount);
+    EvalEG.Material.WeakPieceCount = (EvalEG.Material.WeakQueenCount + EvalEG.Material.WeakMajorMinorCount);
+    Ret.EvaluateEndgame.Material.StrongPiecesAreNone = 0;
+    If (EvalEG.Material.StrongPieceCount == 0)
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreNone = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreRook = 0;
+    If ((EvalEG.Material.StrongPieceCount == 1) And (EvalEG.Material.StrongRookCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreRook = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreQueen = 0;
+    If ((EvalEG.Material.StrongPieceCount == 1) And (EvalEG.Material.StrongQueenCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreQueen = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreBishop = 0;
+    If ((EvalEG.Material.StrongPieceCount == 1) And (EvalEG.Material.StrongBishopCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreBishop = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreTwoKnights = 0;
+    If ((EvalEG.Material.StrongPieceCount == 2) And (EvalEG.Material.StrongKnightCount == 2))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreTwoKnights = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreNone = 0;
+    If (EvalEG.Material.WeakPieceCount == 0)
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreNone = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreRook = 0;
+    If ((EvalEG.Material.WeakPieceCount == 1) And (Ret.EvaluateEndgame.Material.WeakRookCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreRook = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreBishop = 0;
+    If ((EvalEG.Material.WeakPieceCount == 1) And (EvalEG.Material.WeakBishopCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreBishop = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreKnight = 0;
+    If ((EvalEG.Material.WeakPieceCount == 1) And (EvalEG.Material.WeakKnightCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreKnight = 1;
+    }
+}
+
+Define EvaluateEndgame.PawnScan(string StrongSide)(string WeakKingIdx)(string WeakRookIdx) (warp=true)
+{
+    Ret.EvaluateEndgame.PawnScan.StrongPawnCount = 0;
+    Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount = 0;
+    Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount = 0;
+    Ret.EvaluateEndgame.PawnScan.PawnCount = 0;
+    Ret.EvaluateEndgame.PawnScan.PawnOnFileBCount = 0;
+    Ret.EvaluateEndgame.PawnScan.PawnOnFileGCount = 0;
+    Ret.EvaluateEndgame.PawnScan.StrongPawnInKingSpanCount = 0;
+    Ret.EvaluateEndgame.PawnScan.HasRookFortressPawn = 0;
+    Ret.EvaluateEndgame.PawnScan.WeakFrontPawnIdx = 0;
+    EvalEG.PawnScan.RelativeRankBase = -1;
+    EvalEG.PawnScan.RelativeRankSign = 1;
+    If (StrongSide < 0)
+    {
+        EvalEG.PawnScan.RelativeRankBase = 8;
+        EvalEG.PawnScan.RelativeRankSign = -1;
+    }
+    EvalEG.PawnScan.WeakKingRelativeRank = (EvalEG.PawnScan.RelativeRankBase + (EvalEG.PawnScan.RelativeRankSign * IdxToRank[WeakKingIdx]));
+    EvalEG.PawnScan.WeakFrontPawnRelativeRank = -1;
+    EvalEG.PawnScan.ListIdx = 1;
+    Repeat (List.Length(EvalPiecesIdx_Pawns))
+    {
+        EvalEG.PawnScan.SqIdx = EvalPiecesIdx_Pawns[EvalEG.PawnScan.ListIdx];
+        EvalEG.PawnScan.File = IdxToFile[EvalEG.PawnScan.SqIdx];
+        EvalEG.PawnScan.RelativeRank = (EvalEG.PawnScan.RelativeRankBase + (EvalEG.PawnScan.RelativeRankSign * IdxToRank[EvalEG.PawnScan.SqIdx]));
+        Ret.EvaluateEndgame.PawnScan.PawnCount += 1;
+        If (EvalEG.PawnScan.File == 2)
+        {
+            Ret.EvaluateEndgame.PawnScan.PawnOnFileBCount += 1;
+        }
+        If (EvalEG.PawnScan.File == 7)
+        {
+            Ret.EvaluateEndgame.PawnScan.PawnOnFileGCount += 1;
+        }
+        If ((Board[EvalEG.PawnScan.SqIdx] * StrongSide) > 0)
+        {
+            Ret.EvaluateEndgame.PawnScan.StrongPawnCount += 1;
+            If (EvalEG.PawnScan.File == 1)
+            {
+                Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount += 1;
+            }
+            If (EvalEG.PawnScan.File == 8)
+            {
+                Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount += 1;
+            }
+            EvalEG.PawnScan.KingFileDeltaAbs = abs((EvalEG.PawnScan.File - IdxToFile[WeakKingIdx]));
+            If ((EvalEG.PawnScan.KingFileDeltaAbs < 2) And (EvalEG.PawnScan.RelativeRank < EvalEG.PawnScan.WeakKingRelativeRank))
+            {
+                Ret.EvaluateEndgame.PawnScan.StrongPawnInKingSpanCount += 1;
+            }
+        }
+        Else
+        {
+            If (EvalEG.PawnScan.RelativeRank > EvalEG.PawnScan.WeakFrontPawnRelativeRank)
+            {
+                Ret.EvaluateEndgame.PawnScan.WeakFrontPawnIdx = EvalEG.PawnScan.SqIdx;
+                EvalEG.PawnScan.WeakFrontPawnRelativeRank = EvalEG.PawnScan.RelativeRank;
+            }
+            If (WeakRookIdx > 0)
+            {
+                EvalEG.PawnScan.IsNextToWeakKing = 0;
+                If (ChebyshevDistance[((EvalEG.PawnScan.SqIdx * 100) + WeakKingIdx)] == 1)
+                {
+                    EvalEG.PawnScan.IsNextToWeakKing = 1;
+                }
+                EvalEG.PawnScan.RookRelativeRank = (EvalEG.PawnScan.RelativeRankBase + (EvalEG.PawnScan.RelativeRankSign * IdxToRank[WeakRookIdx]));
+                EvalEG.PawnScan.RookFileDeltaAbs = abs((EvalEG.PawnScan.File - IdxToFile[WeakRookIdx]));
+                If (((EvalEG.PawnScan.IsNextToWeakKing == 1) And (EvalEG.PawnScan.RelativeRank == (EvalEG.PawnScan.RookRelativeRank + 1))) And (EvalEG.PawnScan.RookFileDeltaAbs == 1))
+                {
+                    Ret.EvaluateEndgame.PawnScan.HasRookFortressPawn = 1;
+                }
+            }
+        }
+        EvalEG.PawnScan.ListIdx += 1;
+    }
+}
+
+Define EvaluateEndgame.PushToEdge(string SqIdx) (warp=true)
+{
+    EvalEG.PushToEdge.FileEdgeDistance = (IdxToFile[SqIdx] - 1);
+    If (EvalEG.PushToEdge.FileEdgeDistance > 3)
+    {
+        EvalEG.PushToEdge.FileEdgeDistance = (7 - EvalEG.PushToEdge.FileEdgeDistance);
+    }
+    EvalEG.PushToEdge.RankEdgeDistance = (IdxToRank[SqIdx] - 1);
+    If (EvalEG.PushToEdge.RankEdgeDistance > 3)
+    {
+        EvalEG.PushToEdge.RankEdgeDistance = (7 - EvalEG.PushToEdge.RankEdgeDistance);
+    }
+    EvalEG.PushToEdge.FilePenalty = floor(((7 * (EvalEG.PushToEdge.FileEdgeDistance * EvalEG.PushToEdge.FileEdgeDistance)) / 2));
+    EvalEG.PushToEdge.RankPenalty = floor(((7 * (EvalEG.PushToEdge.RankEdgeDistance * EvalEG.PushToEdge.RankEdgeDistance)) / 2));
+    Ret.EvaluateEndgame.PushToEdge.Score = (90 - (EvalEG.PushToEdge.FilePenalty + EvalEG.PushToEdge.RankPenalty));
+}
+
+Define EvaluateEndgame.Scale(string Ply)(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.Scale.Factor = Const.Null;
+    Call EvaluateEndgame.Material((0 - StrongSide));
+    EvalEG.Scale.IsOtherSideExactEndgame = 0;
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.StrongPawnCount == 1))
+    {
+        If ((Ret.EvaluateEndgame.Material.WeakPawnCount == 0) And ((Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1) Or (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1)))
+        {
+            EvalEG.Scale.IsOtherSideExactEndgame = 1;
+        }
+    }
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreBishop == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount == 0))
+    {
+        If (((Ret.EvaluateEndgame.Material.StrongPawnCount == 1) And ((Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1) Or (Ret.EvaluateEndgame.Material.WeakPiecesAreKnight == 1))) Or ((Ret.EvaluateEndgame.Material.StrongPawnCount == 2) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1)))
+        {
+            EvalEG.Scale.IsOtherSideExactEndgame = 1;
+        }
+    }
+    If (((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.StrongPawnCount == 2)) And ((Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount == 1)))
+    {
+        EvalEG.Scale.IsOtherSideExactEndgame = 1;
+    }
+    If (EvalEG.Scale.IsOtherSideExactEndgame == 1)
+    {
+        Stop(this script);
+    }
+    Call EvaluateEndgame.Material(StrongSide);
+    EvalEG.Scale.StrongPawnCount = Ret.EvaluateEndgame.Material.StrongPawnCount;
+    EvalEG.Scale.WeakPawnCount = Ret.EvaluateEndgame.Material.WeakPawnCount;
+    If (Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1)
+    {
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1))
+        {
+            Call EvaluateEndgame.KRPKR(Ply)(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KRPKR.Factor;
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+        {
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 2) And (EvalEG.Scale.WeakPawnCount == 1)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1))
+        {
+            Call EvaluateEndgame.KRPPKRP(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KRPPKRP.Factor;
+            Stop(this script);
+        }
+    }
+    If (Ret.EvaluateEndgame.Material.StrongPiecesAreBishop == 1)
+    {
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+        {
+            Call EvaluateEndgame.KBPKB(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KBPKB.Factor;
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreKnight == 1))
+        {
+            Call EvaluateEndgame.KBPKN(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KBPKN.Factor;
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 2) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+        {
+            Stop(this script);
+        }
+        If (EvalEG.Scale.StrongPawnCount > 0)
+        {
+            Call EvaluateEndgame.KBPsK(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KBPsK.Factor;
+            Stop(this script);
+        }
+    }
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreQueen == 1) And (EvalEG.Scale.StrongPawnCount == 0))
+    {
+        If ((Ret.EvaluateEndgame.Material.WeakRookCount == 1) And (EvalEG.Scale.WeakPawnCount > 0))
+        {
+            Call EvaluateEndgame.KQKRPs(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KQKRPs.Factor;
+            Stop(this script);
+        }
+    }
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreNone == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreNone == 1))
+    {
+        If ((EvalEG.Scale.StrongPawnCount > 1) And (EvalEG.Scale.WeakPawnCount == 0))
+        {
+            Call EvaluateEndgame.KPsK(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KPsK.Factor;
+        }
+    }
+}
+
+Define EvaluateEndgame.StrongToMove(string Ply)(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.StrongToMove.IsStrongToMove = PlyIsOwn[(Ply + 1)];
+    If (StrongSide < 0)
+    {
+        Ret.EvaluateEndgame.StrongToMove.IsStrongToMove = (1 - Ret.EvaluateEndgame.StrongToMove.IsStrongToMove);
+    }
 }
 
 Define EvaluateMajorsMinors(string Ply) (warp=true)
