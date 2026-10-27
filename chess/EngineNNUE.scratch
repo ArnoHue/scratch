@@ -2,12 +2,12 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2613 (24.10.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2620 (24.10.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.IsNetworkDecoded = 0;
-    Glob.Level = 4;
-    GoK_Level = 4;
+    Glob.Level = 3;
+    GoK_Level = 3;
     GoK_ClockActive = 0;
     If is compiled?
     {
@@ -2646,7 +2646,16 @@ Define Evaluate(string Ply)(bool ForceFullEval) (warp=true)
                 Call Profile_CountByHorizon(Const.Profile.TTStaticProbe)(HorizonAtPly[Ply])(Ply);
             }
         }
-        If (Glob.IsClassicEndgameEval == 0)
+        Eval.Side = 0;
+        If (((Glob.BlackPawnCount + (Glob.BlackQueenCount + Glob.BlackNonQueenMajorMinorCount)) == 0) And (((Glob.WhiteQueenCount + Glob.WhiteRookCount) > 0) Or (Glob.WhiteNonQueenMajorMinorCount > 1)))
+        {
+            Eval.Side = 2;
+        }
+        If (((Glob.WhitePawnCount + (Glob.WhiteQueenCount + Glob.WhiteNonQueenMajorMinorCount)) == 0) And (((Glob.BlackQueenCount + Glob.BlackRookCount) > 0) Or (Glob.BlackNonQueenMajorMinorCount > 1)))
+        {
+            Eval.Side = 1;
+        }
+        If (Eval.Side == 0)
         {
             Call NNUE_UpdateAccStack(Ply);
             Call NNUE_Public_Evaluate((Ply + 1));
@@ -2660,30 +2669,39 @@ Define Evaluate(string Ply)(bool ForceFullEval) (warp=true)
             {
                 Ret.Evaluate.Score = Operator.Round((-4096 + ((Ret.Evaluate.Score + 4096) / 8)));
             }
-            Call EvaluatePostProcess(Ply)(Ret.Evaluate.Score);
-            Ret.Evaluate.Score = Ret.EvaluatePostProcess.Score;
+            Eval.Endgame.IsSpecialized = 0;
+            Eval.Endgame.PieceCount = ((Glob.BlackQueenCount + Glob.BlackNonQueenMajorMinorCount) + (Glob.WhiteQueenCount + Glob.WhiteNonQueenMajorMinorCount));
+            If (Eval.Endgame.PieceCount < 4)
+            {
+                Call EvaluateEndgame(Ply);
+                If (Not ((Ret.EvaluateEndgame.Score == Const.Null)))
+                {
+                    Ret.Evaluate.Score = (Operator.Round(((Ret.EvaluateEndgame.Score * (52 + ((Glob.WhiteNonQueenMajorMinorCount + Glob.BlackNonQueenMajorMinorCount) + ((Glob.WhiteRookCount + Glob.BlackRookCount) + (4 * (Glob.WhiteQueenCount + Glob.BlackQueenCount)))))) / 64)) + (Ret.EvaluateEndgame.KnownWin * 5000));
+                    Eval.Endgame.IsSpecialized = 1;
+                }
+                Else
+                {
+                    Eval.Endgame.StrongSide = ((Ret.Evaluate.Score > 0) - (Ret.Evaluate.Score < 0));
+                    If (Not ((Eval.Endgame.StrongSide == 0)))
+                    {
+                        Call EvaluateEndgame.Scale(Ply)(Eval.Endgame.StrongSide);
+                        If (Not ((Ret.EvaluateEndgame.Scale.Factor == Const.Null)))
+                        {
+                            Ret.Evaluate.Score = Operator.Round(((Ret.Evaluate.Score * Ret.EvaluateEndgame.Scale.Factor) / 64));
+                        }
+                    }
+                }
+            }
+            If (Eval.Endgame.IsSpecialized == 0)
+            {
+                Call EvaluatePostProcess(Ply)(Ret.Evaluate.Score);
+                Ret.Evaluate.Score = Ret.EvaluatePostProcess.Score;
+            }
         }
         Else
         {
             Call EvaluateBoardBasic;
             Ret.Evaluate.Score = Ret.EvaluateBoardBasic.Score;
-            Eval.Side = 0;
-            If ((((Glob.BlackQueenCount + Glob.BlackNonQueenMajorMinorCount) + Glob.BlackPawnCount) == 0) And ((Glob.WhiteQueenCount + Glob.WhiteNonQueenMajorMinorCount) > 0))
-            {
-                Eval.Side = 2;
-            }
-            If ((((Glob.WhiteQueenCount + Glob.WhiteNonQueenMajorMinorCount) + Glob.WhitePawnCount) == 0) And ((Glob.BlackQueenCount + Glob.BlackNonQueenMajorMinorCount) > 0))
-            {
-                Eval.Side = 1;
-            }
-            If ((((Glob.WhitePawnCount + Glob.BlackPawnCount) == 0) And ((Glob.WhiteQueenCount == 1) And (Glob.WhiteNonQueenMajorMinorCount == 0))) And ((Glob.BlackQueenCount == 0) And ((Glob.BlackRookCount == 1) And (Glob.BlackNonQueenMajorMinorCount == 1))))
-            {
-                Eval.Side = 2;
-            }
-            If ((((Glob.WhitePawnCount + Glob.BlackPawnCount) == 0) And ((Glob.BlackQueenCount == 1) And (Glob.BlackNonQueenMajorMinorCount == 0))) And ((Glob.WhiteQueenCount == 0) And ((Glob.WhiteRookCount == 1) And (Glob.WhiteNonQueenMajorMinorCount == 1))))
-            {
-                Eval.Side = 1;
-            }
             If (Not ((Eval.Side == 0)))
             {
                 If (Eval.Side == 2)
@@ -2708,11 +2726,11 @@ Define Evaluate(string Ply)(bool ForceFullEval) (warp=true)
                         {
                             If (((IdxToFile[Eval.KBNBishopIdx] + IdxToRank[Eval.KBNBishopIdx]) % 2) == 1)
                             {
-                                Eval.MateCornerBonus = (abs((IdxToRank[Glob.BlackKingIdx] - IdxToFile[Glob.BlackKingIdx])) * 20);
+                                Eval.MateCornerBonus = (abs((IdxToRank[Glob.BlackKingIdx] - IdxToFile[Glob.BlackKingIdx])) * 210);
                             }
                             Else
                             {
-                                Eval.MateCornerBonus = (abs(((IdxToRank[Glob.BlackKingIdx] + IdxToFile[Glob.BlackKingIdx]) - 9)) * 20);
+                                Eval.MateCornerBonus = (abs(((IdxToRank[Glob.BlackKingIdx] + IdxToFile[Glob.BlackKingIdx]) - 9)) * 210);
                             }
                         }
                     }
@@ -2741,16 +2759,76 @@ Define Evaluate(string Ply)(bool ForceFullEval) (warp=true)
                         {
                             If (((IdxToFile[Eval.KBNBishopIdx] + IdxToRank[Eval.KBNBishopIdx]) % 2) == 1)
                             {
-                                Eval.MateCornerBonus = (abs((IdxToRank[Glob.WhiteKingIdx] - IdxToFile[Glob.WhiteKingIdx])) * 20);
+                                Eval.MateCornerBonus = (abs((IdxToRank[Glob.WhiteKingIdx] - IdxToFile[Glob.WhiteKingIdx])) * 210);
                             }
                             Else
                             {
-                                Eval.MateCornerBonus = (abs(((IdxToRank[Glob.WhiteKingIdx] + IdxToFile[Glob.WhiteKingIdx]) - 9)) * 20);
+                                Eval.MateCornerBonus = (abs(((IdxToRank[Glob.WhiteKingIdx] + IdxToFile[Glob.WhiteKingIdx]) - 9)) * 210);
                             }
                         }
                     }
                     Eval.MateDriveBonus += Eval.MateCornerBonus;
                     Ret.Evaluate.Score += Eval.MateDriveBonus;
+                }
+            }
+            Ret.Evaluate.Score = Operator.Round(((Ret.Evaluate.Score * (52 + ((Glob.WhiteNonQueenMajorMinorCount + Glob.BlackNonQueenMajorMinorCount) + ((Glob.WhiteRookCount + Glob.BlackRookCount) + (4 * (Glob.WhiteQueenCount + Glob.BlackQueenCount)))))) / 64));
+            Eval.KnownWin = 0;
+            Eval.KW.Sign = ((Eval.Side == 1) - (Eval.Side == 2));
+            Eval.KW.Queens = 0;
+            Eval.KW.Rooks = 0;
+            Eval.KW.Pawns = 0;
+            If (Eval.Side == 1)
+            {
+                Eval.KW.Queens = Glob.BlackQueenCount;
+                Eval.KW.Rooks = Glob.BlackRookCount;
+                Eval.KW.Pawns = Glob.BlackPawnCount;
+            }
+            If (Eval.Side == 2)
+            {
+                Eval.KW.Queens = Glob.WhiteQueenCount;
+                Eval.KW.Rooks = Glob.WhiteRookCount;
+                Eval.KW.Pawns = Glob.WhitePawnCount;
+            }
+            Eval.KW.BishopsOdd = 0;
+            Eval.KW.BishopsEven = 0;
+            Eval.KW.Knights = 0;
+            Eval.KW.Idx = 1;
+            Repeat (64)
+            {
+                If ((Board[Eval.KW.Idx] * Eval.KW.Sign) == GoK_BlackBishop)
+                {
+                    If (((IdxToFile[Eval.KW.Idx] + IdxToRank[Eval.KW.Idx]) % 2) == 1)
+                    {
+                        Eval.KW.BishopsOdd += 1;
+                    }
+                    If (((IdxToFile[Eval.KW.Idx] + IdxToRank[Eval.KW.Idx]) % 2) == 0)
+                    {
+                        Eval.KW.BishopsEven += 1;
+                    }
+                }
+                If ((Board[Eval.KW.Idx] * Eval.KW.Sign) == GoK_BlackKnight)
+                {
+                    Eval.KW.Knights += 1;
+                }
+                Eval.KW.Idx += 1;
+            }
+            If (((Eval.KW.Queens + Eval.KW.Rooks) > 0) Or (((Eval.KW.BishopsOdd > 0) And (Eval.KW.BishopsEven > 0)) Or (((Eval.KW.BishopsOdd + Eval.KW.BishopsEven) > 0) And (Eval.KW.Knights > 0))))
+            {
+                Eval.KnownWin = 1;
+            }
+            If ((((Eval.KW.Knights == 2) And ((Eval.KW.BishopsOdd + Eval.KW.BishopsEven) == 0)) And ((Eval.KW.Queens + Eval.KW.Rooks) == 0)) And (Eval.KW.Pawns == 0))
+            {
+                Ret.Evaluate.Score = 0;
+            }
+            If (Eval.KnownWin == 1)
+            {
+                If (Eval.Side == 2)
+                {
+                    Ret.Evaluate.Score += -5000;
+                }
+                If (Eval.Side == 1)
+                {
+                    Ret.Evaluate.Score += 5000;
                 }
             }
             Call EvaluatePostProcess(Ply)(Ret.Evaluate.Score);
@@ -2777,6 +2855,1031 @@ Define EvaluateBoardBasic (warp=true)
             Ret.EvaluateBoardBasic.Score += Ret.GetPiecePosEval.Score;
         }
         Eval.BB.SqIdx += 1;
+    }
+}
+
+Define EvaluateEndgame(string Ply) (warp=true)
+{
+    Ret.EvaluateEndgame.KnownWin = 0;
+    Ret.EvaluateEndgame.Score = Const.Null;
+    EvalEG.StrongSide = 1;
+    Repeat (2)
+    {
+        If (Ret.EvaluateEndgame.Score == Const.Null)
+        {
+            Call EvaluateEndgame.Material(EvalEG.StrongSide);
+            EvalEG.StrongScore = Const.Null;
+            EvalEG.StrongKnownWin = 0;
+            If (Ret.EvaluateEndgame.Material.StrongPawnCount == 0)
+            {
+                If ((Ret.EvaluateEndgame.Material.WeakPiecesAreNone == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount == 1))
+                {
+                    If (Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1)
+                    {
+                        Call EvaluateEndgame.KRKP(Ply)(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KRKP.Score;
+                    }
+                    If (Ret.EvaluateEndgame.Material.StrongPiecesAreQueen == 1)
+                    {
+                        Call EvaluateEndgame.KQKP(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KQKP.Score;
+                    }
+                    If (Ret.EvaluateEndgame.Material.StrongPiecesAreTwoKnights == 1)
+                    {
+                        Call EvaluateEndgame.KNNKP(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KNNKP.Score;
+                    }
+                }
+                If (Ret.EvaluateEndgame.Material.WeakPawnCount == 0)
+                {
+                    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+                    {
+                        Call EvaluateEndgame.KRKB(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KRKB.Score;
+                    }
+                    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreKnight == 1))
+                    {
+                        Call EvaluateEndgame.KRKN(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KRKN.Score;
+                    }
+                    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreQueen == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1))
+                    {
+                        Call EvaluateEndgame.KQKR(EvalEG.StrongSide);
+                        EvalEG.StrongScore = Ret.EvaluateEndgame.KQKR.Score;
+                    }
+                }
+            }
+            If (((Ret.EvaluateEndgame.Material.StrongPawnCount == 1) And (Ret.EvaluateEndgame.Material.StrongPiecesAreNone == 1)) And ((Ret.EvaluateEndgame.Material.WeakPiecesAreNone == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount == 0)))
+            {
+                Call EvaluateEndgame.KPK(Ply)(EvalEG.StrongSide);
+                EvalEG.StrongScore = Ret.EvaluateEndgame.KPK.Score;
+                EvalEG.StrongKnownWin = Ret.EvaluateEndgame.KPK.IsWin;
+            }
+            If (Not ((EvalEG.StrongScore == Const.Null)))
+            {
+                Ret.EvaluateEndgame.Score = (EvalEG.StrongSide * Operator.Round((EvalEG.StrongScore * 0.35)));
+                Ret.EvaluateEndgame.KnownWin = (EvalEG.StrongSide * EvalEG.StrongKnownWin);
+            }
+        }
+        EvalEG.StrongSide = (0 - EvalEG.StrongSide);
+    }
+}
+
+Define EvaluateEndgame.BishopSees(string FromIdx)(string BishopIdx) (warp=true)
+{
+    Ret.EvaluateEndgame.BishopSees.IsSeen = 0;
+    EvalEG.BishopSees.FileDelta = (IdxToFile[BishopIdx] - IdxToFile[FromIdx]);
+    EvalEG.BishopSees.RankDelta = (IdxToRank[BishopIdx] - IdxToRank[FromIdx]);
+    If ((abs(EvalEG.BishopSees.FileDelta) == abs(EvalEG.BishopSees.RankDelta)) And (Not ((EvalEG.BishopSees.FileDelta == 0))))
+    {
+        EvalEG.BishopSees.Step = ((((EvalEG.BishopSees.RankDelta > 0) - (EvalEG.BishopSees.RankDelta < 0)) * 8) + ((EvalEG.BishopSees.FileDelta > 0) - (EvalEG.BishopSees.FileDelta < 0)));
+        EvalEG.BishopSees.SqIdx = (FromIdx + EvalEG.BishopSees.Step);
+        Ret.EvaluateEndgame.BishopSees.IsSeen = 1;
+        Repeat ((abs(EvalEG.BishopSees.FileDelta) - 1))
+        {
+            If (Not ((Board[EvalEG.BishopSees.SqIdx] == 0)))
+            {
+                Ret.EvaluateEndgame.BishopSees.IsSeen = 0;
+            }
+            EvalEG.BishopSees.SqIdx += EvalEG.BishopSees.Step;
+        }
+    }
+}
+
+Define EvaluateEndgame.KBPKB(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KBPKB.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.KingBlocksBishopPawn(StrongSide);
+    If (Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked == 1)
+    {
+        Ret.EvaluateEndgame.KBPKB.Factor = 0;
+        Stop(this script);
+    }
+    EvalEG.KBPKB.StrongBishopIdx = Ret.EvaluateEndgame.Locate.StrongBishopIdx;
+    EvalEG.KBPKB.WeakBishopIdx = Ret.EvaluateEndgame.Locate.WeakBishopIdx;
+    EvalEG.KBPKB.StrongBishopColour = ((IdxToFile[EvalEG.KBPKB.StrongBishopIdx] + IdxToRank[EvalEG.KBPKB.StrongBishopIdx]) % 2);
+    EvalEG.KBPKB.WeakBishopColour = ((IdxToFile[EvalEG.KBPKB.WeakBishopIdx] + IdxToRank[EvalEG.KBPKB.WeakBishopIdx]) % 2);
+    If (Not ((EvalEG.KBPKB.StrongBishopColour == EvalEG.KBPKB.WeakBishopColour)))
+    {
+        Ret.EvaluateEndgame.KBPKB.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KBPKN(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KBPKN.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.KingBlocksBishopPawn(StrongSide);
+    If (Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked == 1)
+    {
+        Ret.EvaluateEndgame.KBPKN.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KBPPKB(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KBPPKB.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KBPPKB.StrongBishopIdx = Ret.EvaluateEndgame.Locate.StrongBishopIdx;
+    EvalEG.KBPPKB.WeakBishopIdx = Ret.EvaluateEndgame.Locate.WeakBishopIdx;
+    EvalEG.KBPPKB.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KBPPKB.PawnIdx1 = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    EvalEG.KBPPKB.PawnIdx2 = Ret.EvaluateEndgame.Locate.SecondStrongPawnIdx;
+    EvalEG.KBPPKB.Push = Ret.EvaluateEndgame.Locate.PawnPushIdxDelta;
+    If (((IdxToFile[EvalEG.KBPPKB.StrongBishopIdx] + IdxToRank[EvalEG.KBPPKB.StrongBishopIdx]) % 2) == ((IdxToFile[EvalEG.KBPPKB.WeakBishopIdx] + IdxToRank[EvalEG.KBPPKB.WeakBishopIdx]) % 2))
+    {
+        Stop(this script);
+    }
+    EvalEG.KBPPKB.Rank1 = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KBPPKB.PawnIdx1]));
+    EvalEG.KBPPKB.Rank2 = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KBPPKB.PawnIdx2]));
+    If (EvalEG.KBPPKB.Rank1 > EvalEG.KBPPKB.Rank2)
+    {
+        EvalEG.KBPPKB.Block1 = (EvalEG.KBPPKB.PawnIdx1 + EvalEG.KBPPKB.Push);
+        EvalEG.KBPPKB.Block2 = (((IdxToRank[EvalEG.KBPPKB.PawnIdx1] - 1) * 8) + IdxToFile[EvalEG.KBPPKB.PawnIdx2]);
+    }
+    Else
+    {
+        EvalEG.KBPPKB.Block1 = (EvalEG.KBPPKB.PawnIdx2 + EvalEG.KBPPKB.Push);
+        EvalEG.KBPPKB.Block2 = (((IdxToRank[EvalEG.KBPPKB.PawnIdx2] - 1) * 8) + IdxToFile[EvalEG.KBPPKB.PawnIdx1]);
+    }
+    EvalEG.KBPPKB.FileDist = abs((IdxToFile[EvalEG.KBPPKB.PawnIdx1] - IdxToFile[EvalEG.KBPPKB.PawnIdx2]));
+    If (EvalEG.KBPPKB.FileDist == 0)
+    {
+        If ((IdxToFile[EvalEG.KBPPKB.WeakKingIdx] == IdxToFile[EvalEG.KBPPKB.Block1]) And ((Not (((Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KBPPKB.WeakKingIdx])) < (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KBPPKB.Block1]))))) And (Not ((((IdxToFile[EvalEG.KBPPKB.WeakKingIdx] + IdxToRank[EvalEG.KBPPKB.WeakKingIdx]) % 2) == ((IdxToFile[EvalEG.KBPPKB.StrongBishopIdx] + IdxToRank[EvalEG.KBPPKB.StrongBishopIdx]) % 2))))))
+        {
+            Ret.EvaluateEndgame.KBPPKB.Factor = 0;
+        }
+    }
+    If (EvalEG.KBPPKB.FileDist == 1)
+    {
+        Call EvaluateEndgame.BishopSees(EvalEG.KBPPKB.Block1)(EvalEG.KBPPKB.WeakBishopIdx);
+        EvalEG.KBPPKB.Sees1 = Ret.EvaluateEndgame.BishopSees.IsSeen;
+        Call EvaluateEndgame.BishopSees(EvalEG.KBPPKB.Block2)(EvalEG.KBPPKB.WeakBishopIdx);
+        EvalEG.KBPPKB.Sees2 = Ret.EvaluateEndgame.BishopSees.IsSeen;
+        If (((EvalEG.KBPPKB.WeakKingIdx == EvalEG.KBPPKB.Block1) And (Not ((((IdxToFile[EvalEG.KBPPKB.WeakKingIdx] + IdxToRank[EvalEG.KBPPKB.WeakKingIdx]) % 2) == ((IdxToFile[EvalEG.KBPPKB.StrongBishopIdx] + IdxToRank[EvalEG.KBPPKB.StrongBishopIdx]) % 2))))) And (((EvalEG.KBPPKB.WeakBishopIdx == EvalEG.KBPPKB.Block2) Or (EvalEG.KBPPKB.Sees2 == 1)) Or (abs((IdxToRank[EvalEG.KBPPKB.PawnIdx1] - IdxToRank[EvalEG.KBPPKB.PawnIdx2])) > 1)))
+        {
+            Ret.EvaluateEndgame.KBPPKB.Factor = 0;
+        }
+        Else
+        {
+            If (((EvalEG.KBPPKB.WeakKingIdx == EvalEG.KBPPKB.Block2) And (Not ((((IdxToFile[EvalEG.KBPPKB.WeakKingIdx] + IdxToRank[EvalEG.KBPPKB.WeakKingIdx]) % 2) == ((IdxToFile[EvalEG.KBPPKB.StrongBishopIdx] + IdxToRank[EvalEG.KBPPKB.StrongBishopIdx]) % 2))))) And ((EvalEG.KBPPKB.WeakBishopIdx == EvalEG.KBPPKB.Block1) Or (EvalEG.KBPPKB.Sees1 == 1)))
+            {
+                Ret.EvaluateEndgame.KBPPKB.Factor = 0;
+            }
+        }
+    }
+}
+
+Define EvaluateEndgame.KBPsK(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KBPsK.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KBPsK.StrongKingIdx = Ret.EvaluateEndgame.Locate.StrongKingIdx;
+    EvalEG.KBPsK.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KBPsK.StrongBishopIdx = Ret.EvaluateEndgame.Locate.StrongBishopIdx;
+    EvalEG.KBPsK.RelativeRankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KBPsK.RelativeRankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KBPsK.PawnPushIdxDelta = Ret.EvaluateEndgame.Locate.PawnPushIdxDelta;
+    EvalEG.KBPsK.BishopColour = ((IdxToFile[EvalEG.KBPsK.StrongBishopIdx] + IdxToRank[EvalEG.KBPsK.StrongBishopIdx]) % 2);
+    Call EvaluateEndgame.PawnScan(StrongSide)(EvalEG.KBPsK.WeakKingIdx)(0);
+    EvalEG.KBPsK.StrongPawnCount = Ret.EvaluateEndgame.PawnScan.StrongPawnCount;
+    If ((Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount == EvalEG.KBPsK.StrongPawnCount) Or (Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount == EvalEG.KBPsK.StrongPawnCount))
+    {
+        EvalEG.KBPsK.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+        EvalEG.KBPsK.PawnRelativeRank = (EvalEG.KBPsK.RelativeRankBase + (EvalEG.KBPsK.RelativeRankSign * IdxToRank[EvalEG.KBPsK.PawnIdx]));
+        EvalEG.KBPsK.QueeningSqIdx = (EvalEG.KBPsK.PawnIdx + (EvalEG.KBPsK.PawnPushIdxDelta * (7 - EvalEG.KBPsK.PawnRelativeRank)));
+        EvalEG.KBPsK.QueeningSqColour = ((IdxToFile[EvalEG.KBPsK.QueeningSqIdx] + IdxToRank[EvalEG.KBPsK.QueeningSqIdx]) % 2);
+        EvalEG.KBPsK.WeakKingQueeningDistance = ChebyshevDistance[((EvalEG.KBPsK.QueeningSqIdx * 100) + EvalEG.KBPsK.WeakKingIdx)];
+        If ((Not ((EvalEG.KBPsK.QueeningSqColour == EvalEG.KBPsK.BishopColour))) And (EvalEG.KBPsK.WeakKingQueeningDistance < 2))
+        {
+            Ret.EvaluateEndgame.KBPsK.Factor = 0;
+            Stop(this script);
+        }
+    }
+    Call EvaluateEndgame.Material(StrongSide);
+    EvalEG.KBPsK.HasWeakOnlyPawns = 0;
+    If ((Ret.EvaluateEndgame.Material.WeakPiecesAreNone == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount > 0))
+    {
+        EvalEG.KBPsK.HasWeakOnlyPawns = 1;
+    }
+    EvalEG.KBPsK.PawnCount = Ret.EvaluateEndgame.PawnScan.PawnCount;
+    EvalEG.KBPsK.IsAllPawnsOnBOrGFile = 0;
+    If ((Ret.EvaluateEndgame.PawnScan.PawnOnFileBCount == EvalEG.KBPsK.PawnCount) Or (Ret.EvaluateEndgame.PawnScan.PawnOnFileGCount == EvalEG.KBPsK.PawnCount))
+    {
+        EvalEG.KBPsK.IsAllPawnsOnBOrGFile = 1;
+    }
+    If ((EvalEG.KBPsK.IsAllPawnsOnBOrGFile == 1) And (EvalEG.KBPsK.HasWeakOnlyPawns == 1))
+    {
+        EvalEG.KBPsK.WeakPawnIdx = Ret.EvaluateEndgame.PawnScan.WeakFrontPawnIdx;
+        EvalEG.KBPsK.WeakPawnRelativeRank = (EvalEG.KBPsK.RelativeRankBase + (EvalEG.KBPsK.RelativeRankSign * IdxToRank[EvalEG.KBPsK.WeakPawnIdx]));
+        EvalEG.KBPsK.IsWeakPawnBlocked = 0;
+        If ((Board[(EvalEG.KBPsK.WeakPawnIdx - EvalEG.KBPsK.PawnPushIdxDelta)] * StrongSide) == GoK_BlackPawn)
+        {
+            EvalEG.KBPsK.IsWeakPawnBlocked = 1;
+        }
+        EvalEG.KBPsK.WeakPawnColour = ((IdxToFile[EvalEG.KBPsK.WeakPawnIdx] + IdxToRank[EvalEG.KBPsK.WeakPawnIdx]) % 2);
+        EvalEG.KBPsK.IsBishopUseless = 0;
+        If ((Not ((EvalEG.KBPsK.WeakPawnColour == EvalEG.KBPsK.BishopColour))) Or (EvalEG.KBPsK.StrongPawnCount == 1))
+        {
+            EvalEG.KBPsK.IsBishopUseless = 1;
+        }
+        If (((EvalEG.KBPsK.WeakPawnRelativeRank == 6) And (EvalEG.KBPsK.IsWeakPawnBlocked == 1)) And (EvalEG.KBPsK.IsBishopUseless == 1))
+        {
+            EvalEG.KBPsK.StrongKingDistance = ChebyshevDistance[((EvalEG.KBPsK.WeakPawnIdx * 100) + EvalEG.KBPsK.StrongKingIdx)];
+            EvalEG.KBPsK.WeakKingDistance = ChebyshevDistance[((EvalEG.KBPsK.WeakPawnIdx * 100) + EvalEG.KBPsK.WeakKingIdx)];
+            EvalEG.KBPsK.WeakKingRelativeRank = (EvalEG.KBPsK.RelativeRankBase + (EvalEG.KBPsK.RelativeRankSign * IdxToRank[EvalEG.KBPsK.WeakKingIdx]));
+            If ((EvalEG.KBPsK.WeakKingRelativeRank > 5) And ((EvalEG.KBPsK.WeakKingDistance < 3) And (Not ((EvalEG.KBPsK.WeakKingDistance > EvalEG.KBPsK.StrongKingDistance)))))
+            {
+                Ret.EvaluateEndgame.KBPsK.Factor = 0;
+            }
+        }
+    }
+}
+
+Define EvaluateEndgame.KingBlocksBishopPawn(string StrongSide) (warp=true)
+{
+    EvalEG.KingBlocksBishopPawn.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KingBlocksBishopPawn.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    EvalEG.KingBlocksBishopPawn.BishopIdx = Ret.EvaluateEndgame.Locate.StrongBishopIdx;
+    EvalEG.KingBlocksBishopPawn.WeakKingRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KingBlocksBishopPawn.WeakKingIdx]));
+    EvalEG.KingBlocksBishopPawn.PawnRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KingBlocksBishopPawn.PawnIdx]));
+    EvalEG.KingBlocksBishopPawn.KingColour = ((IdxToFile[EvalEG.KingBlocksBishopPawn.WeakKingIdx] + IdxToRank[EvalEG.KingBlocksBishopPawn.WeakKingIdx]) % 2);
+    EvalEG.KingBlocksBishopPawn.BishopColour = ((IdxToFile[EvalEG.KingBlocksBishopPawn.BishopIdx] + IdxToRank[EvalEG.KingBlocksBishopPawn.BishopIdx]) % 2);
+    Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked = 0;
+    If ((IdxToFile[EvalEG.KingBlocksBishopPawn.WeakKingIdx] == IdxToFile[EvalEG.KingBlocksBishopPawn.PawnIdx]) And (EvalEG.KingBlocksBishopPawn.WeakKingRank > EvalEG.KingBlocksBishopPawn.PawnRank))
+    {
+        If ((Not ((EvalEG.KingBlocksBishopPawn.KingColour == EvalEG.KingBlocksBishopPawn.BishopColour))) Or (EvalEG.KingBlocksBishopPawn.WeakKingRank < 6))
+        {
+            Ret.EvaluateEndgame.KingBlocksBishopPawn.IsBlocked = 1;
+        }
+    }
+}
+
+Define EvaluateEndgame.KNNKP(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    EvalEG.KNNKP.PawnRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[Ret.EvaluateEndgame.Locate.WeakPawnIdx]));
+    EvalEG.KNNKP.PawnWeakRelativeRank = (7 - EvalEG.KNNKP.PawnRelativeRank);
+    Ret.EvaluateEndgame.KNNKP.Score = ((208 + (2 * Ret.EvaluateEndgame.PushToEdge.Score)) - (10 * EvalEG.KNNKP.PawnWeakRelativeRank));
+}
+
+Define EvaluateEndgame.KPK(string Ply)(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.StrongToMove(Ply)(StrongSide);
+    EvalEG.KPK.PawnFile = (IdxToFile[Ret.EvaluateEndgame.Locate.StrongPawnIdx] - 1);
+    EvalEG.KPK.FlipFile = 0;
+    If (EvalEG.KPK.PawnFile > 3)
+    {
+        EvalEG.KPK.FlipFile = 1;
+        EvalEG.KPK.PawnFile = (7 - EvalEG.KPK.PawnFile);
+    }
+    EvalEG.KPK.PawnRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[Ret.EvaluateEndgame.Locate.StrongPawnIdx]));
+    EvalEG.KPK.StrongKingFile = (IdxToFile[Ret.EvaluateEndgame.Locate.StrongKingIdx] - 1);
+    If (EvalEG.KPK.FlipFile == 1)
+    {
+        EvalEG.KPK.StrongKingFile = (7 - EvalEG.KPK.StrongKingFile);
+    }
+    EvalEG.KPK.StrongKingRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[Ret.EvaluateEndgame.Locate.StrongKingIdx]));
+    EvalEG.KPK.WeakKingFile = (IdxToFile[Ret.EvaluateEndgame.Locate.WeakKingIdx] - 1);
+    If (EvalEG.KPK.FlipFile == 1)
+    {
+        EvalEG.KPK.WeakKingFile = (7 - EvalEG.KPK.WeakKingFile);
+    }
+    EvalEG.KPK.WeakKingRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[Ret.EvaluateEndgame.Locate.WeakKingIdx]));
+    EvalEG.KPK.Index = ((((EvalEG.KPK.StrongKingRank * 8) + EvalEG.KPK.StrongKingFile) + (64 * ((EvalEG.KPK.WeakKingRank * 8) + EvalEG.KPK.WeakKingFile))) + ((4096 * (1 - Ret.EvaluateEndgame.StrongToMove.IsStrongToMove)) + ((8192 * EvalEG.KPK.PawnFile) + (32768 * (6 - EvalEG.KPK.PawnRank)))));
+    Ret.EvaluateEndgame.KPK.IsWin = (floor((KPKBitbase[(floor((EvalEG.KPK.Index / 32)) + 1)] / KPKPow2[((EvalEG.KPK.Index % 32) + 1)])) % 2);
+    Ret.EvaluateEndgame.KPK.Score = 0;
+    If (Ret.EvaluateEndgame.KPK.IsWin == 1)
+    {
+        Ret.EvaluateEndgame.KPK.Score = (208 + EvalEG.KPK.PawnRank);
+    }
+}
+
+Define EvaluateEndgame.KPsK(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KPsK.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PawnScan(StrongSide)(Ret.EvaluateEndgame.Locate.WeakKingIdx)(0);
+    EvalEG.KPsK.StrongPawnCount = Ret.EvaluateEndgame.PawnScan.StrongPawnCount;
+    EvalEG.KPsK.RookPawnCount = (Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount + Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount);
+    If ((EvalEG.KPsK.RookPawnCount == EvalEG.KPsK.StrongPawnCount) And (Ret.EvaluateEndgame.PawnScan.StrongPawnInKingSpanCount == EvalEG.KPsK.StrongPawnCount))
+    {
+        Ret.EvaluateEndgame.KPsK.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KQKP(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KQKP.KingDistance = ChebyshevDistance[((Ret.EvaluateEndgame.Locate.StrongKingIdx * 100) + Ret.EvaluateEndgame.Locate.WeakKingIdx)];
+    Ret.EvaluateEndgame.KQKP.Score = (140 - (20 * EvalEG.KQKP.KingDistance));
+    EvalEG.KQKP.WeakPawnIdx = Ret.EvaluateEndgame.Locate.WeakPawnIdx;
+    EvalEG.KQKP.PawnFile = IdxToFile[EvalEG.KQKP.WeakPawnIdx];
+    EvalEG.KQKP.PawnRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KQKP.WeakPawnIdx]));
+    EvalEG.KQKP.IsDrawishPawn = 0;
+    If ((EvalEG.KQKP.PawnRelativeRank == 1) And (ChebyshevDistance[((Ret.EvaluateEndgame.Locate.WeakKingIdx * 100) + EvalEG.KQKP.WeakPawnIdx)] == 1))
+    {
+        If (((EvalEG.KQKP.PawnFile == 1) Or (EvalEG.KQKP.PawnFile == 3)) Or ((EvalEG.KQKP.PawnFile == 6) Or (EvalEG.KQKP.PawnFile == 8)))
+        {
+            EvalEG.KQKP.IsDrawishPawn = 1;
+        }
+    }
+    If (EvalEG.KQKP.IsDrawishPawn == 0)
+    {
+        Ret.EvaluateEndgame.KQKP.Score += 2474;
+    }
+}
+
+Define EvaluateEndgame.KQKR(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    EvalEG.KQKR.KingDistance = ChebyshevDistance[((Ret.EvaluateEndgame.Locate.StrongKingIdx * 100) + Ret.EvaluateEndgame.Locate.WeakKingIdx)];
+    Ret.EvaluateEndgame.KQKR.Score = ((1302 + Ret.EvaluateEndgame.PushToEdge.Score) + (140 - (20 * EvalEG.KQKR.KingDistance)));
+}
+
+Define EvaluateEndgame.KQKRPs(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KQKRPs.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KQKRPs.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KQKRPs.WeakRookIdx = Ret.EvaluateEndgame.Locate.WeakRookIdx;
+    EvalEG.KQKRPs.WeakKingRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KQKRPs.WeakKingIdx]));
+    EvalEG.KQKRPs.StrongKingRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[Ret.EvaluateEndgame.Locate.StrongKingIdx]));
+    EvalEG.KQKRPs.WeakRookRelativeRank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KQKRPs.WeakRookIdx]));
+    Call EvaluateEndgame.PawnScan(StrongSide)(EvalEG.KQKRPs.WeakKingIdx)(EvalEG.KQKRPs.WeakRookIdx);
+    If (((EvalEG.KQKRPs.WeakKingRelativeRank > 5) And (Not ((EvalEG.KQKRPs.StrongKingRelativeRank > 4)))) And ((EvalEG.KQKRPs.WeakRookRelativeRank == 5) And (Ret.EvaluateEndgame.PawnScan.HasRookFortressPawn == 1)))
+    {
+        Ret.EvaluateEndgame.KQKRPs.Factor = 0;
+    }
+}
+
+Define EvaluateEndgame.KRKB(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    Ret.EvaluateEndgame.KRKB.Score = Ret.EvaluateEndgame.PushToEdge.Score;
+}
+
+Define EvaluateEndgame.KRKN(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.PushToEdge(Ret.EvaluateEndgame.Locate.WeakKingIdx);
+    EvalEG.KRKN.KingKnightDistance = ChebyshevDistance[((Ret.EvaluateEndgame.Locate.WeakKingIdx * 100) + Ret.EvaluateEndgame.Locate.WeakKnightIdx)];
+    Ret.EvaluateEndgame.KRKN.Score = ((Ret.EvaluateEndgame.PushToEdge.Score + (20 * EvalEG.KRKN.KingKnightDistance)) - 20);
+}
+
+Define EvaluateEndgame.KRKP(string Ply)(string StrongSide) (warp=true)
+{
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.StrongToMove(Ply)(StrongSide);
+    EvalEG.KRKP.IsStrongToMove = Ret.EvaluateEndgame.StrongToMove.IsStrongToMove;
+    EvalEG.KRKP.StrongKingIdx = Ret.EvaluateEndgame.Locate.StrongKingIdx;
+    EvalEG.KRKP.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KRKP.StrongRookIdx = Ret.EvaluateEndgame.Locate.StrongRookIdx;
+    EvalEG.KRKP.WeakPawnIdx = Ret.EvaluateEndgame.Locate.WeakPawnIdx;
+    EvalEG.KRKP.RelativeRankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KRKP.RelativeRankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KRKP.StrongKingRelativeRank = (EvalEG.KRKP.RelativeRankBase + (EvalEG.KRKP.RelativeRankSign * IdxToRank[EvalEG.KRKP.StrongKingIdx]));
+    EvalEG.KRKP.WeakKingRelativeRank = (EvalEG.KRKP.RelativeRankBase + (EvalEG.KRKP.RelativeRankSign * IdxToRank[EvalEG.KRKP.WeakKingIdx]));
+    EvalEG.KRKP.WeakPawnRelativeRank = (EvalEG.KRKP.RelativeRankBase + (EvalEG.KRKP.RelativeRankSign * IdxToRank[EvalEG.KRKP.WeakPawnIdx]));
+    EvalEG.KRKP.StrongKingPawnDistance = ChebyshevDistance[((EvalEG.KRKP.StrongKingIdx * 100) + EvalEG.KRKP.WeakPawnIdx)];
+    EvalEG.KRKP.WeakKingPawnDistance = ChebyshevDistance[((EvalEG.KRKP.WeakKingIdx * 100) + EvalEG.KRKP.WeakPawnIdx)];
+    EvalEG.KRKP.WeakKingRookDistance = ChebyshevDistance[((EvalEG.KRKP.WeakKingIdx * 100) + EvalEG.KRKP.StrongRookIdx)];
+    EvalEG.KRKP.IsStrongKingInFrontOfPawn = 0;
+    If ((IdxToFile[EvalEG.KRKP.WeakPawnIdx] == IdxToFile[EvalEG.KRKP.StrongKingIdx]) And (EvalEG.KRKP.WeakPawnRelativeRank > EvalEG.KRKP.StrongKingRelativeRank))
+    {
+        EvalEG.KRKP.IsStrongKingInFrontOfPawn = 1;
+    }
+    EvalEG.KRKP.IsWeakKingTooFar = 0;
+    If ((Not (((EvalEG.KRKP.WeakKingPawnDistance + EvalEG.KRKP.IsStrongToMove) < 4))) And (Not ((EvalEG.KRKP.WeakKingRookDistance < 3))))
+    {
+        EvalEG.KRKP.IsWeakKingTooFar = 1;
+    }
+    EvalEG.KRKP.IsPawnSupportedFarAdvanced = 0;
+    If ((EvalEG.KRKP.WeakKingRelativeRank < 3) And (EvalEG.KRKP.WeakKingPawnDistance == 1))
+    {
+        If ((EvalEG.KRKP.StrongKingRelativeRank > 2) And ((EvalEG.KRKP.StrongKingPawnDistance - EvalEG.KRKP.IsStrongToMove) > 2))
+        {
+            EvalEG.KRKP.IsPawnSupportedFarAdvanced = 1;
+        }
+    }
+    If ((EvalEG.KRKP.IsStrongKingInFrontOfPawn == 1) Or (EvalEG.KRKP.IsWeakKingTooFar == 1))
+    {
+        Ret.EvaluateEndgame.KRKP.Score = (1380 - EvalEG.KRKP.StrongKingPawnDistance);
+    }
+    Else
+    {
+        If (EvalEG.KRKP.IsPawnSupportedFarAdvanced == 1)
+        {
+            Ret.EvaluateEndgame.KRKP.Score = (80 - (8 * EvalEG.KRKP.StrongKingPawnDistance));
+        }
+        Else
+        {
+            EvalEG.KRKP.PushSqIdx = (EvalEG.KRKP.WeakPawnIdx - Ret.EvaluateEndgame.Locate.PawnPushIdxDelta);
+            EvalEG.KRKP.QueeningSqIdx = (EvalEG.KRKP.WeakPawnIdx - (Ret.EvaluateEndgame.Locate.PawnPushIdxDelta * EvalEG.KRKP.WeakPawnRelativeRank));
+            EvalEG.KRKP.StrongKingPushDistance = ChebyshevDistance[((EvalEG.KRKP.StrongKingIdx * 100) + EvalEG.KRKP.PushSqIdx)];
+            EvalEG.KRKP.WeakKingPushDistance = ChebyshevDistance[((EvalEG.KRKP.WeakKingIdx * 100) + EvalEG.KRKP.PushSqIdx)];
+            EvalEG.KRKP.PawnQueeningDistance = ChebyshevDistance[((EvalEG.KRKP.WeakPawnIdx * 100) + EvalEG.KRKP.QueeningSqIdx)];
+            Ret.EvaluateEndgame.KRKP.Score = (200 - (8 * ((EvalEG.KRKP.StrongKingPushDistance - EvalEG.KRKP.WeakKingPushDistance) - EvalEG.KRKP.PawnQueeningDistance)));
+        }
+    }
+}
+
+Define EvaluateEndgame.KRPKB(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KRPKB.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KRPKB.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    If ((IdxToFile[EvalEG.KRPKB.PawnIdx] == 1) Or (IdxToFile[EvalEG.KRPKB.PawnIdx] == 8))
+    {
+        EvalEG.KRPKB.Push = Ret.EvaluateEndgame.Locate.PawnPushIdxDelta;
+        EvalEG.KRPKB.Rank = (Ret.EvaluateEndgame.Locate.RelativeRankBase + (Ret.EvaluateEndgame.Locate.RelativeRankSign * IdxToRank[EvalEG.KRPKB.PawnIdx]));
+        EvalEG.KRPKB.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+        EvalEG.KRPKB.WeakBishopIdx = Ret.EvaluateEndgame.Locate.WeakBishopIdx;
+        EvalEG.KRPKB.StrongKingIdx = Ret.EvaluateEndgame.Locate.StrongKingIdx;
+        If ((EvalEG.KRPKB.Rank == 4) And (((IdxToFile[EvalEG.KRPKB.WeakBishopIdx] + IdxToRank[EvalEG.KRPKB.WeakBishopIdx]) % 2) == ((IdxToFile[EvalEG.KRPKB.PawnIdx] + IdxToRank[EvalEG.KRPKB.PawnIdx]) % 2)))
+        {
+            EvalEG.KRPKB.Dist = ChebyshevDistance[(((EvalEG.KRPKB.PawnIdx + (3 * EvalEG.KRPKB.Push)) * 100) + EvalEG.KRPKB.WeakKingIdx)];
+            If ((EvalEG.KRPKB.Dist < 3) And (Not (((EvalEG.KRPKB.Dist == 0) And (EvalEG.KRPKB.WeakKingIdx == (EvalEG.KRPKB.StrongKingIdx + (2 * EvalEG.KRPKB.Push)))))))
+            {
+                Ret.EvaluateEndgame.KRPKB.Factor = 24;
+            }
+            Else
+            {
+                Ret.EvaluateEndgame.KRPKB.Factor = 48;
+            }
+            Stop(this script);
+        }
+        If (((EvalEG.KRPKB.Rank == 5) And (ChebyshevDistance[(((EvalEG.KRPKB.PawnIdx + (2 * EvalEG.KRPKB.Push)) * 100) + EvalEG.KRPKB.WeakKingIdx)] < 2)) And ((abs((IdxToFile[EvalEG.KRPKB.WeakBishopIdx] - IdxToFile[(EvalEG.KRPKB.PawnIdx + EvalEG.KRPKB.Push)])) == abs((IdxToRank[EvalEG.KRPKB.WeakBishopIdx] - IdxToRank[(EvalEG.KRPKB.PawnIdx + EvalEG.KRPKB.Push)]))) And (abs((IdxToFile[EvalEG.KRPKB.WeakBishopIdx] - IdxToFile[EvalEG.KRPKB.PawnIdx])) > 1)))
+        {
+            Ret.EvaluateEndgame.KRPKB.Factor = 8;
+        }
+    }
+}
+
+Define EvaluateEndgame.KRPKR(string Ply)(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KRPKR.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    Call EvaluateEndgame.StrongToMove(Ply)(StrongSide);
+    EvalEG.KRPKR.IsStrongToMove = Ret.EvaluateEndgame.StrongToMove.IsStrongToMove;
+    EvalEG.KRPKR.StrongKingIdx = Ret.EvaluateEndgame.Locate.StrongKingIdx;
+    EvalEG.KRPKR.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KRPKR.StrongRookIdx = Ret.EvaluateEndgame.Locate.StrongRookIdx;
+    EvalEG.KRPKR.WeakRookIdx = Ret.EvaluateEndgame.Locate.WeakRookIdx;
+    EvalEG.KRPKR.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    EvalEG.KRPKR.RankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KRPKR.RankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KRPKR.FileBase = -1;
+    EvalEG.KRPKR.FileSign = 1;
+    If (IdxToFile[EvalEG.KRPKR.PawnIdx] > 4)
+    {
+        EvalEG.KRPKR.FileBase = 8;
+        EvalEG.KRPKR.FileSign = -1;
+    }
+    EvalEG.KRPKR.PawnFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.PawnIdx]));
+    EvalEG.KRPKR.PawnRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.PawnIdx]));
+    EvalEG.KRPKR.StrongKingFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.StrongKingIdx]));
+    EvalEG.KRPKR.StrongKingRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.StrongKingIdx]));
+    EvalEG.KRPKR.StrongRookFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.StrongRookIdx]));
+    EvalEG.KRPKR.StrongRookRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.StrongRookIdx]));
+    EvalEG.KRPKR.WeakKingFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.WeakKingIdx]));
+    EvalEG.KRPKR.WeakKingRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.WeakKingIdx]));
+    EvalEG.KRPKR.WeakRookFile = (EvalEG.KRPKR.FileBase + (EvalEG.KRPKR.FileSign * IdxToFile[EvalEG.KRPKR.WeakRookIdx]));
+    EvalEG.KRPKR.WeakRookRank = (EvalEG.KRPKR.RankBase + (EvalEG.KRPKR.RankSign * IdxToRank[EvalEG.KRPKR.WeakRookIdx]));
+    EvalEG.KRPKR.QueeningSqIdx = (EvalEG.KRPKR.PawnIdx + (Ret.EvaluateEndgame.Locate.PawnPushIdxDelta * (7 - EvalEG.KRPKR.PawnRank)));
+    EvalEG.KRPKR.PushSqIdx = (EvalEG.KRPKR.PawnIdx + Ret.EvaluateEndgame.Locate.PawnPushIdxDelta);
+    EvalEG.KRPKR.WeakKingQueeningDistance = ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.QueeningSqIdx)];
+    EvalEG.KRPKR.StrongKingQueeningDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.QueeningSqIdx)];
+    EvalEG.KRPKR.StrongKingPawnDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.PawnIdx)];
+    EvalEG.KRPKR.WeakKingStrongRookDistance = ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.StrongRookIdx)];
+    EvalEG.KRPKR.IsWeakKingAtQueening = 0;
+    If (EvalEG.KRPKR.WeakKingQueeningDistance < 2)
+    {
+        EvalEG.KRPKR.IsWeakKingAtQueening = 1;
+    }
+    If (((EvalEG.KRPKR.PawnRank < 5) And (EvalEG.KRPKR.IsWeakKingAtQueening == 1)) And (EvalEG.KRPKR.StrongKingRank < 5))
+    {
+        If ((EvalEG.KRPKR.WeakRookRank == 5) Or ((EvalEG.KRPKR.PawnRank < 3) And (Not ((EvalEG.KRPKR.StrongRookRank == 5)))))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    If (((EvalEG.KRPKR.PawnRank == 5) And (EvalEG.KRPKR.IsWeakKingAtQueening == 1)) And ((EvalEG.KRPKR.StrongKingRank + EvalEG.KRPKR.IsStrongToMove) < 6))
+    {
+        If ((EvalEG.KRPKR.WeakRookRank == 0) Or ((EvalEG.KRPKR.IsStrongToMove == 0) And (abs((EvalEG.KRPKR.WeakRookFile - EvalEG.KRPKR.PawnFile)) > 2)))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    If (((EvalEG.KRPKR.PawnRank > 4) And (EvalEG.KRPKR.WeakKingIdx == EvalEG.KRPKR.QueeningSqIdx)) And (EvalEG.KRPKR.WeakRookRank == 0))
+    {
+        If ((EvalEG.KRPKR.IsStrongToMove == 0) Or (EvalEG.KRPKR.StrongKingPawnDistance > 1))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    EvalEG.KRPKR.IsPawnA7RookA8 = 0;
+    If (((EvalEG.KRPKR.PawnFile == 0) And (EvalEG.KRPKR.PawnRank == 6)) And ((EvalEG.KRPKR.StrongRookFile == 0) And (EvalEG.KRPKR.StrongRookRank == 7)))
+    {
+        EvalEG.KRPKR.IsPawnA7RookA8 = 1;
+    }
+    If (((EvalEG.KRPKR.IsPawnA7RookA8 == 1) And (EvalEG.KRPKR.WeakKingRank == 6)) And ((EvalEG.KRPKR.WeakKingFile > 5) And (EvalEG.KRPKR.WeakRookFile == 0)))
+    {
+        If (((EvalEG.KRPKR.WeakRookRank < 3) Or (EvalEG.KRPKR.StrongKingFile > 2)) Or (EvalEG.KRPKR.StrongKingRank < 5))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    If (((EvalEG.KRPKR.PawnRank < 5) And (EvalEG.KRPKR.WeakKingIdx == EvalEG.KRPKR.PushSqIdx)) And ((EvalEG.KRPKR.StrongKingPawnDistance - EvalEG.KRPKR.IsStrongToMove) > 1))
+    {
+        If ((ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.WeakRookIdx)] - EvalEG.KRPKR.IsStrongToMove) > 1)
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 0;
+            Stop(this script);
+        }
+    }
+    EvalEG.KRPKR.IsRookBehindPawn = 0;
+    If (((Not ((EvalEG.KRPKR.PawnFile == 0))) And (EvalEG.KRPKR.StrongRookFile == EvalEG.KRPKR.PawnFile)) And (EvalEG.KRPKR.StrongRookRank < EvalEG.KRPKR.PawnRank))
+    {
+        EvalEG.KRPKR.IsRookBehindPawn = 1;
+    }
+    EvalEG.KRPKR.IsStrongKingCloserToQueening = 0;
+    If (EvalEG.KRPKR.StrongKingQueeningDistance < ((EvalEG.KRPKR.WeakKingQueeningDistance - 2) + EvalEG.KRPKR.IsStrongToMove))
+    {
+        EvalEG.KRPKR.IsStrongKingCloserToQueening = 1;
+    }
+    If ((((EvalEG.KRPKR.PawnRank == 6) And (Not ((EvalEG.KRPKR.PawnFile == 0)))) And ((EvalEG.KRPKR.StrongRookFile == EvalEG.KRPKR.PawnFile) And (Not ((EvalEG.KRPKR.StrongRookIdx == EvalEG.KRPKR.QueeningSqIdx))))) And (EvalEG.KRPKR.IsStrongKingCloserToQueening == 1))
+    {
+        If (EvalEG.KRPKR.StrongKingQueeningDistance < (EvalEG.KRPKR.WeakKingStrongRookDistance + EvalEG.KRPKR.IsStrongToMove))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = (128 - (2 * EvalEG.KRPKR.StrongKingQueeningDistance));
+            Stop(this script);
+        }
+    }
+    If ((EvalEG.KRPKR.IsRookBehindPawn == 1) And (EvalEG.KRPKR.IsStrongKingCloserToQueening == 1))
+    {
+        EvalEG.KRPKR.StrongKingPushDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.PushSqIdx)];
+        EvalEG.KRPKR.WeakKingPushDistance = ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.PushSqIdx)];
+        If (EvalEG.KRPKR.StrongKingPushDistance < ((EvalEG.KRPKR.WeakKingPushDistance - 2) + EvalEG.KRPKR.IsStrongToMove))
+        {
+            EvalEG.KRPKR.IsWeakKingAwayFromRook = 0;
+            If (Not (((EvalEG.KRPKR.WeakKingStrongRookDistance + EvalEG.KRPKR.IsStrongToMove) < 3)))
+            {
+                EvalEG.KRPKR.IsWeakKingAwayFromRook = 1;
+            }
+            If ((EvalEG.KRPKR.StrongKingQueeningDistance < (EvalEG.KRPKR.WeakKingStrongRookDistance + EvalEG.KRPKR.IsStrongToMove)) And (EvalEG.KRPKR.StrongKingPushDistance < (ChebyshevDistance[((EvalEG.KRPKR.WeakKingIdx * 100) + EvalEG.KRPKR.PawnIdx)] + EvalEG.KRPKR.IsStrongToMove)))
+            {
+                EvalEG.KRPKR.IsWeakKingAwayFromRook = 1;
+            }
+            If (EvalEG.KRPKR.IsWeakKingAwayFromRook == 1)
+            {
+                EvalEG.KRPKR.PawnQueeningDistance = ChebyshevDistance[((EvalEG.KRPKR.PawnIdx * 100) + EvalEG.KRPKR.QueeningSqIdx)];
+                Ret.EvaluateEndgame.KRPKR.Factor = ((128 - (8 * EvalEG.KRPKR.PawnQueeningDistance)) - (2 * EvalEG.KRPKR.StrongKingQueeningDistance));
+                Stop(this script);
+            }
+        }
+    }
+    EvalEG.KRPKR.WeakKingSqNumber = ((EvalEG.KRPKR.WeakKingRank * 8) + EvalEG.KRPKR.WeakKingFile);
+    EvalEG.KRPKR.PawnSqNumber = ((EvalEG.KRPKR.PawnRank * 8) + EvalEG.KRPKR.PawnFile);
+    If ((EvalEG.KRPKR.PawnRank < 4) And (EvalEG.KRPKR.WeakKingSqNumber > EvalEG.KRPKR.PawnSqNumber))
+    {
+        If (EvalEG.KRPKR.WeakKingFile == EvalEG.KRPKR.PawnFile)
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = 10;
+            Stop(this script);
+        }
+        EvalEG.KRPKR.KingDistance = ChebyshevDistance[((EvalEG.KRPKR.StrongKingIdx * 100) + EvalEG.KRPKR.WeakKingIdx)];
+        If ((abs((EvalEG.KRPKR.WeakKingFile - EvalEG.KRPKR.PawnFile)) == 1) And (EvalEG.KRPKR.KingDistance > 2))
+        {
+            Ret.EvaluateEndgame.KRPKR.Factor = (24 - (2 * EvalEG.KRPKR.KingDistance));
+        }
+    }
+}
+
+Define EvaluateEndgame.KRPPKRP(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.KRPPKRP.Factor = Const.Null;
+    Call EvaluateEndgame.Locate(StrongSide);
+    EvalEG.KRPPKRP.RankBase = Ret.EvaluateEndgame.Locate.RelativeRankBase;
+    EvalEG.KRPPKRP.RankSign = Ret.EvaluateEndgame.Locate.RelativeRankSign;
+    EvalEG.KRPPKRP.PawnIdx = Ret.EvaluateEndgame.Locate.StrongPawnIdx;
+    EvalEG.KRPPKRP.SecondPawnIdx = Ret.EvaluateEndgame.Locate.SecondStrongPawnIdx;
+    EvalEG.KRPPKRP.WeakPawnIdx = Ret.EvaluateEndgame.Locate.WeakPawnIdx;
+    EvalEG.KRPPKRP.WeakKingIdx = Ret.EvaluateEndgame.Locate.WeakKingIdx;
+    EvalEG.KRPPKRP.PawnRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.PawnIdx]));
+    EvalEG.KRPPKRP.SecondPawnRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.SecondPawnIdx]));
+    EvalEG.KRPPKRP.WeakPawnRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.WeakPawnIdx]));
+    EvalEG.KRPPKRP.WeakPawnFile = IdxToFile[EvalEG.KRPPKRP.WeakPawnIdx];
+    EvalEG.KRPPKRP.IsPawnBlocked = 0;
+    If ((abs((EvalEG.KRPPKRP.WeakPawnFile - IdxToFile[EvalEG.KRPPKRP.PawnIdx])) < 2) And (EvalEG.KRPPKRP.WeakPawnRank > EvalEG.KRPPKRP.PawnRank))
+    {
+        EvalEG.KRPPKRP.IsPawnBlocked = 1;
+    }
+    EvalEG.KRPPKRP.IsSecondPawnBlocked = 0;
+    If ((abs((EvalEG.KRPPKRP.WeakPawnFile - IdxToFile[EvalEG.KRPPKRP.SecondPawnIdx])) < 2) And (EvalEG.KRPPKRP.WeakPawnRank > EvalEG.KRPPKRP.SecondPawnRank))
+    {
+        EvalEG.KRPPKRP.IsSecondPawnBlocked = 1;
+    }
+    If ((EvalEG.KRPPKRP.IsPawnBlocked == 0) Or (EvalEG.KRPPKRP.IsSecondPawnBlocked == 0))
+    {
+        Stop(this script);
+    }
+    EvalEG.KRPPKRP.FrontPawnRank = EvalEG.KRPPKRP.PawnRank;
+    If (EvalEG.KRPPKRP.SecondPawnRank > EvalEG.KRPPKRP.FrontPawnRank)
+    {
+        EvalEG.KRPPKRP.FrontPawnRank = EvalEG.KRPPKRP.SecondPawnRank;
+    }
+    EvalEG.KRPPKRP.WeakKingFile = IdxToFile[EvalEG.KRPPKRP.WeakKingIdx];
+    EvalEG.KRPPKRP.WeakKingRank = (EvalEG.KRPPKRP.RankBase + (EvalEG.KRPPKRP.RankSign * IdxToRank[EvalEG.KRPPKRP.WeakKingIdx]));
+    If ((abs((EvalEG.KRPPKRP.WeakKingFile - IdxToFile[EvalEG.KRPPKRP.PawnIdx])) < 2) And (abs((EvalEG.KRPPKRP.WeakKingFile - IdxToFile[EvalEG.KRPPKRP.SecondPawnIdx])) < 2))
+    {
+        If (EvalEG.KRPPKRP.WeakKingRank > EvalEG.KRPPKRP.FrontPawnRank)
+        {
+            Ret.EvaluateEndgame.KRPPKRP.Factor = (7 * EvalEG.KRPPKRP.FrontPawnRank);
+        }
+    }
+}
+
+Define EvaluateEndgame.Locate(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.Locate.StrongPawnIdx = 0;
+    Ret.EvaluateEndgame.Locate.SecondStrongPawnIdx = 0;
+    Ret.EvaluateEndgame.Locate.StrongBishopIdx = 0;
+    Ret.EvaluateEndgame.Locate.StrongRookIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakPawnIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakBishopIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakKnightIdx = 0;
+    Ret.EvaluateEndgame.Locate.WeakRookIdx = 0;
+    EvalEG.Locate.SqIdx = 1;
+    Repeat (64)
+    {
+        EvalEG.Locate.StrongViewPiece = (Board[EvalEG.Locate.SqIdx] * StrongSide);
+        If (EvalEG.Locate.StrongViewPiece == GoK_BlackPawn)
+        {
+            If (Ret.EvaluateEndgame.Locate.StrongPawnIdx == 0)
+            {
+                Ret.EvaluateEndgame.Locate.StrongPawnIdx = EvalEG.Locate.SqIdx;
+            }
+            Else
+            {
+                Ret.EvaluateEndgame.Locate.SecondStrongPawnIdx = EvalEG.Locate.SqIdx;
+            }
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_BlackBishop)
+        {
+            Ret.EvaluateEndgame.Locate.StrongBishopIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_BlackRook)
+        {
+            Ret.EvaluateEndgame.Locate.StrongRookIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_WhitePawn)
+        {
+            Ret.EvaluateEndgame.Locate.WeakPawnIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_WhiteBishop)
+        {
+            Ret.EvaluateEndgame.Locate.WeakBishopIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_WhiteKnight)
+        {
+            Ret.EvaluateEndgame.Locate.WeakKnightIdx = EvalEG.Locate.SqIdx;
+        }
+        If (EvalEG.Locate.StrongViewPiece == GoK_WhiteRook)
+        {
+            Ret.EvaluateEndgame.Locate.WeakRookIdx = EvalEG.Locate.SqIdx;
+        }
+        EvalEG.Locate.SqIdx += 1;
+    }
+    If (StrongSide == 1)
+    {
+        Ret.EvaluateEndgame.Locate.StrongKingIdx = Glob.BlackKingIdx;
+        Ret.EvaluateEndgame.Locate.WeakKingIdx = Glob.WhiteKingIdx;
+        Ret.EvaluateEndgame.Locate.RelativeRankBase = -1;
+        Ret.EvaluateEndgame.Locate.RelativeRankSign = 1;
+        Ret.EvaluateEndgame.Locate.PawnPushIdxDelta = 8;
+    }
+    Else
+    {
+        Ret.EvaluateEndgame.Locate.StrongKingIdx = Glob.WhiteKingIdx;
+        Ret.EvaluateEndgame.Locate.WeakKingIdx = Glob.BlackKingIdx;
+        Ret.EvaluateEndgame.Locate.RelativeRankBase = 8;
+        Ret.EvaluateEndgame.Locate.RelativeRankSign = -1;
+        Ret.EvaluateEndgame.Locate.PawnPushIdxDelta = -8;
+    }
+}
+
+Define EvaluateEndgame.Material(string StrongSide) (warp=true)
+{
+    If (StrongSide == 1)
+    {
+        EvalEG.Material.StrongQueenCount = Glob.BlackQueenCount;
+        EvalEG.Material.StrongRookCount = Glob.BlackRookCount;
+        EvalEG.Material.StrongMajorMinorCount = Glob.BlackNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.StrongPawnCount = Glob.BlackPawnCount;
+        EvalEG.Material.WeakQueenCount = Glob.WhiteQueenCount;
+        Ret.EvaluateEndgame.Material.WeakRookCount = Glob.WhiteRookCount;
+        EvalEG.Material.WeakMajorMinorCount = Glob.WhiteNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.WeakPawnCount = Glob.WhitePawnCount;
+    }
+    Else
+    {
+        EvalEG.Material.StrongQueenCount = Glob.WhiteQueenCount;
+        EvalEG.Material.StrongRookCount = Glob.WhiteRookCount;
+        EvalEG.Material.StrongMajorMinorCount = Glob.WhiteNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.StrongPawnCount = Glob.WhitePawnCount;
+        EvalEG.Material.WeakQueenCount = Glob.BlackQueenCount;
+        Ret.EvaluateEndgame.Material.WeakRookCount = Glob.BlackRookCount;
+        EvalEG.Material.WeakMajorMinorCount = Glob.BlackNonQueenMajorMinorCount;
+        Ret.EvaluateEndgame.Material.WeakPawnCount = Glob.BlackPawnCount;
+    }
+    EvalEG.Material.StrongBishopCount = 0;
+    EvalEG.Material.WeakBishopCount = 0;
+    EvalEG.Material.ScanIdx = 1;
+    Repeat (64)
+    {
+        If ((Board[EvalEG.Material.ScanIdx] * StrongSide) == GoK_BlackBishop)
+        {
+            EvalEG.Material.StrongBishopCount += 1;
+        }
+        If ((Board[EvalEG.Material.ScanIdx] * StrongSide) == GoK_WhiteBishop)
+        {
+            EvalEG.Material.WeakBishopCount += 1;
+        }
+        EvalEG.Material.ScanIdx += 1;
+    }
+    EvalEG.Material.StrongKnightCount = ((EvalEG.Material.StrongMajorMinorCount - EvalEG.Material.StrongRookCount) - EvalEG.Material.StrongBishopCount);
+    EvalEG.Material.StrongPieceCount = (EvalEG.Material.StrongQueenCount + EvalEG.Material.StrongMajorMinorCount);
+    EvalEG.Material.WeakKnightCount = ((EvalEG.Material.WeakMajorMinorCount - Ret.EvaluateEndgame.Material.WeakRookCount) - EvalEG.Material.WeakBishopCount);
+    EvalEG.Material.WeakPieceCount = (EvalEG.Material.WeakQueenCount + EvalEG.Material.WeakMajorMinorCount);
+    Ret.EvaluateEndgame.Material.StrongPiecesAreNone = 0;
+    If (EvalEG.Material.StrongPieceCount == 0)
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreNone = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreRook = 0;
+    If ((EvalEG.Material.StrongPieceCount == 1) And (EvalEG.Material.StrongRookCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreRook = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreQueen = 0;
+    If ((EvalEG.Material.StrongPieceCount == 1) And (EvalEG.Material.StrongQueenCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreQueen = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreBishop = 0;
+    If ((EvalEG.Material.StrongPieceCount == 1) And (EvalEG.Material.StrongBishopCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreBishop = 1;
+    }
+    Ret.EvaluateEndgame.Material.StrongPiecesAreTwoKnights = 0;
+    If ((EvalEG.Material.StrongPieceCount == 2) And (EvalEG.Material.StrongKnightCount == 2))
+    {
+        Ret.EvaluateEndgame.Material.StrongPiecesAreTwoKnights = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreNone = 0;
+    If (EvalEG.Material.WeakPieceCount == 0)
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreNone = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreRook = 0;
+    If ((EvalEG.Material.WeakPieceCount == 1) And (Ret.EvaluateEndgame.Material.WeakRookCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreRook = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreBishop = 0;
+    If ((EvalEG.Material.WeakPieceCount == 1) And (EvalEG.Material.WeakBishopCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreBishop = 1;
+    }
+    Ret.EvaluateEndgame.Material.WeakPiecesAreKnight = 0;
+    If ((EvalEG.Material.WeakPieceCount == 1) And (EvalEG.Material.WeakKnightCount == 1))
+    {
+        Ret.EvaluateEndgame.Material.WeakPiecesAreKnight = 1;
+    }
+}
+
+Define EvaluateEndgame.PawnScan(string StrongSide)(string WeakKingIdx)(string WeakRookIdx) (warp=true)
+{
+    Ret.EvaluateEndgame.PawnScan.StrongPawnCount = 0;
+    Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount = 0;
+    Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount = 0;
+    Ret.EvaluateEndgame.PawnScan.PawnCount = 0;
+    Ret.EvaluateEndgame.PawnScan.PawnOnFileBCount = 0;
+    Ret.EvaluateEndgame.PawnScan.PawnOnFileGCount = 0;
+    Ret.EvaluateEndgame.PawnScan.StrongPawnInKingSpanCount = 0;
+    Ret.EvaluateEndgame.PawnScan.HasRookFortressPawn = 0;
+    Ret.EvaluateEndgame.PawnScan.WeakFrontPawnIdx = 0;
+    EvalEG.PawnScan.RelativeRankBase = -1;
+    EvalEG.PawnScan.RelativeRankSign = 1;
+    If (StrongSide < 0)
+    {
+        EvalEG.PawnScan.RelativeRankBase = 8;
+        EvalEG.PawnScan.RelativeRankSign = -1;
+    }
+    EvalEG.PawnScan.WeakKingRelativeRank = (EvalEG.PawnScan.RelativeRankBase + (EvalEG.PawnScan.RelativeRankSign * IdxToRank[WeakKingIdx]));
+    EvalEG.PawnScan.WeakFrontPawnRelativeRank = -1;
+    EvalEG.PawnScan.ListIdx = 1;
+    Repeat (64)
+    {
+        EvalEG.PawnScan.SqIdx = EvalEG.PawnScan.ListIdx;
+        If (abs(Board[EvalEG.PawnScan.SqIdx]) == GoK_BlackPawn)
+        {
+            EvalEG.PawnScan.File = IdxToFile[EvalEG.PawnScan.SqIdx];
+            EvalEG.PawnScan.RelativeRank = (EvalEG.PawnScan.RelativeRankBase + (EvalEG.PawnScan.RelativeRankSign * IdxToRank[EvalEG.PawnScan.SqIdx]));
+            Ret.EvaluateEndgame.PawnScan.PawnCount += 1;
+            If (EvalEG.PawnScan.File == 2)
+            {
+                Ret.EvaluateEndgame.PawnScan.PawnOnFileBCount += 1;
+            }
+            If (EvalEG.PawnScan.File == 7)
+            {
+                Ret.EvaluateEndgame.PawnScan.PawnOnFileGCount += 1;
+            }
+            If ((Board[EvalEG.PawnScan.SqIdx] * StrongSide) > 0)
+            {
+                Ret.EvaluateEndgame.PawnScan.StrongPawnCount += 1;
+                If (EvalEG.PawnScan.File == 1)
+                {
+                    Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileACount += 1;
+                }
+                If (EvalEG.PawnScan.File == 8)
+                {
+                    Ret.EvaluateEndgame.PawnScan.StrongPawnOnFileHCount += 1;
+                }
+                EvalEG.PawnScan.KingFileDeltaAbs = abs((EvalEG.PawnScan.File - IdxToFile[WeakKingIdx]));
+                If ((EvalEG.PawnScan.KingFileDeltaAbs < 2) And (EvalEG.PawnScan.RelativeRank < EvalEG.PawnScan.WeakKingRelativeRank))
+                {
+                    Ret.EvaluateEndgame.PawnScan.StrongPawnInKingSpanCount += 1;
+                }
+            }
+            Else
+            {
+                If (EvalEG.PawnScan.RelativeRank > EvalEG.PawnScan.WeakFrontPawnRelativeRank)
+                {
+                    Ret.EvaluateEndgame.PawnScan.WeakFrontPawnIdx = EvalEG.PawnScan.SqIdx;
+                    EvalEG.PawnScan.WeakFrontPawnRelativeRank = EvalEG.PawnScan.RelativeRank;
+                }
+                If (WeakRookIdx > 0)
+                {
+                    EvalEG.PawnScan.IsNextToWeakKing = 0;
+                    If (ChebyshevDistance[((EvalEG.PawnScan.SqIdx * 100) + WeakKingIdx)] == 1)
+                    {
+                        EvalEG.PawnScan.IsNextToWeakKing = 1;
+                    }
+                    EvalEG.PawnScan.RookRelativeRank = (EvalEG.PawnScan.RelativeRankBase + (EvalEG.PawnScan.RelativeRankSign * IdxToRank[WeakRookIdx]));
+                    EvalEG.PawnScan.RookFileDeltaAbs = abs((EvalEG.PawnScan.File - IdxToFile[WeakRookIdx]));
+                    If (((EvalEG.PawnScan.IsNextToWeakKing == 1) And (EvalEG.PawnScan.RelativeRank == (EvalEG.PawnScan.RookRelativeRank + 1))) And (EvalEG.PawnScan.RookFileDeltaAbs == 1))
+                    {
+                        Ret.EvaluateEndgame.PawnScan.HasRookFortressPawn = 1;
+                    }
+                }
+            }
+        }
+        EvalEG.PawnScan.ListIdx += 1;
+    }
+}
+
+Define EvaluateEndgame.PushToEdge(string SqIdx) (warp=true)
+{
+    EvalEG.PushToEdge.FileEdgeDistance = (IdxToFile[SqIdx] - 1);
+    If (EvalEG.PushToEdge.FileEdgeDistance > 3)
+    {
+        EvalEG.PushToEdge.FileEdgeDistance = (7 - EvalEG.PushToEdge.FileEdgeDistance);
+    }
+    EvalEG.PushToEdge.RankEdgeDistance = (IdxToRank[SqIdx] - 1);
+    If (EvalEG.PushToEdge.RankEdgeDistance > 3)
+    {
+        EvalEG.PushToEdge.RankEdgeDistance = (7 - EvalEG.PushToEdge.RankEdgeDistance);
+    }
+    EvalEG.PushToEdge.FilePenalty = floor(((7 * (EvalEG.PushToEdge.FileEdgeDistance * EvalEG.PushToEdge.FileEdgeDistance)) / 2));
+    EvalEG.PushToEdge.RankPenalty = floor(((7 * (EvalEG.PushToEdge.RankEdgeDistance * EvalEG.PushToEdge.RankEdgeDistance)) / 2));
+    Ret.EvaluateEndgame.PushToEdge.Score = (90 - (EvalEG.PushToEdge.FilePenalty + EvalEG.PushToEdge.RankPenalty));
+}
+
+Define EvaluateEndgame.Scale(string Ply)(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.Scale.Factor = Const.Null;
+    Call EvaluateEndgame.Material((0 - StrongSide));
+    EvalEG.Scale.IsOtherSideExactEndgame = 0;
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.StrongPawnCount == 1))
+    {
+        If ((Ret.EvaluateEndgame.Material.WeakPawnCount == 0) And ((Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1) Or (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1)))
+        {
+            EvalEG.Scale.IsOtherSideExactEndgame = 1;
+        }
+    }
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreBishop == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount == 0))
+    {
+        If (((Ret.EvaluateEndgame.Material.StrongPawnCount == 1) And ((Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1) Or (Ret.EvaluateEndgame.Material.WeakPiecesAreKnight == 1))) Or ((Ret.EvaluateEndgame.Material.StrongPawnCount == 2) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1)))
+        {
+            EvalEG.Scale.IsOtherSideExactEndgame = 1;
+        }
+    }
+    If (((Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.StrongPawnCount == 2)) And ((Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1) And (Ret.EvaluateEndgame.Material.WeakPawnCount == 1)))
+    {
+        EvalEG.Scale.IsOtherSideExactEndgame = 1;
+    }
+    If (EvalEG.Scale.IsOtherSideExactEndgame == 1)
+    {
+        Stop(this script);
+    }
+    Call EvaluateEndgame.Material(StrongSide);
+    EvalEG.Scale.StrongPawnCount = Ret.EvaluateEndgame.Material.StrongPawnCount;
+    EvalEG.Scale.WeakPawnCount = Ret.EvaluateEndgame.Material.WeakPawnCount;
+    If (Ret.EvaluateEndgame.Material.StrongPiecesAreRook == 1)
+    {
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1))
+        {
+            Call EvaluateEndgame.KRPKR(Ply)(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KRPKR.Factor;
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+        {
+            Call EvaluateEndgame.KRPKB(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KRPKB.Factor;
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 2) And (EvalEG.Scale.WeakPawnCount == 1)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreRook == 1))
+        {
+            Call EvaluateEndgame.KRPPKRP(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KRPPKRP.Factor;
+            Stop(this script);
+        }
+    }
+    If (Ret.EvaluateEndgame.Material.StrongPiecesAreBishop == 1)
+    {
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+        {
+            Call EvaluateEndgame.KBPKB(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KBPKB.Factor;
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreKnight == 1))
+        {
+            Call EvaluateEndgame.KBPKN(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KBPKN.Factor;
+            Stop(this script);
+        }
+        If (((EvalEG.Scale.StrongPawnCount == 2) And (EvalEG.Scale.WeakPawnCount == 0)) And (Ret.EvaluateEndgame.Material.WeakPiecesAreBishop == 1))
+        {
+            Call EvaluateEndgame.KBPPKB(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KBPPKB.Factor;
+            Stop(this script);
+        }
+        If (EvalEG.Scale.StrongPawnCount > 0)
+        {
+            Call EvaluateEndgame.KBPsK(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KBPsK.Factor;
+            Stop(this script);
+        }
+    }
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreQueen == 1) And (EvalEG.Scale.StrongPawnCount == 0))
+    {
+        If ((Ret.EvaluateEndgame.Material.WeakRookCount == 1) And (EvalEG.Scale.WeakPawnCount > 0))
+        {
+            Call EvaluateEndgame.KQKRPs(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KQKRPs.Factor;
+            Stop(this script);
+        }
+    }
+    If ((Ret.EvaluateEndgame.Material.StrongPiecesAreNone == 1) And (Ret.EvaluateEndgame.Material.WeakPiecesAreNone == 1))
+    {
+        If ((EvalEG.Scale.StrongPawnCount > 1) And (EvalEG.Scale.WeakPawnCount == 0))
+        {
+            Call EvaluateEndgame.KPsK(StrongSide);
+            Ret.EvaluateEndgame.Scale.Factor = Ret.EvaluateEndgame.KPsK.Factor;
+        }
+        If ((EvalEG.Scale.StrongPawnCount == 1) And (EvalEG.Scale.WeakPawnCount == 1))
+        {
+            Call EvaluateEndgame.KPK(Ply)(StrongSide);
+            If (Not (((EvalEG.KPK.PawnRank > 3) And (EvalEG.KPK.PawnFile > 0))))
+            {
+                If (Ret.EvaluateEndgame.KPK.IsWin == 0)
+                {
+                    Ret.EvaluateEndgame.Scale.Factor = 0;
+                }
+            }
+        }
+    }
+}
+
+Define EvaluateEndgame.StrongToMove(string Ply)(string StrongSide) (warp=true)
+{
+    Ret.EvaluateEndgame.StrongToMove.IsStrongToMove = PlyIsOwn[(Ply + 1)];
+    If (StrongSide < 0)
+    {
+        Ret.EvaluateEndgame.StrongToMove.IsStrongToMove = (1 - Ret.EvaluateEndgame.StrongToMove.IsStrongToMove);
     }
 }
 
@@ -4507,7 +5610,7 @@ Define GetHashfull(string Age) (warp=true)
     {
         If (Not ((TTNodeEntry[(GHF.Idx + Const.TTNodeCol.HashIdx)] == Const.Null)))
         {
-            GHF.Diff = (GHF.AgeNow - floor((TTNodeEntry[(GHF.Idx + Const.TTNodeCol.MetaIdx)] / 8192)));
+            GHF.Diff = (GHF.AgeNow - floor((TTNodeEntry[(GHF.Idx + Const.TTNodeCol.MetaIdx)] / 16384)));
             If ((Not ((GHF.Diff < 0))) And (Not ((GHF.Diff > GHF.Span))))
             {
                 Ret.GetHashfull.Permill += 1;
@@ -6199,6 +7302,7 @@ Define InitBoard (warp=true)
     List.DeleteItem(Betas, all);
     List.DeleteItem(AlphasOld, all);
     List.DeleteItem(IsPvNode, all);
+    List.DeleteItem(IsTTPv, all);
     List.DeleteItem(SearchEval, all);
     List.DeleteItem(MovesCount, all);
     List.DeleteItem(MovesIdx, all);
@@ -6250,6 +7354,7 @@ Define InitBoard (warp=true)
         List.Add(Betas, 0);
         List.Add(AlphasOld, Const.Null);
         List.Add(IsPvNode, Const.Null);
+        List.Add(IsTTPv, 0);
         List.Add(SearchEval, Const.Null);
         List.Add(MovesCount, 0);
         List.Add(MovesIdx, 0);
@@ -7509,6 +8614,10 @@ Define InitPieceSquareTables (warp=true)
         Call LoadList("50, 45, 40, 35, 35, 40, 45, 50, 45, 35, 30, 25, 25, 30, 35, 45, 40, 30, 20, 15, 15, 20, 30, 40, 35, 25, 15, 10, 10, 15, 25, 35, 35, 25, 15, 10, 10, 15, 25, 35, 40, 30, 20, 15, 15, 20, 30, 40, 45, 35, 30, 25, 25, 30, 35, 45, 50, 45, 40, 35, 35, 40, 45, 50")("PushToEdges");
         List.DeleteAll(PushClose);
         Call LoadList("0, 50, 40, 30, 20, 10, 5")("PushClose");
+        List.DeleteAll(KPKBitbase);
+        Call LoadList("4294966524, 4294901759, 4294965496, 4294901759, 4294963697, 4294901759, 4294960099, 4294901759, 4294952903, 4294901759, 4294938511, 4294901759, 4294909727, 4294901759, 4294917951, 4294901759, 4294769916, 4294901759, 4294506744, 4294901759, 4294046193, 4294901759, 4293125091, 4294901759, 4291282887, 4294901759, 4287598479, 4294901759, 4280229663, 4294901759, 4282335039, 4294901759, 4244438271, 4294901759, 4177066239, 4294901759, 4059165183, 4294901759, 3823363071, 4294901759, 3351758847, 4294901759, 2408550399, 4294901759, 522133503, 4294901759, 1061109759, 4294901759, 4244439039, 4294901756, 4177068031, 4294901752, 4059168767, 4294901745, 3823370239, 4294901731, 3351773183, 4294901703, 2408579071, 4294901647, 522190847, 4294901535, 1061158911, 4294901567, 4244635647, 4294900988, 4177526783, 4294899960, 4060086271, 4294898161, 3825205247, 4294894563, 3355443199, 4294887367, 2415919103, 4294872975, 536870911, 4294844191, 1073741823, 4294852415, 4294967295, 4294769916, 4294967295, 4294506744, 4294967295, 4293980657, 4294967295, 4293059555, 4294967295, 4291217351, 4294967295, 4287532943, 4294967295, 4280164127, 4294967295, 4282269503, 0, 0, 0, 0, 4294967295, 4042322431, 4294967295, 3823297535, 4294967295, 3351693311, 4294967295, 2408484863, 4294967295, 522067967, 4294967295, 1061044223, 0, 0, 0, 0, 4294967295, 4042326015, 4294967295, 3823304703, 4294967295, 3351707647, 4294967295, 2408513535, 4294967295, 522125311, 4294967295, 1061093375, 4294966524, 4294901759, 4294965496, 4294901759, 4294963697, 4294901759, 4294960099, 4294901759, 4294952903, 4294901759, 4294938511, 4294901759, 4294909727, 4294901759, 4294917951, 4294901759, 4294769916, 4294901759, 4294506744, 4294901759, 4294046193, 4294901759, 4293125091, 4294901759, 4291282887, 4294901759, 4287598479, 4294901759, 4280229663, 4294901759, 4282335039, 4294901759, 4244438271, 4294901759, 4177066239, 4294901759, 4059165183, 4294901759, 3823363071, 4294901759, 3351758847, 4294901759, 2408550399, 4294901759, 522133503, 4294901759, 1061109759, 4294901759, 4244439039, 4294901756, 4177068031, 4294901752, 4059168767, 4294901745, 3823370239, 4294901731, 3351773183, 4294901703, 2408579071, 4294901647, 522190847, 4294901535, 1061158911, 4294901567, 4244635647, 4294900988, 4177526783, 4294899960, 4060086271, 4294898161, 3825205247, 4294894563, 3355443199, 4294887367, 2415919103, 4294872975, 536870911, 4294844191, 1073741823, 4294852415, 0, 50331648, 0, 33554432, 0, 100663552, 4294967295, 4276282339, 4294967295, 4291217351, 4294967295, 4287532943, 4294967295, 4280164127, 4294967295, 4282269503, 0, 0, 0, 0, 0, 256, 4294967295, 3806520319, 4294967295, 3351693311, 4294967295, 2408484863, 4294967295, 522067967, 4294967295, 1061044223, 0, 0, 0, 0, 0, 1792, 4294967295, 3806527487, 4294967295, 3351707647, 4294967295, 2408513535, 4294967295, 522125311, 4294967295, 1061093375, 4294966524, 4294836223, 4294965496, 4294836223, 4294963697, 4294836223, 4294960099, 4294836223, 4294952903, 4294836223, 4294938511, 4294836223, 4294909727, 4294836223, 4294917951, 4294836223, 4294769916, 4294836223, 4294506744, 4294836223, 4294046193, 4294836223, 4293125091, 4294836223, 4291282887, 4294836223, 4287598479, 4294836223, 4280229663, 4294836223, 4282335039, 4294836223, 4244438271, 4294836223, 4177066239, 4294836223, 4059165183, 4294836223, 3823363071, 4294836223, 3351758847, 4294836223, 2408550399, 4294836223, 522133503, 4294836223, 1061109759, 4294836223, 4244439039, 4294836220, 4177068031, 4294836216, 4059168767, 4294836209, 3823370239, 4294836195, 3351773183, 4294836167, 2408579071, 4294836111, 522190847, 4294835999, 1061158911, 4294836031, 4244635647, 4294835452, 4177526783, 4294834424, 4060086271, 4294832625, 3825205247, 4294829027, 3355443199, 4294821831, 2415919103, 4294807439, 536870911, 4294778655, 1073741823, 4294786879, 4294967295, 4294769916, 4294967295, 4294506744, 4294967295, 4294046193, 4294967295, 4292994019, 4294967295, 4291151815, 4294967295, 4287467407, 4294967295, 4280098591, 4294967295, 4282203967, 0, 202116096, 0, 0, 0, 16843008, 4294967295, 3823231999, 4294967295, 3351627775, 4294967295, 2408419327, 4294967295, 522002431, 4294967295, 1060978687, 0, 0, 0, 526863, 0, 0, 4294967295, 3823239167, 4294967295, 3351642111, 4294967295, 2408447999, 4294967295, 522059775, 4294967295, 1061027839, 4294966524, 4294836223, 4294965496, 4294836223, 4294963697, 4294836223, 4294960099, 4294836223, 4294952903, 4294836223, 4294938511, 4294836223, 4294909727, 4294836223, 4294917951, 4294836223, 4294769916, 4294836223, 4294506744, 4294836223, 4294046193, 4294836223, 4293125091, 4294836223, 4291282887, 4294836223, 4287598479, 4294836223, 4280229663, 4294836223, 4282335039, 4294836223, 4244438271, 4294836223, 4177066239, 4294836223, 4059165183, 4294836223, 3823363071, 4294836223, 3351758847, 4294836223, 2408550399, 4294836223, 522133503, 4294836223, 1061109759, 4294836223, 4244439039, 4294836220, 4177068031, 4294836216, 4059168767, 4294836209, 3823370239, 4294836195, 3351773183, 4294836167, 2408579071, 4294836111, 522190847, 4294835999, 1061158911, 4294836031, 4244635647, 4294835452, 4177526783, 4294834424, 4060086271, 4294832625, 3825205247, 4294829027, 3355443199, 4294821831, 2415919103, 4294807439, 536870911, 4294778655, 1073741823, 4294786879, 0, 117703680, 0, 117440512, 0, 117506304, 0, 251724544, 4294967295, 4291151815, 4294967295, 4287467407, 4294967295, 4280098591, 4294967295, 4282203967, 0, 67371008, 0, 0, 0, 16842752, 0, 50397952, 4294967295, 3351627775, 4294967295, 2408419327, 4294967295, 522002431, 4294967295, 1060978687, 0, 67371520, 0, 1280, 0, 16843264, 0, 50401024, 4294967295, 3351642111, 4294967295, 2408447999, 4294967295, 522059775, 4294967295, 1061027839, 4294966524, 4294705151, 4294965496, 4294705151, 4294963697, 4294705151, 4294960099, 4294705151, 4294952903, 4294705151, 4294938511, 4294705151, 4294909727, 4294705151, 4294917951, 4294705151, 4294769916, 4294705151, 4294506744, 4294705151, 4294046193, 4294705151, 4293125091, 4294705151, 4291282887, 4294705151, 4287598479, 4294705151, 4280229663, 4294705151, 4282335039, 4294705151, 4244438271, 4294705151, 4177066239, 4294705151, 4059165183, 4294705151, 3823363071, 4294705151, 3351758847, 4294705151, 2408550399, 4294705151, 522133503, 4294705151, 1061109759, 4294705151, 4244439039, 4294705148, 4177068031, 4294705144, 4059168767, 4294705137, 3823370239, 4294705123, 3351773183, 4294705095, 2408579071, 4294705039, 522190847, 4294704927, 1061158911, 4294704959, 4244635647, 4294704380, 4177526783, 4294703352, 4060086271, 4294701553, 3825205247, 4294697955, 3355443199, 4294690759, 2415919103, 4294676367, 536870911, 4294647583, 1073741823, 4294655807, 4294967295, 4294507772, 4294967295, 4294506744, 4294967295, 4294046193, 4294967295, 4293125091, 4294967295, 4291020743, 4294967295, 4287336335, 4294967295, 4279967519, 4294967295, 4282072895, 4294967295, 4244176127, 0, 404232192, 0, 0, 0, 50529024, 4294967295, 3351496703, 4294967295, 2408288255, 4294967295, 521871359, 4294967295, 1060847615, 4294967295, 4244176895, 0, 0, 0, 1119519, 0, 0, 4294967295, 3351511039, 4294967295, 2408316927, 4294967295, 521928703, 4294967295, 1060896767, 4294966524, 4294705151, 4294965496, 4294705151, 4294963697, 4294705151, 4294960099, 4294705151, 4294952903, 4294705151, 4294938511, 4294705151, 4294909727, 4294705151, 4294917951, 4294705151, 4294769916, 4294705151, 4294506744, 4294705151, 4294046193, 4294705151, 4293125091, 4294705151, 4291282887, 4294705151, 4287598479, 4294705151, 4280229663, 4294705151, 4282335039, 4294705151, 4244438271, 4294705151, 4177066239, 4294705151, 4059165183, 4294705151, 3823363071, 4294705151, 3351758847, 4294705151, 2408550399, 4294705151, 522133503, 4294705151, 1061109759, 4294705151, 4244439039, 4294705148, 4177068031, 4294705144, 4059168767, 4294705137, 3823370239, 4294705123, 3351773183, 4294705095, 2408579071, 4294705039, 522190847, 4294704927, 1061158911, 4294704959, 4244635647, 4294704380, 4177526783, 4294703352, 4060086271, 4294701553, 3825205247, 4294697955, 3355443199, 4294690759, 2415919103, 4294676367, 536870911, 4294647583, 1073741823, 4294655807, 0, 521673728, 0, 235407360, 0, 234881024, 0, 235012608, 0, 520292096, 4294967295, 4287336335, 4294967295, 4279967519, 4294967295, 4282072895, 0, 471342080, 0, 134742016, 0, 0, 0, 33685504, 0, 117638912, 4294967295, 2408288255, 4294967295, 521871359, 4294967295, 1060847615, 0, 471342080, 0, 134743040, 0, 2560, 0, 33686528, 0, 117645056, 4294967295, 2408316927, 4294967295, 521928703, 4294967295, 1060896767, 4294966524, 4294443007, 4294965496, 4294443007, 4294963697, 4294443007, 4294960099, 4294443007, 4294952903, 4294443007, 4294938511, 4294443007, 4294909727, 4294443007, 4294917951, 4294443007, 4294769916, 4294443007, 4294506744, 4294443007, 4294046193, 4294443007, 4293125091, 4294443007, 4291282887, 4294443007, 4287598479, 4294443007, 4280229663, 4294443007, 4282335039, 4294443007, 4244438271, 4294443007, 4177066239, 4294443007, 4059165183, 4294443007, 3823363071, 4294443007, 3351758847, 4294443007, 2408550399, 4294443007, 522133503, 4294443007, 1061109759, 4294443007, 4244439039, 4294443004, 4177068031, 4294443000, 4059168767, 4294442993, 3823370239, 4294442979, 3351773183, 4294442951, 2408579071, 4294442895, 522190847, 4294442783, 1061158911, 4294442815, 4244635647, 4294442236, 4177526783, 4294441208, 4060086271, 4294439409, 3825205247, 4294435811, 3355443199, 4294428615, 2415919103, 4294414223, 536870911, 4294385439, 1073741823, 4294393663, 4294967295, 4294245628, 4294967295, 4293982456, 4294967295, 4294046193, 4294967295, 4293125091, 4294967295, 4291282887, 4294967295, 4287074191, 4294967295, 4279705375, 4294967295, 4281810751, 4294967295, 4243913983, 4294967295, 4176541951, 0, 808464384, 0, 0, 0, 101058048, 4294967295, 2408026111, 4294967295, 521609215, 4294967295, 1060585471, 4294967295, 4243914751, 4294967295, 4176543743, 0, 0, 0, 2239038, 0, 0, 4294967295, 2408054783, 4294967295, 521666559, 4294967295, 1060634623, 4294966524, 4294443007, 4294965496, 4294443007, 4294963697, 4294443007, 4294960099, 4294443007, 4294952903, 4294443007, 4294938511, 4294443007, 4294909727, 4294443007, 4294917951, 4294443007, 4294769916, 4294443007, 4294506744, 4294443007, 4294046193, 4294443007, 4293125091, 4294443007, 4291282887, 4294443007, 4287598479, 4294443007, 4280229663, 4294443007, 4282335039, 4294443007, 4244438271, 4294443007, 4177066239, 4294443007, 4059165183, 4294443007, 3823363071, 4294443007, 3351758847, 4294443007, 2408550399, 4294443007, 522133503, 4294443007, 1061109759, 4294443007, 4244439039, 4294443004, 4177068031, 4294443000, 4059168767, 4294442993, 3823370239, 4294442979, 3351773183, 4294442951, 2408579071, 4294442895, 522190847, 4294442783, 1061158911, 4294442815, 4244635647, 4294442236, 4177526783, 4294441208, 4060086271, 4294439409, 3825205247, 4294435811, 3355443199, 4294428615, 2415919103, 4294414223, 536870911, 4294385439, 1073741823, 4294393663, 4294967295, 4294245628, 0, 1043347456, 0, 470814720, 0, 469762048, 0, 470025216, 0, 1040584192, 4294967295, 4279705375, 4294967295, 4281810751, 4294967295, 4243913983, 0, 942684160, 0, 269484032, 0, 0, 0, 67371008, 0, 235277824, 4294967295, 521609215, 4294967295, 1060585471, 4294967295, 4243914751, 0, 942685696, 0, 269486080, 0, 5120, 0, 67373056, 0, 235290112, 4294967295, 521666559, 4294967295, 1060634623, 4294966524, 4294967039, 4294965496, 4294967039, 4294963697, 4294967039, 4294960099, 4294967039, 4294952903, 4294967039, 4294938511, 4294967039, 4294909727, 4294967039, 4294917951, 4294967039, 4294769916, 4294967039, 4294506744, 4294967039, 4294046193, 4294967039, 4293125091, 4294967039, 4291282887, 4294967039, 4287598479, 4294967039, 4280229663, 4294967039, 4282335039, 4294967039, 4244438271, 4294967039, 4177066239, 4294967039, 4059165183, 4294967039, 3823363071, 4294967039, 3351758847, 4294967039, 2408550399, 4294967039, 522133503, 4294967039, 1061109759, 4294967039, 4244439039, 4294967036, 4177068031, 4294967032, 4059168767, 4294967025, 3823370239, 4294967011, 3351773183, 4294966983, 2408579071, 4294966927, 522190847, 4294966815, 1061158911, 4294966847, 4244635647, 4294966524, 4177526783, 4294965496, 4060086271, 4294963441, 3825205247, 4294959843, 3355443199, 4294952647, 2415919103, 4294938255, 536870911, 4294909471, 1073741823, 4294917695, 0, 0, 0, 33554432, 0, 117506048, 4294967295, 4293124835, 4294967295, 4291282631, 4294967295, 4287598223, 4294967295, 4280229407, 4294967295, 4282334783, 0, 0, 0, 0, 0, 0, 4294967295, 3823362815, 4294967295, 3351758591, 4294967295, 2408550143, 4294967295, 522133247, 4294967295, 1061109503, 0, 0, 0, 0, 0, 1536, 4294967295, 3823369983, 4294967295, 3351772927, 4294967295, 2408578815, 4294967295, 522190591, 4294967295, 1061158655, 4294966524, 4294967039, 4294965496, 4294967039, 4294963697, 4294967039, 4294960099, 4294967039, 4294952903, 4294967039, 4294938511, 4294967039, 4294909727, 4294967039, 4294917951, 4294967039, 4294769916, 4294967039, 4294506744, 4294967039, 4294046193, 4294967039, 4293125091, 4294967039, 4291282887, 4294967039, 4287598479, 4294967039, 4280229663, 4294967039, 4282335039, 4294967039, 4244438271, 4294967039, 4177066239, 4294967039, 4059165183, 4294967039, 3823363071, 4294967039, 3351758847, 4294967039, 2408550399, 4294967039, 522133503, 4294967039, 1061109759, 4294967039, 4244439039, 4294967036, 4177068031, 4294967032, 4059168767, 4294967025, 3823370239, 4294967011, 3351773183, 4294966983, 2408579071, 4294966927, 522190847, 4294966815, 1061158911, 4294966847, 0, 196608, 0, 196608, 0, 34013184, 0, 118424066, 3355443199, 4294952647, 2415919103, 4294938255, 536870911, 4294909471, 1073741823, 4294917695, 0, 0, 0, 0, 0, 33554432, 0, 100794880, 4294967295, 4291282631, 4294967295, 4287598223, 4294967295, 4280229407, 4294967295, 4282334783, 0, 0, 0, 0, 0, 0, 0, 33686016, 4294967295, 3351758591, 4294967295, 2408550143, 4294967295, 522133247, 4294967295, 1061109503, 0, 0, 0, 0, 0, 0, 0, 33687040, 4294967295, 3351772927, 4294967295, 2408578815, 4294967295, 522190591, 4294967295, 1061158655, 4294966524, 4294966783, 4294965496, 4294966783, 4294963697, 4294966783, 4294960099, 4294966783, 4294952903, 4294966783, 4294938511, 4294966783, 4294909727, 4294966783, 4294917951, 4294966783, 4294769916, 4294966783, 4294506744, 4294966783, 4294046193, 4294966783, 4293125091, 4294966783, 4291282887, 4294966783, 4287598479, 4294966783, 4280229663, 4294966783, 4282335039, 4294966783, 4244438271, 4294966783, 4177066239, 4294966783, 4059165183, 4294966783, 3823363071, 4294966783, 3351758847, 4294966783, 2408550399, 4294966783, 522133503, 4294966783, 1061109759, 4294966783, 4244439039, 4294966780, 4177068031, 4294966776, 4059168767, 4294966769, 3823370239, 4294966755, 3351773183, 4294966727, 2408579071, 4294966671, 522190847, 4294966559, 1061158911, 4294966591, 4244635647, 4294966524, 4177526783, 4294965496, 4060086271, 4294963697, 3825205247, 4294959587, 3355443199, 4294952391, 2415919103, 4294937999, 536870911, 4294909215, 1073741823, 4294917439, 0, 252447756, 0, 0, 0, 117506305, 117440512, 251855107, 4294967295, 4291282375, 4294967295, 4287597967, 4294967295, 4280229151, 4294967295, 4282334527, 0, 0, 0, 0, 0, 0, 520093696, 50528543, 4294967295, 3351758335, 4294967295, 2408549887, 4294967295, 522132991, 4294967295, 1061109247, 0, 67897359, 0, 1280, 0, 16845071, 520093696, 50535711, 4294967295, 3351772671, 4294967295, 2408578559, 4294967295, 522190335, 4294967295, 1061158399, 4294966524, 4294966783, 4294965496, 4294966783, 4294963697, 4294966783, 4294960099, 4294966783, 4294952903, 4294966783, 4294938511, 4294966783, 4294909727, 4294966783, 4294917951, 4294966783, 4294769916, 4294966783, 4294506744, 4294966783, 4294046193, 4294966783, 4293125091, 4294966783, 4291282887, 4294966783, 4287598479, 4294966783, 4280229663, 4294966783, 4282335039, 4294966783, 4244438271, 4294966783, 4177066239, 4294966783, 4059165183, 4294966783, 3823363071, 4294966783, 3351758847, 4294966783, 2408550399, 4294966783, 522133503, 4294966783, 1061109759, 4294966783, 4244439039, 4294966780, 4177068031, 4294966776, 4059168767, 4294966769, 3823370239, 4294966755, 3351773183, 4294966727, 2408579071, 4294966671, 522190847, 4294966559, 1061158911, 4294966591, 0, 459780, 0, 458752, 0, 459009, 0, 118423811, 117440512, 253691143, 2415919103, 4294937999, 536870911, 4294909215, 1073741823, 4294917439, 0, 263168, 0, 0, 0, 65792, 0, 117637379, 117440512, 252118279, 4294967295, 4287597967, 4294967295, 4280229151, 4294967295, 4282334527, 0, 262144, 0, 0, 0, 65792, 0, 50528527, 117440512, 117900575, 4294967295, 2408549887, 4294967295, 522132991, 4294967295, 1061109247, 0, 1280, 0, 0, 0, 16844032, 0, 50530575, 520093696, 117906719, 4294967295, 2408578559, 4294967295, 522190335, 4294967295, 1061158399, 4294966524, 4294966271, 4294965496, 4294966271, 4294963697, 4294966271, 4294960099, 4294966271, 4294952903, 4294966271, 4294938511, 4294966271, 4294909727, 4294966271, 4294917951, 4294966271, 4294769916, 4294966271, 4294506744, 4294966271, 4294046193, 4294966271, 4293125091, 4294966271, 4291282887, 4294966271, 4287598479, 4294966271, 4280229663, 4294966271, 4282335039, 4294966271, 4244438271, 4294966271, 4177066239, 4294966271, 4059165183, 4294966271, 3823363071, 4294966271, 3351758847, 4294966271, 2408550399, 4294966271, 522133503, 4294966271, 1061109759, 4294966271, 4244439039, 4294966268, 4177068031, 4294966264, 4059168767, 4294966257, 3823370239, 4294966243, 3351773183, 4294966215, 2408579071, 4294966159, 522190847, 4294966047, 1061158911, 4294966079, 4244635647, 4294965500, 4177526783, 4294965496, 4060086271, 4294963697, 3825205247, 4294960099, 3355443199, 4294951879, 2415919103, 4294937487, 536870911, 4294908703, 1073741823, 4294916927, 1040187392, 1060911164, 0, 504895512, 0, 0, 0, 251855619, 251658240, 520553223, 4294967295, 4287597455, 4294967295, 4280228639, 4294967295, 4282334015, 1056964608, 1010579519, 0, 0, 0, 0, 0, 0, 1056964608, 117900095, 4294967295, 2408549375, 4294967295, 522132479, 4294967295, 1061108735, 1056964608, 1010580287, 0, 404232479, 0, 2560, 0, 50533151, 1056964608, 117914431, 4294967295, 2408578047, 4294967295, 522189823, 4294967295, 1061157887, 4294966524, 4294966271, 4294965496, 4294966271, 4294963697, 4294966271, 4294960099, 4294966271, 4294952903, 4294966271, 4294938511, 4294966271, 4294909727, 4294966271, 4294917951, 4294966271, 4294769916, 4294966271, 4294506744, 4294966271, 4294046193, 4294966271, 4293125091, 4294966271, 4291282887, 4294966271, 4287598479, 4294966271, 4280229663, 4294966271, 4282335039, 4294966271, 4244438271, 4294966271, 4177066239, 4294966271, 4059165183, 4294966271, 3823363071, 4294966271, 3351758847, 4294966271, 2408550399, 4294966271, 522133503, 4294966271, 1061109759, 4294966271, 4244439039, 4294966268, 4177068031, 4294966264, 4059168767, 4294966257, 3823370239, 4294966243, 3351773183, 4294966215, 2408579071, 4294966159, 522190847, 4294966047, 1061158911, 4294966079, 0, 505354268, 0, 919560, 0, 917504, 0, 918018, 0, 253690631, 251658240, 524225295, 536870911, 4294908703, 1073741823, 4294916927, 0, 505157660, 0, 526336, 0, 0, 0, 131584, 0, 252117767, 251658240, 521079567, 4294967295, 4280228639, 4294967295, 4282334015, 0, 471603231, 0, 526336, 0, 0, 0, 131584, 0, 117900063, 251658240, 252644159, 4294967295, 522132479, 4294967295, 1061108735, 0, 471603487, 0, 134744576, 0, 0, 0, 33688064, 0, 117904159, 1056964608, 252656447, 4294967295, 522189823, 4294967295, 1061157887, 4294966524, 4294965247, 4294965496, 4294965247, 4294963697, 4294965247, 4294960099, 4294965247, 4294952903, 4294965247, 4294938511, 4294965247, 4294909727, 4294965247, 4294917951, 4294965247, 4294769916, 4294965247, 4294506744, 4294965247, 4294046193, 4294965247, 4293125091, 4294965247, 4291282887, 4294965247, 4287598479, 4294965247, 4280229663, 4294965247, 4282335039, 4294965247, 4244438271, 4294965247, 4177066239, 4294965247, 4059165183, 4294965247, 3823363071, 4294965247, 3351758847, 4294965247, 2408550399, 4294965247, 522133503, 4294965247, 1061109759, 4294965247, 4244439039, 4294965244, 4177068031, 4294965240, 4059168767, 4294965233, 3823370239, 4294965219, 3351773183, 4294965191, 2408579071, 4294965135, 522190847, 4294965023, 1061158911, 4294965055, 4244635647, 4294964476, 4177526783, 4294963448, 4060086271, 4294963697, 3825205247, 4294960099, 3355443199, 4294952903, 2415919103, 4294936463, 536870911, 4294907679, 1073741823, 4294915903, 4294967295, 4294767868, 2080374784, 2121822328, 0, 1009791024, 0, 0, 0, 503711238, 520093696, 1057949455, 4294967295, 4280227615, 4294967295, 4282332991, 4294967295, 4244436223, 2130706432, 2021159039, 0, 0, 0, 0, 0, 0, 2130706432, 252643199, 4294967295, 522131455, 4294967295, 1061107711, 4294967295, 4244436991, 2130706432, 2021160831, 0, 808464958, 0, 5120, 0, 101066302, 2130706432, 252671871, 4294967295, 522188799, 4294967295, 1061156863, 4294966524, 4294965247, 4294965496, 4294965247, 4294963697, 4294965247, 4294960099, 4294965247, 4294952903, 4294965247, 4294938511, 4294965247, 4294909727, 4294965247, 4294917951, 4294965247, 4294769916, 4294965247, 4294506744, 4294965247, 4294046193, 4294965247, 4293125091, 4294965247, 4291282887, 4294965247, 4287598479, 4294965247, 4280229663, 4294965247, 4282335039, 4294965247, 4244438271, 4294965247, 4177066239, 4294965247, 4059165183, 4294965247, 3823363071, 4294965247, 3351758847, 4294965247, 2408550399, 4294965247, 522133503, 4294965247, 1061109759, 4294965247, 4244439039, 4294965244, 4177068031, 4294965240, 4059168767, 4294965233, 3823370239, 4294965219, 3351773183, 4294965191, 2408579071, 4294965135, 522190847, 4294965023, 1061158911, 4294965055, 2080374784, 2122282108, 0, 1010708536, 0, 1839120, 0, 1835008, 0, 1836036, 0, 507381262, 520093696, 1065293599, 1073741823, 4294915903, 2080374784, 2122085500, 0, 1010315320, 0, 1052672, 0, 0, 0, 263168, 0, 504235534, 520093696, 1059002143, 4294967295, 4282332991, 2080374784, 2088531071, 0, 943206462, 0, 1052672, 0, 0, 0, 263168, 0, 235800126, 520093696, 522131327, 4294967295, 1061107711, 2130706432, 2088531839, 0, 943206974, 0, 269489152, 0, 0, 0, 67376128, 0, 235808318, 2130706432, 522155903, 4294967295, 1061156863, 4294966524, 4294967294, 4294965496, 4294967294, 4294963697, 4294967294, 4294960099, 4294967294, 4294952903, 4294967294, 4294938511, 4294967294, 4294909727, 4294967294, 4294917951, 4294967294, 4294769916, 4294967294, 4294506744, 4294967294, 4294046193, 4294967294, 4293125091, 4294967294, 4291282887, 4294967294, 4287598479, 4294967294, 4280229663, 4294967294, 4282335039, 4294967294, 4244438271, 4294967294, 4177066239, 4294967294, 4059165183, 4294967294, 3823363071, 4294967294, 3351758847, 4294967294, 2408550399, 4294967294, 522133503, 4294967294, 1061109759, 4294967294, 4244439039, 4294967292, 4177068031, 4294967288, 4059168767, 4294967280, 3823370239, 4294967266, 3351773183, 4294967238, 2408579071, 4294967182, 522190847, 4294967070, 1061158911, 4294967102, 0, 0, 0, 196608, 0, 117899520, 50331648, 252642050, 3355443199, 4294952902, 2415919103, 4294938510, 536870911, 4294909726, 1073741823, 4294917950, 0, 0, 0, 0, 0, 33554432, 0, 117637890, 4294967295, 4291282886, 4294967295, 4287598478, 4294967295, 4280229662, 4294967295, 4282335038, 0, 0, 0, 0, 0, 0, 0, 50529024, 4294967295, 3351758846, 4294967295, 2408550398, 4294967295, 522133502, 4294967295, 1061109758, 0, 0, 0, 0, 0, 0, 0, 50530048, 4294967295, 3351773182, 4294967295, 2408579070, 4294967295, 522190846, 4294967295, 1061158910, 4294966524, 4294967294, 4294965496, 4294967294, 4294963697, 4294967294, 4294960099, 4294967294, 4294952903, 4294967294, 4294938511, 4294967294, 4294909727, 4294967294, 4294917951, 4294967294, 4294769916, 4294967294, 4294506744, 4294967294, 4294046193, 4294967294, 4293125091, 4294967294, 4291282887, 4294967294, 4287598479, 4294967294, 4280229663, 4294967294, 4282335039, 4294967294, 4244438271, 4294967294, 4177066239, 4294967294, 4059165183, 4294967294, 3823363071, 4294967294, 3351758847, 4294967294, 2408550399, 4294967294, 522133503, 4294967294, 1061109759, 4294967294, 0, 768, 0, 768, 0, 198400, 33554432, 117903106, 117440512, 252649222, 2408579071, 4294967182, 522190847, 4294967070, 1061158911, 4294967102, 0, 0, 0, 0, 0, 131072, 0, 33948162, 0, 118425350, 2415919103, 4294938510, 536870911, 4294909726, 1073741823, 4294917950, 0, 0, 0, 0, 0, 0, 0, 33686016, 0, 117901056, 4294967295, 4287598478, 4294967295, 4280229662, 4294967295, 4282335038, 0, 0, 0, 0, 0, 0, 0, 33685504, 0, 117901056, 4294967295, 2408550398, 4294967295, 522133502, 4294967295, 1061109758, 0, 0, 0, 0, 0, 0, 0, 33685504, 0, 117901056, 4294967295, 2408579070, 4294967295, 522190846, 4294967295, 1061158910, 4294966524, 4294967293, 4294965496, 4294967293, 4294963697, 4294967293, 4294960099, 4294967293, 4294952903, 4294967293, 4294938511, 4294967293, 4294909727, 4294967293, 4294917951, 4294967293, 4294769916, 4294967293, 4294506744, 4294967293, 4294046193, 4294967293, 4293125091, 4294967293, 4291282887, 4294967293, 4287598479, 4294967293, 4280229663, 4294967293, 4282335039, 4294967293, 4244438271, 4294967293, 4177066239, 4294967293, 4059165183, 4294967293, 3823363071, 4294967293, 3351758847, 4294967293, 2408550399, 4294967293, 522133503, 4294967293, 1061109759, 4294967293, 4244439039, 4294967292, 4177068031, 4294967288, 4059168767, 4294967281, 3823370239, 4294967265, 3351773183, 4294967237, 2408579071, 4294967181, 522190847, 4294967069, 1061158911, 4294967101, 201326592, 986124, 0, 0, 16777216, 459009, 50790400, 252642049, 117899264, 522127109, 2415919103, 4294938509, 536870911, 4294909725, 1073741823, 4294917949, 0, 0, 0, 0, 0, 0, 50331648, 117637889, 252116992, 252118789, 4294967295, 4287598477, 4294967295, 4280229661, 4294967295, 4282335037, 0, 202116108, 0, 0, 0, 16843009, 50331648, 50529037, 520552448, 117901085, 4294967295, 2408550397, 4294967295, 522133501, 4294967295, 1061109757, 0, 202116877, 0, 528141, 0, 16846605, 50331648, 50536221, 520552448, 117915453, 4294967295, 2408579069, 4294967295, 522190845, 4294967295, 1061158909, 4294966524, 4294967293, 4294965496, 4294967293, 4294963697, 4294967293, 4294960099, 4294967293, 4294952903, 4294967293, 4294938511, 4294967293, 4294909727, 4294967293, 4294917951, 4294967293, 4294769916, 4294967293, 4294506744, 4294967293, 4294046193, 4294967293, 4293125091, 4294967293, 4291282887, 4294967293, 4287598479, 4294967293, 4280229663, 4294967293, 4282335039, 4294967293, 4244438271, 4294967293, 4177066239, 4294967293, 4059165183, 4294967293, 3823363071, 4294967293, 3351758847, 4294967293, 2408550399, 4294967293, 522133503, 4294967293, 1061109759, 4294967293, 67108864, 1796, 0, 1792, 16777216, 1793, 50331648, 462593, 117899264, 252649221, 252116992, 522141453, 522190847, 4294967069, 1061158911, 4294967101, 0, 1028, 0, 0, 0, 257, 50331648, 459521, 50331648, 118425349, 252116992, 253693709, 536870911, 4294909725, 1073741823, 4294917949, 0, 1024, 0, 0, 0, 256, 0, 197377, 50331648, 117901061, 252116992, 252645133, 4294967295, 4280229661, 4294967295, 4282335037, 0, 263168, 0, 0, 0, 65792, 0, 50529025, 50331648, 117901069, 252116992, 252645149, 4294967295, 522133501, 4294967295, 1061109757, 0, 67372800, 0, 1792, 0, 16844544, 0, 50532097, 50331648, 117907213, 520552448, 252657437, 4294967295, 522190845, 4294967295, 1061158909, 4294966524, 4294967291, 4294965496, 4294967291, 4294963697, 4294967291, 4294960099, 4294967291, 4294952903, 4294967291, 4294938511, 4294967291, 4294909727, 4294967291, 4294917951, 4294967291, 4294769916, 4294967291, 4294506744, 4294967291, 4294046193, 4294967291, 4293125091, 4294967291, 4291282887, 4294967291, 4287598479, 4294967291, 4280229663, 4294967291, 4282335039, 4294967291, 4244438271, 4294967291, 4177066239, 4294967291, 4059165183, 4294967291, 3823363071, 4294967291, 3351758847, 4294967291, 2408550399, 4294967291, 522133503, 4294967291, 1061109759, 4294967291, 4244439039, 4294967288, 4177068031, 4294967288, 4059168767, 4294967281, 3823370239, 4294967267, 3351773183, 4294967235, 2408579071, 4294967179, 522190847, 4294967067, 1061158911, 4294967099, 1010696192, 1061108792, 402653184, 1972248, 0, 0, 50331648, 983811, 118423552, 522127107, 252641280, 1061097227, 536870911, 4294909723, 1073741823, 4294917947, 1006632960, 1044134968, 0, 0, 0, 0, 0, 0, 117440512, 252118787, 521076736, 521080587, 4294967295, 4280229659, 4294967295, 4282335035, 1006632960, 1010580539, 0, 404232216, 0, 0, 0, 50529027, 117440512, 117901083, 1057947648, 252645179, 4294967295, 522133499, 4294967295, 1061109755, 1006632960, 1010581307, 0, 404234011, 0, 1122075, 0, 50536219, 117440512, 117915451, 1057947648, 252673915, 4294967295, 522190843, 4294967295, 1061158907, 4294966524, 4294967291, 4294965496, 4294967291, 4294963697, 4294967291, 4294960099, 4294967291, 4294952903, 4294967291, 4294938511, 4294967291, 4294909727, 4294967291, 4294917951, 4294967291, 4294769916, 4294967291, 4294506744, 4294967291, 4294046193, 4294967291, 4293125091, 4294967291, 4291282887, 4294967291, 4287598479, 4294967291, 4280229663, 4294967291, 4282335039, 4294967291, 4244438271, 4294967291, 4177066239, 4294967291, 4059165183, 4294967291, 3823363071, 4294967291, 3351758847, 4294967291, 2408550399, 4294967291, 522133503, 4294967291, 1061109759, 4294967291, 469762048, 1974040, 134217728, 3592, 0, 3584, 33554432, 3586, 117440512, 990979, 252641280, 522141451, 521076736, 1061125915, 1061158911, 4294967099, 469762048, 1973272, 0, 2056, 0, 0, 0, 514, 117440512, 984835, 117440512, 253693707, 521076736, 524230427, 1073741823, 4294917947, 0, 1842200, 0, 2048, 0, 0, 0, 512, 0, 460547, 117440512, 252645131, 521076736, 522133275, 4294967295, 4282335035, 0, 471604248, 0, 526336, 0, 0, 0, 131584, 0, 117901059, 117440512, 252645147, 521076736, 522133307, 4294967295, 1061109755, 0, 471605016, 0, 134745600, 0, 3584, 0, 33689088, 0, 117907203, 117440512, 252657435, 1057947648, 522157883, 4294967295, 1061158907, 4294966524, 4294967287, 4294965496, 4294967287, 4294963697, 4294967287, 4294960099, 4294967287, 4294952903, 4294967287, 4294938511, 4294967287, 4294909727, 4294967287, 4294917951, 4294967287, 4294769916, 4294967287, 4294506744, 4294967287, 4294046193, 4294967287, 4293125091, 4294967287, 4291282887, 4294967287, 4287598479, 4294967287, 4280229663, 4294967287, 4282335039, 4294967287, 4244438271, 4294967287, 4177066239, 4294967287, 4059165183, 4294967287, 3823363071, 4294967287, 3351758847, 4294967287, 2408550399, 4294967287, 522133503, 4294967287, 1061109759, 4294967287, 4244439039, 4294967284, 4177068031, 4294967280, 4059168767, 4294967281, 3823370239, 4294967267, 3351773183, 4294967239, 2408579071, 4294967175, 522190847, 4294967063, 1061158911, 4294967095, 4244373504, 4294966516, 2021392384, 2122217584, 805306368, 3944496, 0, 0, 100663296, 1967622, 253689856, 1061097223, 522125312, 2139037463, 1073741823, 4294917943, 4277927936, 4277992692, 2013265920, 2088269936, 0, 0, 0, 0, 0, 0, 251658240, 521080583, 1058996224, 1059004183, 4294967295, 4282335031, 4294705152, 4244438263, 2013265920, 2021161078, 0, 808464432, 0, 0, 0, 101058054, 251658240, 252645175, 2132738048, 522133367, 4294967295, 1061109751, 4294705152, 4244439031, 2013265920, 2021162871, 0, 808468022, 0, 2244150, 0, 101072438, 251658240, 252673911, 2132738048, 522190839, 4294967295, 1061158903, 4294966524, 4294967287, 4294965496, 4294967287, 4294963697, 4294967287, 4294960099, 4294967287, 4294952903, 4294967287, 4294938511, 4294967287, 4294909727, 4294967287, 4294917951, 4294967287, 4294769916, 4294967287, 4294506744, 4294967287, 4294046193, 4294967287, 4293125091, 4294967287, 4291282887, 4294967287, 4287598479, 4294967287, 4280229663, 4294967287, 4282335039, 4294967287, 4244438271, 4294967287, 4177066239, 4294967287, 4059165183, 4294967287, 3823363071, 4294967287, 3351758847, 4294967287, 2408550399, 4294967287, 522133503, 4294967287, 1061109759, 4294967287, 2088501248, 2122219380, 939524096, 3948080, 268435456, 7184, 0, 7168, 67108864, 7172, 234881024, 1981958, 522125312, 1061125911, 1058996224, 2139094839, 2013265920, 2088664180, 939524096, 3946544, 0, 4112, 0, 0, 0, 1028, 234881024, 1969670, 251658240, 524230423, 1058996224, 1065303863, 2013265920, 2088533108, 0, 3684400, 0, 4096, 0, 0, 0, 1024, 0, 921094, 251658240, 522133271, 1058996224, 1061109559, 2013265920, 2088533110, 0, 943208496, 0, 1052672, 0, 0, 0, 263168, 0, 235802118, 251658240, 522133303, 1058996224, 1061109623, 2013265920, 2088533878, 0, 943210032, 0, 269491200, 0, 7168, 0, 67378176, 0, 235814406, 251658240, 522157879, 2132738048, 1061158775, 4278189308, 4294967295, 4278188280, 4294967295, 4278186481, 4294967295, 4278182883, 4294967295, 4278175687, 4294967295, 4278161295, 4294967295, 4278132511, 4294967295, 4278140735, 4294967295, 4277992700, 4294967295, 4277729528, 4294967295, 4277268977, 4294967295, 4276347875, 4294967295, 4274505671, 4294967295, 4270821263, 4294967295, 4263452447, 4294967295, 4265557823, 4294967295, 4244438271, 4294967295, 4177066239, 4294967295, 4042387967, 4294967295, 3806585855, 4294967295, 3334981631, 4294967295, 2391773183, 4294967295, 505356287, 4294967295, 1044332543, 4294967295, 0, 0, 0, 768, 0, 460545, 33751040, 118427395, 101122048, 253697799, 2391801855, 4294967183, 505413631, 4294967071, 1044381695, 4294967103, 0, 0, 0, 0, 0, 131072, 33554432, 117900035, 100663296, 252643079, 2399141887, 4294938511, 520093695, 4294909727, 1056964607, 4294917951, 0, 0, 0, 0, 0, 0, 0, 117637891, 0, 252118791, 4278190079, 4287598479, 4278190079, 4280229663, 4278190079, 4282335039, 0, 0, 0, 0, 0, 0, 0, 50529024, 0, 117901071, 4278190079, 2408550399, 4278190079, 522133503, 4278190079, 1061109759, 0, 0, 0, 0, 0, 0, 0, 50530048, 0, 117903119, 4278190079, 2408579071, 4278190079, 522190847, 4278190079, 1061158911, 4278189308, 4294967295, 4278188280, 4294967295, 4278186481, 4294967295, 4278182883, 4294967295, 4278175687, 4294967295, 4278161295, 4294967295, 4278132511, 4294967295, 4278140735, 4294967295, 4277992700, 4294967295, 4277729528, 4294967295, 4277268977, 4294967295, 4276347875, 4294967295, 4274505671, 4294967295, 4270821263, 4294967295, 4263452447, 4294967295, 4265557823, 4294967295, 0, 3, 0, 3, 0, 775, 33685504, 460559, 101122048, 118427423, 235864064, 253697855, 505356287, 4294967295, 1044332543, 4294967295, 0, 0, 0, 0, 0, 512, 33554432, 132610, 100663296, 117903111, 234881024, 252649231, 505413631, 4294967071, 1044381695, 4294967103, 0, 0, 0, 0, 0, 0, 0, 131586, 0, 117901063, 0, 252645135, 520093695, 4294909727, 1056964607, 4294917951, 0, 0, 0, 0, 0, 0, 0, 131584, 0, 117901056, 0, 252645135, 4278190079, 4280229663, 4278190079, 4282335039, 0, 0, 0, 0, 0, 0, 0, 131072, 0, 117901056, 0, 252645135, 4278190079, 522133503, 4278190079, 1061109759, 0, 0, 0, 0, 0, 0, 0, 33685504, 0, 117901056, 0, 252645135, 4278190079, 522190847, 4278190079, 1061158911, 4261412092, 4294967295, 4261411064, 4294967295, 4261409265, 4294967295, 4261405667, 4294967295, 4261398471, 4294967295, 4261384079, 4294967295, 4261355295, 4294967295, 4261363519, 4294967295, 4261215484, 4294967295, 4260952312, 4294967295, 4260491761, 4294967295, 4259570659, 4294967295, 4257728455, 4294967295, 4254044047, 4294967295, 4246675231, 4294967295, 4248780607, 4294967295, 4244438271, 4294967295, 4177066239, 4294967295, 4059165183, 4294967295, 3789808639, 4294967295, 3318204415, 4294967295, 2374995967, 4294967295, 488579071, 4294967295, 1027555327, 4294967295, 202113024, 3852, 0, 0, 16842752, 1793, 16975616, 986883, 84346624, 253697799, 219094799, 524238607, 488636415, 4294967071, 1027604479, 4294967103, 0, 0, 0, 0, 0, 0, 16973824, 459523, 84870912, 252643079, 220143375, 522129167, 503316479, 4294909727, 1040187391, 4294917951, 201326592, 789516, 0, 0, 16777216, 65793, 84082688, 117637891, 219088640, 252118791, 488578831, 521080591, 4261412863, 4280229663, 4261412863, 4282335039, 218103808, 202116110, 83886080, 5, 218103808, 16843019, 486735872, 50529047, 1024395008, 117901103, 2099191567, 252645215, 4261412863, 522133503, 4261412863, 1061109759, 201326592, 202116879, 0, 528143, 16777216, 16846607, 84082688, 50536223, 219088640, 117915455, 488578831, 252673919, 4261412863, 522190847, 4261412863, 1061158911, 4261412092, 4294967295, 4261411064, 4294967295, 4261409265, 4294967295, 4261405667, 4294967295, 4261398471, 4294967295, 4261384079, 4294967295, 4261355295, 4294967295, 4261363519, 4294967295, 4261215484, 4294967295, 4260952312, 4294967295, 4260491761, 4294967295, 4259570659, 4294967295, 4257728455, 4294967295, 4254044047, 4294967295, 4246675231, 4294967295, 4248780607, 4294967295, 67371008, 7, 0, 7, 16842752, 7, 16973824, 1807, 84346624, 986911, 219088640, 253697855, 488578831, 524238719, 1027555327, 4294967295, 67108864, 4, 0, 0, 16777216, 1, 16973824, 1795, 84082688, 462599, 219088640, 252649231, 488578831, 522141471, 1027604479, 4294967103, 0, 4, 0, 0, 0, 1, 16777216, 771, 84082688, 460551, 219088640, 252645135, 488578831, 522133279, 1040187391, 4294917951, 0, 1028, 0, 0, 0, 257, 16777216, 197379, 84082688, 460551, 219088640, 252645135, 488578831, 522133279, 4261412863, 4282335039, 0, 263173, 0, 2, 0, 65797, 16777216, 197387, 84082688, 117901079, 219088640, 252645167, 488578831, 522133343, 4261412863, 1061109759, 0, 67372804, 0, 1792, 0, 16844545, 16777216, 50532099, 84082688, 117907207, 219088640, 252657423, 488578831, 522157919, 4261412863, 1061158911, 4227857660, 4294967295, 4227856632, 4294967295, 4227854833, 4294967295, 4227851235, 4294967295, 4227844039, 4294967295, 4227829647, 4294967295, 4227800863, 4294967295, 4227809087, 4294967295, 4227661052, 4294967295, 4227397880, 4294967295, 4226937329, 4294967295, 4226016227, 4294967295, 4224174023, 4294967295, 4220489615, 4294967295, 4213120799, 4294967295, 4215226175, 4294967295, 4177329407, 4294967295, 4177066239, 4294967295, 4059165183, 4294967295, 3823363071, 4294967295, 3284649983, 4294967295, 2341441535, 4294967295, 455024639, 4294967295, 994000895, 4294967295, 943472128, 4144956, 404226048, 7704, 0, 0, 50528256, 3843, 50794240, 2039559, 185536256, 524238607, 455032607, 1065320223, 994050047, 4294967103, 943456256, 4078652, 0, 0, 0, 0, 0, 0, 50790400, 984839, 186584832, 522129167, 457129759, 1061101343, 1006632959, 4294917951, 977010688, 1044134972, 402653184, 1579032, 0, 0, 50331648, 197379, 185008128, 252118791, 455020288, 521080591, 994000671, 1059004191, 4227858431, 4282335039, 993787904, 1010580542, 452984832, 404232221, 167772160, 10, 452984832, 50529047, 990314496, 117901103, 2065633024, 252645215, 4215226143, 522133439, 4227858431, 1061109759, 977010688, 1010581311, 402653184, 404234015, 0, 1122079, 50331648, 50536223, 185008128, 117915455, 455020288, 252673919, 994000671, 522190847, 4227858431, 1061158911, 4227857660, 4294967295, 4227856632, 4294967295, 4227854833, 4294967295, 4227851235, 4294967295, 4227844039, 4294967295, 4227829647, 4294967295, 4227800863, 4294967295, 4227809087, 4294967295, 4227661052, 4294967295, 4227397880, 4294967295, 4226937329, 4294967295, 4226016227, 4294967295, 4224174023, 4294967295, 4220489615, 4294967295, 4213120799, 4294967295, 4215226175, 4294967295, 404488192, 7711, 134742016, 14, 0, 14, 33685504, 14, 50790400, 3871, 185536256, 2039615, 455020288, 524238719, 994000671, 1065320447, 404488192, 7708, 134217728, 8, 0, 0, 33554432, 2, 50790400, 3847, 185008128, 990991, 455020288, 522141471, 994000671, 1061125951, 402653184, 7196, 0, 8, 0, 0, 0, 2, 50331648, 1799, 185008128, 986895, 455020288, 522133279, 994000671, 1061109567, 402653184, 1842204, 0, 2056, 0, 0, 0, 514, 50331648, 460551, 185008128, 986895, 455020288, 522133279, 994000671, 1061109567, 402653184, 1842205, 0, 526346, 0, 4, 0, 131594, 50331648, 460567, 185008128, 252645167, 455020288, 522133343, 994000671, 1061109695, 402653184, 471605020, 0, 134745608, 0, 3584, 0, 33689090, 50331648, 117907207, 185008128, 252657423, 455020288, 522157855, 994000671, 1061158847, 4160748796, 4294967295, 4160747768, 4294967295, 4160745969, 4294967295, 4160742371, 4294967295, 4160735175, 4294967295, 4160720783, 4294967295, 4160691999, 4294967295, 4160700223, 4294967295, 4160552188, 4294967295, 4160289016, 4294967295, 4159828465, 4294967295, 4158907363, 4294967295, 4157065159, 4294967295, 4153380751, 4294967295, 4146011935, 4294967295, 4148117311, 4294967295, 4110220543, 4294967295, 4042848511, 4294967295, 4059165183, 4294967295, 3823363071, 4294967295, 3351758847, 4294967295, 2274332671, 4294967295, 387915775, 4294967295, 926892031, 4294967295, 4110220288, 4278190076, 1886944256, 8289912, 808452096, 15408, 0, 0, 101056512, 7686, 118431488, 4144911, 387915520, 1065320223, 926908223, 2147483455, 4110351360, 4278123772, 1886912512, 8157304, 0, 0, 0, 0, 0, 0, 118423552, 2035471, 390012672, 1061101343, 931102527, 2139045695, 4143905792, 4277992700, 1954021376, 2088269944, 805306368, 3158064, 0, 0, 100663296, 394758, 386859008, 521080591, 926883584, 1059004191, 2004844351, 2134851391, 4160683008, 4244438270, 2004353024, 2021161085, 905969664, 808464442, 335544320, 20, 905969664, 101058094, 1997471744, 252645215, 4148109056, 522133439, 4152327999, 1061109631, 4143905792, 4244439039, 1954021376, 2021162879, 805306368, 808468030, 0, 2244158, 100663296, 101072446, 386859008, 252673919, 926883584, 522190847, 2004844351, 1061158911, 4160748796, 4294967295, 4160747768, 4294967295, 4160745969, 4294967295, 4160742371, 4294967295, 4160735175, 4294967295, 4160720783, 4294967295, 4160691999, 4294967295, 4160700223, 4294967295, 4160552188, 4294967295, 4160289016, 4294967295, 4159828465, 4294967295, 4158907363, 4294967295, 4157065159, 4294967295, 4153380751, 4294967295, 4146011935, 4294967295, 4148117311, 4294967295, 1954315264, 8289919, 808976384, 15422, 269484032, 28, 0, 28, 67371008, 28, 101580800, 7742, 387915520, 4145023, 926883584, 1065320447, 1954021376, 8158844, 808976384, 15416, 268435456, 16, 0, 0, 67108864, 4, 101580800, 7694, 386859008, 2047775, 926883584, 1061125951, 1954021376, 8158332, 805306368, 14392, 0, 16, 0, 0, 0, 4, 100663296, 3598, 386859008, 2039583, 926883584, 1061109567, 1954021376, 8158332, 805306368, 3684408, 0, 4112, 0, 0, 0, 1028, 100663296, 921102, 386859008, 2039583, 926883584, 1061109567, 1954021376, 2088533117, 805306368, 3684410, 0, 1052692, 0, 8, 0, 263188, 100663296, 921134, 386859008, 522133343, 926883584, 1061109695, 1954021376, 2088533884, 805306368, 943210040, 0, 269491216, 0, 7168, 0, 67378180, 100663296, 235814414, 386859008, 522157855, 926883584, 1061158719, 4294900988, 4294967295, 4294899960, 4294967295, 4294898161, 4294967295, 4294894563, 4294967295, 4294887367, 4294967295, 4294872975, 4294967295, 4294844191, 4294967295, 4294852415, 4294967295, 4294769916, 4294967295, 4294506744, 4294967295, 4293980657, 4294967295, 4293059555, 4294967295, 4291217351, 4294967295, 4287532943, 4294967295, 4280164127, 4294967295, 4282269503, 4294967295, 0, 0, 0, 3, 16777216, 1799, 50463488, 462607, 117835520, 252649247, 252579584, 522141503, 522067967, 4294967295, 1061044223, 4294967295, 0, 0, 0, 0, 0, 512, 50462720, 460547, 117833728, 252645127, 252575744, 522133263, 522125311, 4294967071, 1061093375, 4294967103, 0, 0, 0, 0, 0, 0, 50331648, 459523, 117440512, 252643079, 251658240, 522129167, 536805375, 4294909727, 1073676287, 4294917951, 0, 0, 0, 0, 0, 0, 0, 197379, 0, 252118791, 520093696, 521080591, 4294901759, 4280229663, 4294901759, 4282335039, 0, 0, 0, 0, 0, 0, 0, 50529024, 0, 117901071, 520093696, 252645151, 4294901759, 522133503, 4294901759, 1061109759, 0, 0, 0, 0, 0, 0, 0, 50530048, 0, 117903119, 520093696, 252649247, 4294901759, 522190847, 4294901759, 1061158911, 4294900988, 4294967295, 4294899960, 4294967295, 4294898161, 4294967295, 4294894563, 4294967295, 4294887367, 4294967295, 4294872975, 4294967295, 4294844191, 4294967295, 4294852415, 4294967295, 50331648, 0, 50331648, 0, 117440512, 3, 251789824, 1799, 520488704, 462607, 1057885952, 252649247, 2132680448, 522141503, 4282269503, 4294967295, 0, 0, 0, 0, 0, 2, 33685504, 518, 117833728, 460559, 252575744, 252645151, 522059776, 522133311, 1061044223, 4294967295, 0, 0, 0, 0, 0, 0, 33554432, 514, 117440512, 460551, 251658240, 252645135, 520093696, 522133279, 1061093375, 4294967103, 0, 0, 0, 0, 0, 0, 0, 514, 0, 460551, 0, 252645135, 520093696, 522133279, 1073676287, 4294917951, 0, 0, 0, 0, 0, 0, 0, 512, 0, 460544, 0, 252645135, 520093696, 522133279, 4294901759, 4282335039, 0, 0, 0, 0, 0, 0, 0, 131072, 0, 460544, 0, 252645135, 520093696, 522133279, 4294901759, 1061109759, 0, 0, 0, 0, 0, 0, 0, 33685504, 0, 117901056, 0, 252645135, 520093696, 522133279, 4294901759, 1061158911, 4294835452, 4294967295, 4294834424, 4294967295, 4294832625, 4294967295, 4294829027, 4294967295, 4294821831, 4294967295, 4294807439, 4294967295, 4294778655, 4294967295, 4294786879, 4294967295, 4294769916, 4294967295, 4294506744, 4294967295, 4294046193, 4294967295, 4292994019, 4294967295, 4291151815, 4294967295, 4287467407, 4294967295, 4280098591, 4294967295, 4282203967, 4294967295, 202116096, 15, 0, 0, 16843008, 7, 50397959, 3855, 117769991, 991007, 252514079, 522141503, 522002239, 1061126015, 1060978687, 4294967295, 0, 0, 0, 0, 0, 0, 50397952, 1795, 117772039, 986887, 252518175, 522133263, 522010431, 1061109535, 1061027839, 4294967103, 202113024, 3084, 0, 0, 16842752, 257, 50660096, 459523, 118296327, 984839, 253566751, 522129167, 524107583, 1061101343, 1073610751, 4294917951, 235732992, 789516, 84213760, 0, 185401344, 65793, 387777280, 197379, 792530695, 252118791, 1602035487, 521080591, 3221045055, 1059004191, 4294836223, 4282335039, 252444672, 202116111, 251658240, 2063, 251723776, 16843023, 520422144, 50529055, 1057820423, 117901119, 2132614943, 252645247, 4282203967, 522133503, 4294836223, 1061109759, 521994240, 203169567, 521994240, 1580831, 521994240, 17899295, 521995008, 50536223, 1060966151, 117915455, 2138906399, 252673919, 4294786879, 522190847, 4294836223, 1061158911, 4294835452, 4294967295, 4294834424, 4294967295, 4294832625, 4294967295, 4294829027, 4294967295, 4294821831, 4294967295, 4294807439, 4294967295, 4294778655, 4294967295, 4294786879, 4294967295, 117703680, 0, 117440512, 0, 117506304, 0, 251724544, 7, 520423175, 3855, 1057820423, 991007, 2132614943, 522141503, 4282203967, 1061126015, 67371008, 0, 0, 0, 16842752, 0, 50397952, 7, 117768960, 1807, 252514055, 986911, 522002207, 522133311, 1060978495, 1061109631, 67108864, 0, 0, 0, 16777216, 0, 50397184, 3, 117768960, 1799, 252514055, 986895, 522002207, 522133279, 1060978495, 1061109567, 67108864, 4, 0, 0, 16777216, 1, 50397184, 771, 117768960, 1799, 252514055, 986895, 522002207, 522133279, 1060978495, 1061109567, 83886080, 1028, 33554432, 0, 83886080, 257, 184614912, 771, 386204416, 460551, 789384967, 986895, 1595744031, 522133279, 3208462143, 1061109567, 67108864, 263175, 0, 7, 16777216, 65799, 50397184, 197391, 117768960, 460575, 252514055, 252645183, 522002207, 522133375, 3208462143, 1061109759, 251658240, 67374863, 251658240, 3855, 251658240, 16846607, 251723776, 50532111, 520422144, 117907231, 1057820423, 252657471, 2132614943, 522157951, 4282203967, 1061158911, 4294704380, 4294967295, 4294703352, 4294967295, 4294701553, 4294967295, 4294697955, 4294967295, 4294690759, 4294967295, 4294676367, 4294967295, 4294647583, 4294967295, 4294655807, 4294967295, 4294507772, 4294967295, 4294506744, 4294967295, 4294046193, 4294967295, 4293125091, 4294967295, 4291020743, 4294967295, 4287336335, 4294967295, 4279967519, 4294967295, 4282072895, 4294967295, 1010318398, 16191, 404232192, 30, 0, 0, 50529024, 15, 117638927, 7967, 252382991, 2047807, 521871167, 1061126015, 1060847487, 2139095039, 1010318336, 15932, 0, 0, 0, 0, 0, 0, 117638912, 3847, 252387087, 2039567, 521879359, 1061109535, 1060863871, 2139062079, 1010449408, 4078652, 404226048, 6168, 0, 0, 50528256, 771, 118163200, 984839, 253435663, 2035471, 523976511, 1061101343, 1065058175, 2139045695, 1044069376, 3947580, 488308736, 1579032, 168427520, 0, 387645440, 197379, 792397568, 460551, 1601904399, 521080591, 3220913983, 1059004191, 2147188607, 2134851391, 1060781056, 1010580543, 521666560, 404232223, 520093696, 4383, 520290304, 50529055, 1057687296, 117901119, 2132483855, 252645247, 4282072895, 522133503, 4286283647, 1061109759, 1060846592, 1010581311, 1060831232, 406339391, 1060831232, 3227455, 1060831232, 52641599, 1060833024, 117915455, 2138775311, 252673919, 4294655807, 522190847, 4294672255, 1061158911, 4294704380, 4294967295, 4294703352, 4294967295, 4294701553, 4294967295, 4294697955, 4294967295, 4294690759, 4294967295, 4294676367, 4294967295, 4294647583, 4294967295, 4294655807, 4294967295, 521673728, 30, 235407360, 0, 234881024, 0, 235012608, 0, 520292096, 15, 1057689359, 7967, 2132483855, 2047807, 4282072895, 1061126015, 471342080, 30, 134742016, 0, 0, 0, 33685504, 0, 117638912, 15, 252380928, 3871, 521871119, 2039615, 1060847423, 1061109631, 471334912, 28, 134217728, 0, 0, 0, 33554432, 0, 117637120, 7, 252380928, 3855, 521871119, 2039583, 1060847423, 1061109567, 471334912, 7196, 134217728, 8, 0, 0, 33554432, 2, 117637120, 1799, 252380928, 3855, 521871119, 2039583, 1060847423, 1061109567, 488112128, 7196, 167772160, 2056, 67108864, 0, 167772160, 514, 386072576, 1799, 789251840, 986895, 1595612943, 2039583, 3208331071, 1061109567, 471334912, 1842207, 134217728, 526350, 0, 14, 33554432, 131598, 117637120, 460575, 252380928, 986943, 521871119, 522133375, 1060847423, 1061109759, 521666560, 471605023, 520093696, 134749983, 520093696, 7967, 520093696, 33693471, 520290304, 117907231, 1057687296, 252657471, 2132483855, 522157951, 4282072895, 1061158911, 4294442236, 4294967295, 4294441208, 4294967295, 4294439409, 4294967295, 4294435811, 4294967295, 4294428615, 4294967295, 4294414223, 4294967295, 4294385439, 4294967295, 4294393663, 4294967295, 4294245628, 4294967295, 4293982456, 4294967295, 4294046193, 4294967295, 4293125091, 4294967295, 4291282887, 4294967295, 4287074191, 4294967295, 4279705375, 4294967295, 4281810751, 4294967295, 4243913980, 16711679, 2020636796, 32382, 808464384, 60, 0, 0, 101058048, 30, 252120863, 16191, 521608991, 4161407, 1060585343, 2139095039, 4243914492, 16711420, 2020636672, 31864, 0, 0, 0, 0, 0, 0, 252120832, 7951, 521617183, 4144927, 1060601727, 2139062079, 4244045564, 16710908, 2020898816, 8157304, 808452096, 12336, 0, 0, 101056512, 1542, 253169408, 2035471, 523714335, 4136735, 1064796031, 2139045695, 4277665532, 4277992700, 2104981504, 7895160, 976617472, 3158064, 336855040, 0, 775290880, 394758, 1601638144, 986895, 3220651807, 1059004191, 2146926463, 2134851391, 4294377212, 4244438271, 2138339328, 2021161087, 1043333120, 808464446, 1040187392, 8766, 1040580608, 101058110, 2132217600, 252645247, 4281810719, 522133503, 4286021503, 1061109759, 4294442748, 4244439039, 2138535936, 2021162879, 2138505216, 812744575, 2138505216, 6520703, 2138505216, 105348991, 2138509056, 252673919, 4294393631, 522190847, 4294410111, 1061158911, 4294442236, 4294967295, 4294441208, 4294967295, 4294439409, 4294967295, 4294435811, 4294967295, 4294428615, 4294967295, 4294414223, 4294967295, 4294385439, 4294967295, 4294393663, 4294967295, 2138340476, 32382, 1043347456, 60, 470814720, 0, 469762048, 0, 470025216, 0, 1040584192, 30, 2132221727, 16191, 4281810719, 4161407, 2088007680, 31870, 942684160, 60, 269484032, 0, 0, 0, 67371008, 0, 235277824, 30, 521604864, 7999, 1060585247, 4145023, 2088007680, 31868, 942669824, 56, 268435456, 0, 0, 0, 67108864, 0, 235274240, 14, 521604864, 7967, 1060585247, 4144959, 2088007680, 31868, 942669824, 14392, 268435456, 16, 0, 0, 67108864, 4, 235274240, 3598, 521604864, 7967, 1060585247, 4144959, 2104784896, 8158332, 976224256, 14392, 335544320, 4112, 134217728, 0, 335544320, 1028, 772145152, 3598, 1595346688, 2039583, 3208068895, 4144959, 2088007680, 8158335, 942669824, 3684414, 268435456, 1052700, 0, 28, 67108864, 263196, 235274240, 921150, 521604864, 2039679, 1060585247, 1061109759, 2138339328, 2088533887, 1043333120, 943210046, 1040187392, 269499966, 1040187392, 15934, 1040187392, 67386942, 1040580608, 235814462, 2132217600, 522157951, 4281810719, 1061158911, 4294966524, 4294967295, 4294965496, 4294967295, 4294963441, 4294967295, 4294959843, 4294967295, 4294952647, 4294967295, 4294938255, 4294967295, 4294909471, 4294967295, 4294917695, 4294967295, 0, 0, 4294506744, 4294967295, 4294045937, 4294967295, 4293124835, 4294967295, 4291282631, 4294967295, 4287598223, 4294967295, 4280229407, 4294967295, 4282334783, 4294967295, 0, 0, 0, 0, 16777216, 3855, 50528768, 466719, 117900800, 252657471, 252644864, 522157951, 522133247, 4294967295, 1061109503, 4294967295, 0, 0, 0, 0, 0, 512, 50528256, 460547, 117899264, 252645127, 252641280, 522133263, 522190591, 4294967071, 1061158655, 4294967103, 0, 0, 0, 0, 0, 0, 50331648, 459523, 117440512, 252643079, 251658240, 522129167, 536870655, 4294909727, 1073741567, 4294917951, 0, 0, 0, 0, 0, 0, 0, 197379, 0, 252118791, 520093696, 521080591, 4294967039, 4280229663, 4294967039, 4282335039, 0, 0, 0, 0, 0, 0, 0, 50529024, 0, 117901071, 520093696, 252645151, 4294967039, 522133503, 4294967039, 1061109759, 0, 0, 0, 0, 0, 0, 0, 50530048, 0, 117903119, 520093696, 252649247, 4294967039, 522190847, 4294967039, 1061158911, 196608, 0, 196608, 0, 4294963441, 4294967295, 4294959843, 4294967295, 4294952647, 4294967295, 4294938255, 4294967295, 4294909471, 4294967295, 4294917695, 4294967295, 0, 0, 0, 0, 251658240, 3855, 251789824, 3855, 520553984, 466719, 1057951232, 252657471, 2132745728, 522157951, 4282334783, 4294967295, 0, 0, 0, 0, 0, 6, 33685504, 526, 117899264, 460575, 252641280, 252645183, 522125312, 522133375, 1061109503, 4294967295, 0, 0, 0, 0, 0, 0, 33554432, 514, 117440512, 460551, 251658240, 252645135, 520093696, 522133279, 1061158655, 4294967103, 0, 0, 0, 0, 0, 0, 0, 514, 0, 460551, 0, 252645135, 520093696, 522133279, 1073741567, 4294917951, 0, 0, 0, 0, 0, 0, 0, 512, 0, 460544, 0, 252645135, 520093696, 522133279, 4294967039, 4282335039, 0, 0, 0, 0, 0, 0, 0, 131072, 0, 460544, 0, 252645135, 520093696, 522133279, 4294967039, 1061109759, 0, 0, 0, 0, 0, 0, 0, 33685504, 0, 117901056, 0, 252645135, 520093696, 522133279, 4294967039, 1061158911, 4294966524, 4294967295, 4294965496, 4294967295, 4294963697, 4294967295, 4294959587, 4294967295, 4294952391, 4294967295, 4294937999, 4294967295, 4294909215, 4294967295, 4294917439, 4294967295, 4294769916, 4294967295, 0, 0, 4294046193, 4294967295, 4293124579, 4294967295, 4291282375, 4294967295, 4287597967, 4294967295, 4280229151, 4294967295, 4282334527, 4294967295, 0, 0, 0, 0, 0, 0, 50528515, 7967, 117900559, 999231, 252644639, 522157951, 522132799, 1061158911, 1061109247, 4294967295, 202116096, 12, 0, 0, 16843008, 1, 50529539, 1795, 117902607, 986887, 252648735, 522133263, 522140991, 1061109535, 1061158399, 4294967103, 202247424, 3084, 328960, 0, 17501440, 257, 51846403, 771, 120536335, 984839, 257916191, 522129167, 532675903, 1061101343, 1073741311, 4294917951, 252644352, 789516, 252641280, 8, 252641536, 65793, 522126595, 197379, 1061096719, 460551, 2139036959, 521080591, 4294917439, 1059004191, 4294966783, 4282335039, 522132736, 202120223, 522132736, 6175, 522132736, 16847135, 522132739, 50529055, 1061109007, 117901119, 2139061535, 252645247, 4294966591, 522133503, 4294966783, 1061109759, 1061109055, 205274943, 1061109055, 3686207, 1061109055, 20004671, 1061109055, 52641599, 1061109055, 117915455, 2139061631, 252673919, 4294966783, 522190847, 4294966783, 1061158911, 459780, 0, 458752, 0, 459009, 0, 4294959587, 4294967295, 4294952391, 4294967295, 4294937999, 4294967295, 4294909215, 4294967295, 4294917439, 4294967295, 263168, 0, 0, 0, 65792, 0, 520290563, 7967, 520553731, 7967, 1057950991, 999231, 2132745503, 522157951, 4282334527, 1061158911, 262144, 0, 0, 0, 65536, 0, 50528512, 15, 117900547, 1823, 252644623, 986943, 522132767, 522133375, 1061109055, 1061109759, 67371008, 0, 0, 0, 16842752, 0, 50528512, 3, 117900547, 1799, 252644623, 986895, 522132767, 522133279, 1061109055, 1061109567, 67436544, 4, 131072, 0, 17104896, 1, 51052800, 3, 118949123, 1799, 254741775, 986895, 526327071, 522133279, 1069497663, 1061109567, 117702656, 1028, 117440512, 0, 117506048, 257, 251855104, 771, 520553731, 1799, 1057950991, 986895, 2132745503, 522133279, 4290723135, 1061109567, 252641280, 263183, 252641280, 15, 252641280, 65807, 252641536, 197391, 522126595, 460575, 1061096719, 986943, 2139036959, 522133375, 4294917439, 1061109759, 522132736, 67378975, 522132736, 7967, 522132736, 16850719, 522132736, 50536223, 522132739, 117907231, 1061109007, 252657471, 2139061535, 522157951, 4294966591, 1061158911, 4294965500, 4294967295, 4294965496, 4294967295, 4294963697, 4294967295, 4294960099, 4294967295, 4294951879, 4294967295, 4294937487, 4294967295, 4294908703, 4294967295, 4294916927, 4294967295, 4294768892, 4294967295, 4294506744, 4294967295, 0, 0, 4293125091, 4294967295, 4291281863, 4294967295, 4287597455, 4294967295, 4280228639, 4294967295, 4282334015, 4294967295, 1010579516, 16191, 0, 0, 0, 0, 0, 0, 117900039, 16191, 252644127, 2064255, 522132287, 1061158911, 1061108607, 2139095039, 1010580028, 15932, 404232192, 24, 0, 0, 50529024, 3, 117902087, 3847, 252648223, 2039567, 522140479, 1061109535, 1061124991, 2139062079, 1010711356, 15420, 404560640, 6168, 657920, 0, 51845888, 771, 120535815, 1799, 257915679, 2035471, 532675391, 1061101343, 1065352063, 2139045695, 1061108284, 3947580, 522131456, 1579032, 522125312, 17, 522126080, 197379, 1061096199, 460551, 2139036447, 986895, 4294916927, 1059004191, 4294933375, 2134851391, 1061108540, 1010580543, 1061108480, 404240447, 1061108480, 12607, 1061108480, 50537279, 1061108487, 117901119, 2139061023, 252645247, 4294966079, 522133503, 4294966143, 1061109759, 2139061119, 1014792063, 2139061119, 410550143, 2139061119, 7438207, 2139061119, 56852351, 2139061119, 122126207, 2139061119, 252673919, 4294966271, 522190847, 4294966271, 1061158911, 4294965500, 4294967295, 919560, 0, 917504, 0, 918018, 0, 4294951879, 4294967295, 4294937487, 4294967295, 4294908703, 4294967295, 4294916927, 4294967295, 1060911164, 16191, 526336, 0, 0, 0, 131584, 0, 1057424135, 16191, 1057950471, 16191, 2132744991, 2064255, 4282334015, 1061158911, 471603200, 31, 524288, 0, 0, 0, 131072, 0, 117900032, 31, 252644103, 3903, 522132255, 2039679, 1061108543, 1061109759, 471603200, 28, 134742016, 0, 0, 0, 33685504, 0, 117900032, 7, 252644103, 3855, 522132255, 2039583, 1061108543, 1061109567, 471668736, 28, 134873088, 8, 262144, 0, 34209792, 2, 118948608, 7, 254741255, 3855, 526326559, 2039583, 1069497151, 1061109567, 521934848, 7196, 235405312, 2056, 234881024, 0, 235012096, 514, 520553216, 1799, 1057950471, 3855, 2132744991, 2039583, 4282334015, 1061109567, 522131456, 1842207, 522125312, 526367, 522125312, 31, 522125312, 131615, 522126080, 460575, 1061096199, 986943, 2139036447, 2039679, 4294916927, 1061109759, 1061108480, 471613247, 1061108480, 134758207, 1061108480, 16191, 1061108480, 33701695, 1061108480, 117915455, 1061108487, 252657471, 2139061023, 522157951, 4294966079, 1061158911, 4294964476, 4294967295, 4294963448, 4294967295, 4294963697, 4294967295, 4294960099, 4294967295, 4294952903, 4294967295, 4294936463, 4294967295, 4294907679, 4294967295, 4294915903, 4294967295, 4294767868, 4294967295, 4294504696, 4294967295, 4294046193, 4294967295, 0, 0, 4291282887, 4294967295, 4287596431, 4294967295, 4280227615, 4294967295, 4282332991, 4294967295, 4244436222, 16711679, 2021159032, 32639, 0, 0, 0, 0, 0, 0, 252643087, 32639, 522131263, 4194303, 1061107583, 2139095039, 4244436734, 16711420, 2021160056, 31864, 808464384, 48, 0, 0, 101058048, 6, 252647183, 7951, 522139455, 4144927, 1061123967, 2139062079, 4244568062, 16710908, 2021488504, 30840, 809121280, 12336, 1315840, 0, 103691776, 1542, 257914639, 3855, 532674367, 4136735, 1065351039, 2139045695, 4294964990, 16579836, 2139059320, 7895160, 1044262912, 3158064, 1044250624, 34, 1044252160, 394758, 2139035407, 986895, 4294915903, 2039583, 4294932351, 2134851391, 4294965246, 4244438271, 2139060088, 2021161087, 2139059968, 808481151, 2139059968, 25471, 2139059968, 101074815, 2139059983, 252645247, 4294965055, 522133503, 4294965119, 1061109759, 4294965247, 4244439039, 4294965247, 2029584383, 4294965247, 821166079, 4294965247, 14942207, 4294965247, 113770495, 4294965247, 261095423, 4294965247, 522190847, 4294965247, 1061158911, 4294964476, 4294967295, 4294963448, 4294967295, 1839120, 0, 1835008, 0, 1836036, 0, 4294936463, 4294967295, 4294907679, 4294967295, 4294915903, 4294967295, 2138862712, 32639, 2138599544, 32639, 1052672, 0, 0, 0, 263168, 0, 2131691279, 32639, 2132743951, 32639, 4282332991, 4194303, 2088531064, 31871, 943206400, 62, 1048576, 0, 0, 0, 262144, 0, 235800064, 62, 522131215, 8063, 1061107519, 4145151, 2088531064, 31868, 943206400, 56, 269484032, 0, 0, 0, 67371008, 0, 235800064, 14, 522131215, 7967, 1061107519, 4144959, 2088596600, 31868, 943337472, 56, 269746176, 16, 524288, 0, 68419584, 4, 237897216, 14, 526325519, 7967, 1069496127, 4144959, 2138862712, 31868, 1043869696, 14392, 470810624, 4112, 469762048, 0, 470024192, 1028, 1041106432, 3598, 2132743951, 7967, 4282332991, 4144959, 2139059320, 8158335, 1044262912, 3684414, 1044250624, 1052734, 1044250624, 62, 1044250624, 263230, 1044252160, 921150, 2139035407, 2039679, 4294915903, 4145151, 2139060088, 2088533887, 2139059968, 943226751, 2139059968, 269516671, 2139059968, 32639, 2139059968, 67403647, 2139059968, 235831167, 2139059983, 522157951, 4294965055, 1061158911")("KPKBitbase");
+        List.DeleteAll(KPKPow2);
+        Call LoadList("1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216, 33554432, 67108864, 134217728, 268435456, 536870912, 1073741824, 2147483648")("KPKPow2");
     }
 }
 
@@ -9010,6 +10119,14 @@ Define LoadList(string Data)(string ListName) (warp=true)
             If (ListName == "PushClose")
             {
                 List.Add(PushClose, Operator.Round((LL.Token + 0)));
+            }
+            If (ListName == "KPKBitbase")
+            {
+                List.Add(KPKBitbase, Operator.Round((LL.Token + 0)));
+            }
+            If (ListName == "KPKPow2")
+            {
+                List.Add(KPKPow2, Operator.Round((LL.Token + 0)));
             }
             LL.Token = "";
         }
@@ -11902,6 +13019,13 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
                         }
                     }
                 }
+                If (ScoreTypes[Ply] == Const.TTType.HighBound)
+                {
+                    If ((IsTTPv[(Ply - 1)] == 1) And (Horizon > 3))
+                    {
+                        List.ReplaceItem(IsTTPv, Ply, 1);
+                    }
+                }
                 Call TTStoreNode(Glob.CurrentBoardHash)(Ply)(SearchEval[Ply])(SI.BestMoveStore)(ScoreTypes[Ply])(Horizon)(Const.Null)(NodeTTStaticEval[Ply]);
             }
         }
@@ -12901,7 +14025,7 @@ Define Search_ReverseFutilityPruning(string Horizon)(string Ply) (warp=true)
 {
     If (1 == 1)
     {
-        If (((Ply > 1) And (Horizon < 8)) And ((CheckedState[Ply] == 0) And (IsPvNode[Ply] == 0)))
+        If (((Ply > 1) And (Horizon < 8)) And ((CheckedState[Ply] == 0) And (IsTTPv[Ply] == 0)))
         {
             If (Glob.ProfilerMode > Const.ProfilerMode.Off)
             {
@@ -12914,7 +14038,7 @@ Define Search_ReverseFutilityPruning(string Horizon)(string Ply) (warp=true)
             If (Not ((StaticEval[Ply] == Const.Null)))
             {
                 Call GetImproving(Ply);
-                Search.RFP.Margin = (84 * (Horizon - (Not (((Not ((Ret.GetImproving.IsImproving == Const.Null))) And (Ret.GetImproving.IsImproving == 0))))));
+                Search.RFP.Margin = (117 * (Horizon - (Not (((Not ((Ret.GetImproving.IsImproving == Const.Null))) And (Ret.GetImproving.IsImproving == 0))))));
                 If (Search.RFP.Margin < 15)
                 {
                     Search.RFP.Margin = 15;
@@ -13798,6 +14922,7 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
     If (TTPN.ProbeFound == 0)
     {
         Ret.TTProbeNode.Hit = 0;
+        Ret.TTProbeNode.IsPv = 0;
         Stop(this script);
     }
     Ret.TTProbeNode.Hit = 1;
@@ -13828,6 +14953,7 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
         }
     }
     TTPN.Meta = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.MetaIdx)];
+    Ret.TTProbeNode.IsPv = (floor((TTPN.Meta / 8192)) % 2);
     Ret.TTProbeNode.Type = (floor((TTPN.Meta / 256)) % 8);
     If (Ret.TTProbeNode.Type == 0)
     {
@@ -13844,7 +14970,7 @@ Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
         Ret.TTProbeNode.QSMeta = Const.Null;
     }
     Ret.TTProbeNode.StaticEval = TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.StaticEvalIdx)];
-    List.ReplaceItem(TTNodeEntry, (TTPN.HashBucket + Const.TTNodeCol.MetaIdx), ((TTPN.Meta % 8192) + (8192 * (Glob.TTCurrentAge % 131072))));
+    List.ReplaceItem(TTNodeEntry, (TTPN.HashBucket + Const.TTNodeCol.MetaIdx), ((TTPN.Meta % 16384) + (16384 * (Glob.TTCurrentAge % 131072))));
 }
 
 Define TTProbeNodeAtPly(string Ply) (warp=true)
@@ -13857,6 +14983,11 @@ Define TTProbeNodeAtPly(string Ply) (warp=true)
     List.ReplaceItem(NodeTTStaticEval, Ply, Const.Null);
     Call TTProbeNode(Glob.CurrentBoardHash)(Ply);
     List.ReplaceItem(NodeTTHit, Ply, Ret.TTProbeNode.Hit);
+    List.ReplaceItem(IsTTPv, Ply, IsPvNode[Ply]);
+    If ((Ret.TTProbeNode.Hit == 1) And (Ret.TTProbeNode.IsPv == 1))
+    {
+        List.ReplaceItem(IsTTPv, Ply, 1);
+    }
     If (Ret.TTProbeNode.Hit == 1)
     {
         List.ReplaceItem(NodeTTScore, Ply, Ret.TTProbeNode.Score);
@@ -13925,7 +15056,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
                 }
                 Else
                 {
-                    TTSNI.EntryValue = (((TTSNI.Meta % 256) - 8) - ((Glob.TTCurrentAge - floor((TTSNI.Meta / 8192))) % 131072));
+                    TTSNI.EntryValue = (((TTSNI.Meta % 256) - 8) - ((Glob.TTCurrentAge - floor((TTSNI.Meta / 16384))) % 131072));
                 }
                 If ((TTSNI.EvictionSlot == Const.Null) Or ((Not ((TTSNI.EvictionSlotValue == Const.Null))) And ((TTSNI.EntryValue == Const.Null) Or (TTSNI.EntryValue < TTSNI.EvictionSlotValue))))
                 {
@@ -13963,6 +15094,11 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         {
             TTSNI.StoredHorizon = Const.Null;
         }
+        TTSNI.PV = 0;
+        If (IsTTPv[Ply] == 1)
+        {
+            TTSNI.PV = 1;
+        }
         TTSNI.IsReplace = 0;
         If (Type == Const.TTType.Exact)
         {
@@ -13982,7 +15118,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
                 }
                 Else
                 {
-                    If (Not (((Horizon + 3) < TTSNI.StoredHorizon)))
+                    If (Not ((((Horizon + 3) + (2 * TTSNI.PV)) < TTSNI.StoredHorizon)))
                     {
                         TTSNI.IsReplace = 1;
                     }
@@ -14008,7 +15144,7 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
                 {
                     TTSNI.QC = (QSMeta + 1);
                 }
-                List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.MetaIdx), (TTSNI.HC + (256 * (TTSNI.TC + (8 * (TTSNI.QC + (4 * (Glob.TTCurrentAge % 131072))))))));
+                List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.MetaIdx), (TTSNI.HC + (256 * (TTSNI.TC + (8 * (TTSNI.QC + (4 * (TTSNI.PV + (2 * (Glob.TTCurrentAge % 131072))))))))));
                 List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.ScoreIdx), Score);
             }
         }
@@ -14044,7 +15180,12 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
         {
             TTSNI.QC = (QSMeta + 1);
         }
-        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.MetaIdx), (TTSNI.HC + (256 * (TTSNI.TC + (8 * (TTSNI.QC + (4 * (Glob.TTCurrentAge % 131072))))))));
+        TTSNI.PV = 0;
+        If (IsTTPv[Ply] == 1)
+        {
+            TTSNI.PV = 1;
+        }
+        List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.MetaIdx), (TTSNI.HC + (256 * (TTSNI.TC + (8 * (TTSNI.QC + (4 * (TTSNI.PV + (2 * (Glob.TTCurrentAge % 131072))))))))));
         List.ReplaceItem(TTNodeEntry, (TTSNI.HashBucket + Const.TTNodeCol.ScoreIdx), Score);
     }
 }
