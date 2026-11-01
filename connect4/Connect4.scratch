@@ -37,6 +37,30 @@ WhenKeyPressed(d)
 
 WhenBroadcastReceived(C4_EngineMove)
 {
+    If (Not (((42 - PieceCount) > Const.SolveEmpties)))
+    {
+        Solve.On = 1;
+    }
+    Else
+    {
+        Solve.On = 0;
+    }
+    KH.I = 1;
+    Repeat (84)
+    {
+        List.ReplaceItem(Hist, KH.I, 0);
+        KH.I += 1;
+    }
+    KH.I = 1;
+    Repeat (42)
+    {
+        List.ReplaceItem(Killer, KH.I, 0);
+        KH.I += 1;
+    }
+    TM.Limit = (ThinkTime * (1 + Solve.On));
+    TM.Prev = "";
+    Search.RootA = -100000;
+    Search.RootB = 100000;
     If ((PieceCount - (floor((PieceCount / 2)) * 2)) == 0)
     {
         FirstMover = 1;
@@ -110,13 +134,37 @@ WhenBroadcastReceived(C4_EngineMove)
     }
     If ((Book.Hit + 0) == 0)
     {
-        Repeat Until (((((Sensing.DaysSince2000() * 86400) - Timer) > (ThinkTime + 0)) Or (((SearchDepth + 0) > (42 - PieceCount)) Or (abs(Search.Eval) > 900))) Or ((Search.Timeout + 0) == 1))
+        Repeat Until ((((((Sensing.DaysSince2000() * 86400) - Timer) > (TM.Limit + 0)) And (Not ((Search.BestMoveDone == "")))) Or (((SearchDepth + 0) > (42 - PieceCount)) Or (abs(Search.Eval) > 900))) Or ((Search.Timeout + 0) == 1))
         {
+            If ((Solve.On == 1) And (Not ((SearchDepth < (42 - PieceCount)))))
+            {
+                Search.RootA = -1;
+                Search.RootB = 1;
+            }
             Call Search(1)((SearchDepth + 1));
+            If (((Solve.On == 1) And (Not ((SearchDepth < (42 - PieceCount))))) And ((Search.Timeout == 0) And ((Search.BestMove == "") Or (Search.Eval < 0))))
+            {
+                Search.RootA = -100000;
+                Search.RootB = 100000;
+                Call Search(1)((SearchDepth + 1));
+            }
+            Search.RootA = -100000;
+            Search.RootB = 100000;
             If ((Search.Timeout + 0) == 0)
             {
                 Search.BestMoveDone = Search.BestMove;
                 Search.EvalDone = Search.Eval;
+            }
+            If (Search.Timeout == 0)
+            {
+                If ((Not ((TM.Prev == ""))) And (Not ((Search.BestMoveDone == TM.Prev))))
+                {
+                    If (TM.Limit < (ThinkTime * 1.5))
+                    {
+                        TM.Limit = (ThinkTime * 1.5);
+                    }
+                }
+                TM.Prev = Search.BestMoveDone;
             }
             PrevSearchDepth = SearchDepth;
             SearchDepth += 1;
@@ -130,6 +178,29 @@ WhenBroadcastReceived(C4_EngineMove)
     SearchDepth += -1;
     NPS = Operator.Join(Operator.Round(((NodesCount / ((Sensing.DaysSince2000() * 86400) - Timer)) / 1000)), "k");
     Nodes = Operator.Join(Operator.Round((NodesCount / 1000)), "k");
+    MG.OK = 0;
+    If ((Not ((Search.BestMove == ""))) And ((Search.BestMove > 0) And (Search.BestMove < 43)))
+    {
+        MG.C = (((Search.BestMove - 1) - (floor(((Search.BestMove - 1) / 7)) * 7)) + 1);
+        If (Search.BestMove == (((5 - ColumnHeight[MG.C]) * 7) + MG.C))
+        {
+            MG.OK = 1;
+        }
+    }
+    If (MG.OK == 0)
+    {
+        MG.I = 1;
+        Repeat (7)
+        {
+            MG.C = MG.Order[MG.I];
+            If ((MG.OK == 0) And (ColumnHeight[MG.C] < 6))
+            {
+                Search.BestMove = (((5 - ColumnHeight[MG.C]) * 7) + MG.C);
+                MG.OK = 1;
+            }
+            MG.I += 1;
+        }
+    }
     List.ReplaceItem(Board, (Search.BestMove + 0), 1);
     List.ReplaceItem(ColumnHeight, (((Search.BestMove - 1) - (floor(((Search.BestMove - 1) / 7)) * 7)) + 1), (ColumnHeight[(((Search.BestMove - 1) - (floor(((Search.BestMove - 1) / 7)) * 7)) + 1)] + 1));
     Board1 += IdxToExp[(Search.BestMove + 0)];
@@ -214,7 +285,7 @@ Define ApplyMove(string Depth) (warp=true)
     NodesCount += 1;
     If ((NodesCount - (floor((NodesCount / 1024)) * 1024)) == 0)
     {
-        If (((Sensing.DaysSince2000() * 86400) - Timer) > (ThinkTime + 0))
+        If ((((Sensing.DaysSince2000() * 86400) - Timer) > (TM.Limit + 0)) And (Not ((Search.BestMoveDone == ""))))
         {
             Search.Timeout = 1;
         }
@@ -467,6 +538,11 @@ Define EvaluateMove(string Player)(string Move) (warp=true)
 
 Define EvaluatePosition(string Depth) (warp=true)
 {
+    If (PieceCount == 42)
+    {
+        EvalRes = 0;
+        Stop(this script);
+    }
     Call TTProbe(Board1)(Board2);
     If (Not ((TT.Eval == "")))
     {
@@ -563,7 +639,7 @@ Define EvaluatePosition(string Depth) (warp=true)
                 }
                 If (Not (((WinPatternSide + 0) == 0)))
                 {
-                    EvalRes += (((-40 * Flag) + (65 - (5 * Refutable))) * WinPatternSide);
+                    EvalRes += (((20 * Flag) + (5 - (5 * Refutable))) * WinPatternSide);
                     If (1 == 1)
                     {
                         Rank = WinPatternBestRank[(EmptyFile + 0)];
@@ -622,113 +698,261 @@ Define EvaluatePosition(string Depth) (warp=true)
         }
         EL.Idx += 1;
     }
-    ZZ.WLow = 0;
-    ZZ.BLow = 0;
-    ZZ.Idx = 1;
+    ZZ.Wodd = 0;
+    ZZ.Weven = 0;
+    ZZ.Bodd = 0;
+    ZZ.Beven = 0;
+    ZZ.C = 1;
     Repeat (7)
     {
-        ZZ.Rank = WinPatternBestRank[(ZZ.Idx + 0)];
-        If (Not (((ZZ.Rank + 0) == 0)))
+        ZZ.H = ColumnHeight[ZZ.C];
+        ZZ.R = (ZZ.H + 1);
+        ZZ.T = 0;
+        Repeat Until ((ZZ.R > 6) Or (ZZ.T > 0))
         {
-            If ((ZZ.Rank + 0) > 0)
+            ZZ.Cell = (((6 - ZZ.R) * 7) + ZZ.C);
+            ZZ.A = 0;
+            If ((Threats1[ZZ.Cell] + 0) == (EvalGen + 0))
             {
-                ZZ.Side = 1;
+                ZZ.A = 1;
             }
-            Else
+            ZZ.Bb = 0;
+            If ((Threats2[ZZ.Cell] + 0) == (EvalGen + 0))
             {
-                ZZ.Side = 2;
+                ZZ.Bb = 1;
             }
-            If ((ZZ.Side + 0) == (FirstMover + 0))
+            If ((ZZ.A + ZZ.Bb) > 0)
             {
-                If (abs(ZZ.Rank) > (ZZ.WLow + 0))
+                ZZ.T = ZZ.R;
+            }
+            ZZ.R += 1;
+        }
+        If ((ZZ.T > 0) And ((ZZ.A + ZZ.Bb) == 1))
+        {
+            If (((ZZ.A * 1) + (ZZ.Bb * 2)) == FirstMover)
+            {
+                If ((ZZ.T - (floor((ZZ.T / 2)) * 2)) == 1)
                 {
-                    ZZ.WLow = abs(ZZ.Rank);
+                    ZZ.Wodd += 1;
+                }
+                Else
+                {
+                    ZZ.Weven += 1;
                 }
             }
             Else
             {
-                If (abs(ZZ.Rank) > (ZZ.BLow + 0))
+                If ((ZZ.T - (floor((ZZ.T / 2)) * 2)) == 1)
                 {
-                    ZZ.BLow = abs(ZZ.Rank);
+                    ZZ.Bodd += 1;
+                }
+                Else
+                {
+                    ZZ.Beven += 1;
                 }
             }
         }
-        ZZ.Idx += 1;
+        ZZ.C += 1;
     }
-    ZZ.Ctl = 2;
-    If ((ZZ.WLow + 0) > (ZZ.BLow + 0))
+    If (FirstMover == 1)
     {
-        ZZ.Ctl = 1;
+        ZZ.Wsign = 1;
     }
-    ZZ.Idx = 1;
-    Repeat (7)
+    Else
     {
-        ZZ.Rank = WinPatternBestRank[(ZZ.Idx + 0)];
-        If (Not (((ZZ.Rank + 0) == 0)))
-        {
-            If ((ZZ.Rank + 0) > 0)
-            {
-                ZZ.Side = 1;
-                ZZ.Sign = 1;
-            }
-            Else
-            {
-                ZZ.Side = 2;
-                ZZ.Sign = -1;
-            }
-            If ((ZZ.Side + 0) == (FirstMover + 0))
-            {
-                ZZ.IsW = 1;
-            }
-            Else
-            {
-                ZZ.IsW = 2;
-            }
-            If ((ZZ.IsW + 0) == (ZZ.Ctl + 0))
-            {
-                EvalRes += (100 * ZZ.Sign);
-            }
-            Else
-            {
-                EvalRes += (20 * ZZ.Sign);
-            }
-        }
-        ZZ.Idx += 1;
+        ZZ.Wsign = -1;
     }
-    If ((ZZ.WLow + ZZ.BLow) > 0)
+    If (ZZ.Wodd > 0)
     {
-        If ((ZZ.Ctl + 0) == 1)
+        If (ZZ.Bodd == 0)
         {
-            If ((FirstMover + 0) == 1)
-            {
-                EvalRes += 90;
-            }
-            Else
-            {
-                EvalRes += -90;
-            }
-        }
-        Else
-        {
-            If ((FirstMover + 0) == 1)
-            {
-                EvalRes += -90;
-            }
-            Else
-            {
-                EvalRes += 90;
-            }
+            EvalRes += (ZZ.Wsign * ((100 * ZZ.Wodd) + 90));
         }
     }
     Else
     {
-        If ((FirstMover + 0) == 1)
+        If (ZZ.Beven > 0)
         {
-            EvalRes += -45;
+            EvalRes += ((0 - ZZ.Wsign) * ((100 * ZZ.Beven) + 90));
         }
         Else
         {
-            EvalRes += 45;
+            If ((ZZ.Weven == 0) And (ZZ.Bodd == 0))
+            {
+                EvalRes += ((0 - ZZ.Wsign) * 45);
+            }
+        }
+    }
+    If ((ZZ.Wodd > 0) And (ZZ.Bodd > 0))
+    {
+        If (((ZZ.Wodd + ZZ.Bodd) - (floor(((ZZ.Wodd + ZZ.Bodd) / 2)) * 2)) == 1)
+        {
+            EvalRes += (ZZ.Wsign * 90);
+        }
+        Else
+        {
+            EvalRes += ((0 - ZZ.Wsign) * 90);
+        }
+    }
+    EC.Open = 0;
+    EC.C = 1;
+    Repeat (7)
+    {
+        If (ColumnHeight[EC.C] < 6)
+        {
+            EC.Open += 1;
+        }
+        EC.C += 1;
+    }
+    If ((Not ((EC.Open > 4))) And ((WinCount1 == 0) And (WinCount2 == 0)))
+    {
+        EC.C = 1;
+        Repeat (7)
+        {
+            List.ReplaceItem(EC.Hs, EC.C, ColumnHeight[EC.C]);
+            EC.C += 1;
+        }
+        If ((Depth - (floor((Depth / 2)) * 2)) == 1)
+        {
+            EC.Stm = 2;
+        }
+        Else
+        {
+            EC.Stm = 1;
+        }
+        EC.Res = 0;
+        EC.Done = 0;
+        EC.Iter = 0;
+        Repeat Until ((EC.Done == 1) Or (EC.Iter > 10))
+        {
+            EC.F = 0;
+            EC.Any = 0;
+            EC.C = 1;
+            Repeat (7)
+            {
+                EC.H = EC.Hs[EC.C];
+                EC.T = 0;
+                EC.O = 0;
+                EC.R = (EC.H + 1);
+                Repeat Until ((EC.R > 6) Or (EC.T > 0))
+                {
+                    EC.Cell = (((6 - EC.R) * 7) + EC.C);
+                    EC.A = 0;
+                    If ((Threats1[EC.Cell] + 0) == (EvalGen + 0))
+                    {
+                        EC.A = 1;
+                    }
+                    EC.B = 0;
+                    If ((Threats2[EC.Cell] + 0) == (EvalGen + 0))
+                    {
+                        EC.B = 2;
+                    }
+                    If ((EC.A + EC.B) > 0)
+                    {
+                        EC.T = EC.R;
+                        EC.O = (EC.A + EC.B);
+                    }
+                    EC.R += 1;
+                }
+                List.ReplaceItem(EC.Ts, EC.C, EC.T);
+                List.ReplaceItem(EC.Os, EC.C, EC.O);
+                If (EC.T > 0)
+                {
+                    EC.Any = 1;
+                    If (EC.T > (EC.H + 1))
+                    {
+                        EC.F += ((EC.T - 2) - EC.H);
+                    }
+                }
+                Else
+                {
+                    EC.F += (6 - EC.H);
+                }
+                EC.C += 1;
+            }
+            EC.Pick = 0;
+            EC.C = 1;
+            Repeat (7)
+            {
+                If ((EC.Pick == 0) And ((EC.Ts[EC.C] > 0) And (EC.Ts[EC.C] == (EC.Hs[EC.C] + 1))))
+                {
+                    EC.Pick = EC.C;
+                }
+                EC.C += 1;
+            }
+            If (EC.Pick > 0)
+            {
+                If ((EC.Os[EC.Pick] == EC.Stm) Or (EC.Os[EC.Pick] == 3))
+                {
+                    EC.Res = EC.Stm;
+                    EC.Done = 1;
+                }
+                Else
+                {
+                    List.ReplaceItem(EC.Hs, EC.Pick, EC.Ts[EC.Pick]);
+                    EC.Stm = (3 - EC.Stm);
+                }
+            }
+            Else
+            {
+                If (EC.Any == 0)
+                {
+                    EC.Done = 1;
+                }
+                Else
+                {
+                    If ((EC.F - (floor((EC.F / 2)) * 2)) == 0)
+                    {
+                        EC.Z = EC.Stm;
+                    }
+                    Else
+                    {
+                        EC.Z = (3 - EC.Stm);
+                    }
+                    EC.Pick = 0;
+                    EC.C = 1;
+                    Repeat (7)
+                    {
+                        If ((EC.Pick == 0) And ((EC.Ts[EC.C] > 0) And (EC.Os[EC.C] == EC.Z)))
+                        {
+                            EC.Pick = EC.C;
+                        }
+                        EC.C += 1;
+                    }
+                    If (EC.Pick > 0)
+                    {
+                        EC.C = 1;
+                        Repeat (7)
+                        {
+                            If (EC.Ts[EC.C] > 0)
+                            {
+                                List.ReplaceItem(EC.Hs, EC.C, (EC.Ts[EC.C] - 2));
+                            }
+                            Else
+                            {
+                                List.ReplaceItem(EC.Hs, EC.C, 6);
+                            }
+                            EC.C += 1;
+                        }
+                        List.ReplaceItem(EC.Hs, EC.Pick, EC.Ts[EC.Pick]);
+                        EC.Stm = EC.Z;
+                    }
+                    Else
+                    {
+                        EC.Res = (3 - EC.Z);
+                        EC.Done = 1;
+                    }
+                }
+            }
+            EC.Iter += 1;
+        }
+        If (EC.Res == 1)
+        {
+            EvalRes += 400;
+        }
+        If (EC.Res == 2)
+        {
+            EvalRes += -400;
         }
     }
     If ((Depth - (floor((Depth / 2)) * 2)) == 1)
@@ -951,6 +1175,59 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
             }
         }
     }
+    If (List.Length(Tmp1) > 1)
+    {
+        OR.Side = (1 + (1 - (Depth - (floor((Depth / 2)) * 2))));
+        OR.Rem = (MaxDepth - Depth);
+        List.DeleteAll(GM.Score);
+        OR.I = 1;
+        Repeat (List.Length(Tmp1))
+        {
+            OR.Cell = Tmp1[OR.I];
+            OR.Score = Hist[(((OR.Side - 1) * 42) + OR.Cell)];
+            If (OR.Cell == Killer[(Depth + 0)])
+            {
+                OR.Score += 1000000;
+            }
+            If (Not ((OR.Rem < 4)))
+            {
+                OR.K = CellLineStart[OR.Cell];
+                OR.End = (CellLineStart[OR.Cell] + CellLineCount[OR.Cell]);
+                Repeat Until (OR.K == OR.End)
+                {
+                    OR.Line = CellLines[OR.K];
+                    If (((((2 - OR.Side) * LineCount1[OR.Line]) + ((OR.Side - 1) * LineCount2[OR.Line])) == 2) And ((((OR.Side - 1) * LineCount1[OR.Line]) + ((2 - OR.Side) * LineCount2[OR.Line])) == 0))
+                    {
+                        OR.Score += 10000;
+                    }
+                    OR.K += 1;
+                }
+            }
+            List.Add(GM.Score, OR.Score);
+            OR.I += 1;
+        }
+        OR.Start = 2;
+        If (Tmp1[1] == TT.Move)
+        {
+            OR.Start = 3;
+        }
+        OR.I = OR.Start;
+        Repeat Until (OR.I > List.Length(Tmp1))
+        {
+            OR.J = OR.I;
+            Repeat Until ((OR.J < OR.Start) Or (Not ((GM.Score[OR.J] > GM.Score[(OR.J - 1)]))))
+            {
+                OR.TmpM = Tmp1[OR.J];
+                OR.TmpS = GM.Score[OR.J];
+                List.ReplaceItem(Tmp1, OR.J, Tmp1[(OR.J - 1)]);
+                List.ReplaceItem(GM.Score, OR.J, GM.Score[(OR.J - 1)]);
+                List.ReplaceItem(Tmp1, (OR.J - 1), OR.TmpM);
+                List.ReplaceItem(GM.Score, (OR.J - 1), OR.TmpS);
+                OR.J += -1;
+            }
+            OR.I += 1;
+        }
+    }
     Idx = 1;
     Repeat (List.Length(Tmp1))
     {
@@ -962,6 +1239,7 @@ Define GenerateMoves(string Depth)(string MaxDepth) (warp=true)
 
 Define Init (warp=true)
 {
+    Const.SolveEmpties = 18;
     Const.Null = 0.1;
     List.Hide(Console);
     List.DeleteAll(Alphas);
@@ -1130,8 +1408,8 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
         Nodes = "";
         Search.BestMove = "";
         Search.Eval = "";
-        List.ReplaceItem(Alphas, (Depth + 0), -100000);
-        List.ReplaceItem(Betas, (Depth + 0), 100000);
+        List.ReplaceItem(Alphas, (Depth + 0), Search.RootA);
+        List.ReplaceItem(Betas, (Depth + 0), Search.RootB);
     }
     If ((Depth + 0) > 1)
     {
@@ -1161,7 +1439,7 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
         }
         If ((Betas[(Depth + 0)] - Alphas[(Depth + 0)]) == 1)
         {
-            If ((((Depth + 0) > 1) And ((Depth + 0) < (MaxDepth + 0))) And ((MaxDepth - Depth) < 3))
+            If ((((Depth + 0) > 1) And ((Depth + 0) < (MaxDepth + 0))) And (((MaxDepth - Depth) < 3) And (Solve.On == 0)))
             {
                 If ((Depth - (floor((Depth / 2)) * 2)) == 1)
                 {
@@ -1210,7 +1488,7 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
                     List.ReplaceItem(Alphas, (Depth + 1), (Betas[(Depth + 0)] - 1));
                     List.ReplaceItem(Betas, (Depth + 1), Betas[(Depth + 0)]);
                 }
-                Call Search((Depth + 1))(MaxDepth);
+                Call Search((Depth + 1))((MaxDepth + ((MovesCount[(Depth + 0)] + 0) == 1)));
                 Score = Eval[(Depth + 1)];
                 If ((Search.Timeout + 0) == 1)
                 {
@@ -1227,7 +1505,7 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
         {
             List.ReplaceItem(Alphas, (Depth + 1), Alphas[(Depth + 0)]);
             List.ReplaceItem(Betas, (Depth + 1), Betas[(Depth + 0)]);
-            Call Search((Depth + 1))(MaxDepth);
+            Call Search((Depth + 1))((MaxDepth + ((MovesCount[(Depth + 0)] + 0) == 1)));
             Score = Eval[(Depth + 1)];
             If ((Search.Timeout + 0) == 1)
             {
@@ -1252,6 +1530,10 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
                     If (Not (((Depth + 0) == 1)))
                     {
                         List.ReplaceItem(Eval, (Depth + 0), Betas[(Depth + 0)]);
+                        KH.Move = Moves[(((Depth - 1) * 10) + MovesIdx[(Depth + 0)])];
+                        List.ReplaceItem(Killer, (Depth + 0), KH.Move);
+                        KH.I = (0 + KH.Move);
+                        List.ReplaceItem(Hist, (KH.I + 0), (Hist[(KH.I + 0)] + ((MaxDepth - Depth) * (MaxDepth - Depth))));
                         Call TTStore(Board1)(Board2)("")(Moves[(((Depth - 1) * 10) + MovesIdx[(Depth + 0)])])((MaxDepth - Depth))(Eval[(Depth + 0)])((MaxDepth - Depth))("B");
                         Stop(this script);
                     }
@@ -1267,6 +1549,10 @@ Define Search(string Depth)(string MaxDepth) (warp=true)
                 If (Not ((Score > Alphas[(Depth + 0)])))
                 {
                     List.ReplaceItem(Eval, (Depth + 0), Alphas[(Depth + 0)]);
+                    KH.Move = Moves[(((Depth - 1) * 10) + MovesIdx[(Depth + 0)])];
+                    List.ReplaceItem(Killer, (Depth + 0), KH.Move);
+                    KH.I = (42 + KH.Move);
+                    List.ReplaceItem(Hist, (KH.I + 0), (Hist[(KH.I + 0)] + ((MaxDepth - Depth) * (MaxDepth - Depth))));
                     Call TTStore(Board1)(Board2)("")(Moves[(((Depth - 1) * 10) + MovesIdx[(Depth + 0)])])((MaxDepth - Depth))(Eval[(Depth + 0)])((MaxDepth - Depth))("A");
                     Stop(this script);
                 }
@@ -1323,7 +1609,7 @@ Define TTStore(string Board1)(string Board2)(string Eval)(string Move)(string Mo
         TT.StoreHorizon = 99;
     }
     Idx = ((((Board1 * 31) + (4398046511104 - Board2)) - (floor((((Board1 * 31) + (4398046511104 - Board2)) / List.Length(TT.Board1))) * List.Length(TT.Board1))) + 1);
-    If ((((TT.Board1[(Idx + 0)] == Board1) And (TT.Board2[(Idx + 0)] == Board2)) Or (Not ((TT.Gen[(Idx + 0)] == Search.Gen)))) Or (Not ((TT.NodeHorizon[(Idx + 0)] > TT.StoreHorizon))))
+    If ((((TT.Board1[(Idx + 0)] == Board1) And (TT.Board2[(Idx + 0)] == Board2)) Or (TT.NodeEval[(Idx + 0)] == "")) Or ((Not ((NodeEval == ""))) And ((Not ((TT.NodeHorizon[(Idx + 0)] == 99))) And ((Not ((TT.Gen[(Idx + 0)] == Search.Gen))) Or (Not ((TT.NodeHorizon[(Idx + 0)] > TT.StoreHorizon)))))))
     {
         If ((Not ((TT.Board1[(Idx + 0)] == Board1))) Or (Not ((TT.Board2[(Idx + 0)] == Board2))))
         {
