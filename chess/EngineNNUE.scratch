@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2755 (01.11.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess NNUE Version 7.3383.2771 (02.11.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.IsNetworkDecoded = 0;
@@ -621,13 +621,15 @@ WhenBroadcastReceived(UI_CreditsClicked)
         List.DeleteItem(CreditsData, all);
         List.Add(CreditsData, "CREDITS AND LICENSE INFO");
         List.Add(CreditsData, "");
-        List.Add(CreditsData, "Created by ArnoHu 2017 - 2025");
+        List.Add(CreditsData, "Created by ArnoHu 2017 - 2026");
         List.Add(CreditsData, "");
-        List.Add(CreditsData, "Smallbrain Neural Network Model Data (GPL)");
-        List.Add(CreditsData, "https://github.com/Disservin/Smallbrain/");
+        List.Add(CreditsData, "Thanks a lot to the Starzix Chess project for NNUE model data.");
+        List.Add(CreditsData, "GoK Chess NNUE would not have been possible without their work.");
+        List.Add(CreditsData, "Starzix can be found at:");
+        List.Add(CreditsData, "https://github.com/zzzzz151/Starzix/");
         List.Add(CreditsData, "");
         List.Add(CreditsData, "When reusing NNUE code, please give credits:");
-        List.Add(CreditsData, "- To the Smallbrain project for model data");
+        List.Add(CreditsData, "- To the Starzix project for model data");
         List.Add(CreditsData, "- To ArnoHu for Scratch port & integration");
         List.Add(CreditsData, "Credits and links should be clearly visible.");
         List.Add(CreditsData, "");
@@ -5899,7 +5901,8 @@ Define GetMoveScore(string SourcePieceParam)(string TargetPieceParam)(string Fro
         {
             If (Not (((PieceIdxLookup[abs(Get.MS.TargetPiece)] + 1) > PieceIdxLookup[abs(SourcePieceParam)])))
             {
-                If (Not ((Glob.IsScratch3 == 1)))
+                Call IsMovePicked(Ply)(Move);
+                If ((Not ((Glob.IsScratch3 == 1))) And (Ret.IsMovePicked.Picked == 0))
                 {
                     Call ClearMoveList((Ply + 2));
                     Call AddMoveToList(Move)((Ply + 2))(0);
@@ -11505,15 +11508,88 @@ Define PickMove.Iterate(string Ply)(string NextPhase)(bool UpdateNNUE) (warp=tru
             }
             Else
             {
-                List.ReplaceItem(PickedPseudoLegalMoves, ((((Ply - 1) * Const.MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Ply]) + 1), PMI.Move);
-                List.ReplaceItem(PickedPseudoLegalMovesScore, ((((Ply - 1) * Const.MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Ply]) + 1), MovesScore[(((Ply - 1) * Const.MaxMovesPerGeneration) + MovesIdx[Ply])]);
-                List.ReplaceItem(PickedPseudoLegalMovesCount, Ply, (PickedPseudoLegalMovesCount[Ply] + 1));
-                Call ApplyMove(Ply)(UpdateNNUE);
-                Call IsMoveLegalFast(Ply);
-                If (Ret.IsMoveLegalFast.IsLegal == 1)
+                PMI.PreSkip = 0;
+                If (((Quiescence[Ply] == 1) And (CheckedState[Ply] == 0)) And (floor((PMI.Move / 100)) > 0))
                 {
-                    Call RevertMove(Ply);
+                    PMI.PreFrom = floor((PMI.Move / 100));
+                    PMI.PreTo = (PMI.Move - (PMI.PreFrom * 100));
+                    PMI.PreSrc = Board[PMI.PreFrom];
+                    PMI.PreTgt = Board[PMI.PreTo];
+                    If ((((Not ((PMI.PreTgt == 0))) And (abs(PMI.PreTgt) < abs(PMI.PreSrc))) And ((Not ((StaticEval[Ply] == Const.Null))) And (((StaticEval[Ply] - abs(PMI.PreTgt)) + 175) > Alphas[Ply]))) And (SearchEval[Ply] > (0 - Const.AbsMinCheckmateEval)))
+                    {
+                        Call ClearMoveList((Ply + 2));
+                        Call AddMoveToList(PMI.Move)((Ply + 2))(0);
+                        List.ReplaceItem(MovesIdx, (Ply + 2), 1);
+                        Call ApplyMoveLight((Ply + 2));
+                        Call SEE((Ply + 2))((Glob.IsScratch3 == 0));
+                        Call RevertMoveLight((Ply + 2));
+                        If (Ret.SEE.Gain < 0)
+                        {
+                            PMI.PreSkip = 1;
+                        }
+                    }
+                }
+                If (PMI.PreSkip == 1)
+                {
                     PMI.Picked = 1;
+                }
+                Else
+                {
+                    List.ReplaceItem(PickedPseudoLegalMoves, ((((Ply - 1) * Const.MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Ply]) + 1), PMI.Move);
+                    List.ReplaceItem(PickedPseudoLegalMovesScore, ((((Ply - 1) * Const.MaxMovesPerGeneration) + PickedPseudoLegalMovesCount[Ply]) + 1), MovesScore[(((Ply - 1) * Const.MaxMovesPerGeneration) + MovesIdx[Ply])]);
+                    List.ReplaceItem(PickedPseudoLegalMovesCount, Ply, (PickedPseudoLegalMovesCount[Ply] + 1));
+                    PMI.LMPDo = 0;
+                    If ((((Quiescence[Ply] == 0) And (Not ((PreLMPLimit[Ply] == Const.Null)))) And ((floor((PMI.Move / 100)) > 0) And (Not ((SearchEval[Ply] == Const.Null))))) And ((SearchEval[Ply] > (0 - Const.AbsMinCheckmateEval)) And ((PickedLegalMovesCountQuiet[Ply] + 1) > PreLMPLimit[Ply])))
+                    {
+                        PMI.LMPFrom = floor((PMI.Move / 100));
+                        PMI.LMPTo = (PMI.Move - (PMI.LMPFrom * 100));
+                        If ((Board[PMI.LMPTo] == 0) And (Not ((abs(Board[PMI.LMPFrom]) == GoK_BlackPawn))))
+                        {
+                            PMI.GC = 0;
+                            If (PlyIsOwn[Ply] == 1)
+                            {
+                                PMI.GCIdx = Glob.WhiteKingIdx;
+                            }
+                            Else
+                            {
+                                PMI.GCIdx = Glob.BlackKingIdx;
+                            }
+                            Call IsReachableForAttack(Board[PMI.LMPFrom])(PMI.LMPTo)(PMI.GCIdx);
+                            PMI.GC = Ret.IsReachableForAttack.IsReachable;
+                            If (PMI.GC == 0)
+                            {
+                                PMI.GCIdx = 1;
+                                Repeat (DiscoveryCount[Ply])
+                                {
+                                    If ((DiscoverySq[(((Ply - 1) * Const.CheckInfoPlyStride) + PMI.GCIdx)] == PMI.LMPFrom) And (Not ((abs(MoveToPathStepInc[((PMI.LMPFrom * 100) + PMI.LMPTo)]) == DiscoveryRay[(((Ply - 1) * Const.CheckInfoPlyStride) + PMI.GCIdx)]))))
+                                    {
+                                        PMI.GC = 1;
+                                    }
+                                    PMI.GCIdx += 1;
+                                }
+                            }
+                            If (PMI.GC == 0)
+                            {
+                                PMI.LMPDo = 1;
+                            }
+                        }
+                    }
+                    If (PMI.LMPDo == 1)
+                    {
+                        List.ReplaceItem(PickedLegalMovesCount, Ply, (PickedLegalMovesCount[Ply] + 1));
+                        List.ReplaceItem(PickedLegalMovesCountQuiet, Ply, (PickedLegalMovesCountQuiet[Ply] + 1));
+                        PMI.Picked = 1;
+                    }
+                    Else
+                    {
+                        Call ApplyMove(Ply)(UpdateNNUE);
+                        Call IsMoveLegalFast(Ply);
+                        If (Ret.IsMoveLegalFast.IsLegal == 1)
+                        {
+                            Call RevertMove(Ply);
+                            PMI.Picked = 1;
+                        }
+                    }
                 }
             }
         }
@@ -12730,6 +12806,24 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
     List.ReplaceItem(PickedLegalMovesCountQuiet, Ply, 0);
     List.ReplaceItem(PickedLegalMovesCount, Ply, 0);
     Call PrepareCheckInfo(Ply);
+    If (PlyIsOwn[Ply] == 1)
+    {
+        SI.LMPPieces = (Glob.BlackQueenCount + Glob.BlackNonQueenMajorMinorCount);
+    }
+    Else
+    {
+        SI.LMPPieces = (Glob.WhiteQueenCount + Glob.WhiteNonQueenMajorMinorCount);
+    }
+    If (((Not (Quiescence)) And (IsPvNode[Ply] == 0)) And ((CheckedState[Ply] == 0) And (SI.LMPPieces > 0)))
+    {
+        Call GetImproving(Ply);
+        SI.LMPImp = (Not (((Not ((Ret.GetImproving.IsImproving == Const.Null))) And (Ret.GetImproving.IsImproving == 0))));
+        List.ReplaceItem(PreLMPLimit, Ply, (3 + ((Horizon * Horizon) / (2 - SI.LMPImp))));
+    }
+    Else
+    {
+        List.ReplaceItem(PreLMPLimit, Ply, Const.Null);
+    }
     Call //("Move generation and move loop");
     Repeat Until (PickMoveRes[Ply] == 0)
     {
@@ -13691,7 +13785,7 @@ Define Search_DetectExtensions(string Horizon)(string Ply)(bool Cutnode)(bool Qu
         If (SearchExtension[Ply] == 0)
         {
             Call //("agreed gok engines twins diff: nnue check extension gate > -1, classic > 35.5");
-            If ((Horizon > 1) And ((PutsInCheck[Ply] == 1) And ((StaticEval[Ply] == Const.Null) Or (abs(StaticEval[Ply]) > -1))))
+            If ((Horizon > 1) And (PutsInCheck[Ply] == 1))
             {
                 List.ReplaceItem(SearchExtension, Ply, 1);
                 If (Glob.ProfilerMode > Const.ProfilerMode.Off)
@@ -13831,7 +13925,7 @@ Define Search_FutilityPruning(string Horizon)(string Ply)(bool Quiescence) (warp
                     If Quiescence
                     {
                         Search.FP.Eval = (StaticEval[Ply] + Search.FP.FutilityMargin);
-                        If (Not ((Search.FP.Eval > Alphas[Ply])))
+                        If ((Not ((Search.FP.Eval > Alphas[Ply]))) And (Not (((abs(TargetPieces[Ply]) > abs(SourcePieces[Ply])) And (PromotionPieces[Ply] == 0)))))
                         {
                             Call SEE(Ply)((Glob.IsScratch3 == 0));
                             Search.FP.SEEGain = Ret.SEE.Gain;
@@ -13875,7 +13969,7 @@ Define Search_FutilityPruning(string Horizon)(string Ply)(bool Quiescence) (warp
                 }
             }
         }
-        If ((Quiescence And (Ret.Search_FutilityPruning.IsFutile == 0)) And (Not ((TargetPieces[Ply] == 0))))
+        If (((((Quiescence And (Ret.Search_FutilityPruning.IsFutile == 0)) And (Not ((TargetPieces[Ply] == 0)))) And (abs(TargetPieces[Ply]) < abs(SourcePieces[Ply]))) And (Not (((CheckedState[Ply] == 0) And (((StaticEval[Ply] - abs(TargetPieces[Ply])) + 175) > Alphas[Ply]))))) And (SearchEval[Ply] > (0 - Const.AbsMinCheckmateEval)))
         {
             If (Glob.ProfilerMode > Const.ProfilerMode.Off)
             {
@@ -15461,4 +15555,3 @@ Define UpdatePV(string Ply)(string BestMove) (warp=true)
         }
     }
 }
-
