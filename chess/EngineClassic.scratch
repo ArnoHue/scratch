@@ -2,7 +2,7 @@
 
 WhenGreenFlagClicked()
 {
-    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2805 (04.11.2026) by ArnoHu";
+    Glob.VersionString = "Game of Kings Chess Classic Version 6.9248.2825 (07.11.2026) by ArnoHu";
     Glob.IsTestRunning = 0;
     Glob.IsDCI = 0;
     Glob.Level = 4;
@@ -2769,18 +2769,20 @@ Define ClearMoveList(num Ply) (warp=true)
 
 Define ClearTT (warp=true)
 {
+    Call //("TT sizes must be powers of two (entries, hence clusters of 4): ResizeTT moves cluster c to c or c + clusters by one bit of the stored key. Scratch 3 (40000) is never resized");
     If (Glob.IsScratch3 == 1)
     {
         Call ClearTTImpl(40000);
     }
     Else
     {
-        Call ClearTTImpl(1048576);
+        Call ClearTTImpl(262144);
     }
 }
 
 Define ClearTTImpl(string Size) (warp=true)
 {
+    Call //("Size must be a power of two (entries) for ResizeTT to keep the entries; only the Scratch 3 size 40000 is not, and it is never resized");
     If (List.Length(TTNodeEntry) == (Size * 5))
     {
         ClearTT.EntryIdx = 1;
@@ -2802,6 +2804,7 @@ Define ClearTTImpl(string Size) (warp=true)
             List.Add(TTNodeEntry, Const.Null);
         }
     }
+    Call TTResetSlots;
 }
 
 Define CreateCurrentBoardHash (warp=true)
@@ -7990,7 +7993,8 @@ Define GetBestMoveDeepening (warp=false)
                 }
                 Get.BMD.Now = (Sensing.DaysSince2000() * 86400);
                 Call OnProgressChanged((((Get.BMD.Now - Glob.ThinkTimeStart) / Glob.ProgressLimit) * 100));
-                Glob.NextUIUpdate = (Get.BMD.Now + 0.5);
+                Glob.NextUIUpdate = (Get.BMD.Now + Glob.UIUpdateStep);
+                Glob.UIUpdateStep = ((Glob.UIUpdateStep * 2) + ((1 - (Glob.UIUpdateStep * 2)) * (Glob.UIUpdateStep > 0.5)));
             }
         }
     }
@@ -8388,7 +8392,8 @@ Define GetBestMoveDeepening.Prepare (warp=true)
     }
     Glob.ThinkTimeStart = (Sensing.DaysSince2000() * 86400);
     Call ResetSearchInfo;
-    Glob.NextUIUpdate = Glob.ThinkTimeStart;
+    Glob.NextUIUpdate = (Glob.ThinkTimeStart + 0.1);
+    Glob.UIUpdateStep = 0;
     If (Glob.IsTimeModelLogged == 0)
     {
         Glob.IsTimeModelLogged = 1;
@@ -10468,6 +10473,8 @@ Define InitBoard (warp=true)
     List.DeleteAll(NodeTTType);
     List.DeleteAll(NodeTTScore);
     List.DeleteAll(NodeTTHit);
+    List.DeleteAll(TTSlot);
+    List.DeleteAll(TTSlotHash);
     List.DeleteAll(ReductionBase);
     List.DeleteAll(Improving);
     Repeat (Const.MaxPlyStackFrames)
@@ -10527,6 +10534,8 @@ Define InitBoard (warp=true)
         List.Add(NodeTTType, Const.Null);
         List.Add(NodeTTScore, Const.Null);
         List.Add(NodeTTHit, Const.Null);
+        List.Add(TTSlot, Const.Null);
+        List.Add(TTSlotHash, Const.Null);
         List.Add(ReductionBase, Const.Null);
         List.Add(Improving, Const.Null);
     }
@@ -14459,11 +14468,8 @@ Define LogInfoLine(string Depth)(string SelDepth)(string MultiPV)(string Score)(
     LIL.Nodes = (Glob.InfoNodes + Glob.InfoNodesQ);
     LIL.Line = Operator.Join("info depth ", Operator.Join(Depth, Operator.Join(" seldepth ", Operator.Join(SelDepth, Operator.Join(" multipv ", Operator.Join(MultiPV, Operator.Join(" score ", Operator.Join(Score, Bound))))))));
     LIL.Line = Operator.Join(LIL.Line, Operator.Join(" nodes ", Operator.Join(LIL.Nodes, Operator.Join(" nps ", floor(((LIL.Nodes * 1000) / (LIL.Time + (LIL.Time == 0))))))));
-    If (LIL.Time > 1000)
-    {
-        Call GetHashfull(Glob.TTCurrentAge);
-        LIL.Line = Operator.Join(LIL.Line, Operator.Join(" hashfull ", Ret.GetHashfull.Permill));
-    }
+    Call GetHashfull(Glob.TTCurrentAge);
+    LIL.Line = Operator.Join(LIL.Line, Operator.Join(" hashfull ", Ret.GetHashfull.Permill));
     LIL.Line = Operator.Join(LIL.Line, Operator.Join(" time ", Operator.Join(LIL.Time, Operator.Join(" pv ", Pv))));
     Call Log(LIL.Line)("")("")("")("")("")("")("");
 }
@@ -16222,6 +16228,55 @@ Define ResetSearchInfo (warp=true)
         Glob.ProfBestMoveIdxSumQuiescence = 0;
         Glob.ProfBadOrderCount = 0;
     }
+}
+
+Define ResizeTT (warp=true)
+{
+    Call //("Doubles the TT and keeps all entries: needs a power-of-two cluster count; cluster c goes to c (key bit = 0) or c + clusters (bit = 1), compacted in order (TTFindSlot stops at the first empty entry)");
+    RTT.OldLen = List.Length(TTNodeEntry);
+    RTT.OldClusters = (RTT.OldLen / (Const.TTNodeEntrySize * 4));
+    Repeat (RTT.OldLen)
+    {
+        List.Add(TTNodeEntry, Const.Null);
+    }
+    RTT.C = 1;
+    Repeat (RTT.OldClusters)
+    {
+        RTT.Lo = RTT.C;
+        RTT.Hi = (RTT.C + RTT.OldLen);
+        RTT.Idx = RTT.C;
+        Repeat (4)
+        {
+            RTT.Hash = TTNodeEntry[(RTT.Idx + Const.TTNodeCol.HashIdx)];
+            If (Not ((RTT.Hash == Const.Null)))
+            {
+                If ((floor((RTT.Hash / RTT.OldClusters)) % 2) == 1)
+                {
+                    RTT.Dst = RTT.Hi;
+                    RTT.Hi += Const.TTNodeEntrySize;
+                }
+                Else
+                {
+                    RTT.Dst = RTT.Lo;
+                    RTT.Lo += Const.TTNodeEntrySize;
+                }
+                If (Not ((RTT.Dst == RTT.Idx)))
+                {
+                    RTT.K = 0;
+                    Repeat (Const.TTNodeEntrySize)
+                    {
+                        List.ReplaceItem(TTNodeEntry, (RTT.Dst + RTT.K), TTNodeEntry[(RTT.Idx + RTT.K)]);
+                        List.ReplaceItem(TTNodeEntry, (RTT.Idx + RTT.K), Const.Null);
+                        RTT.K += 1;
+                    }
+                }
+            }
+            RTT.Idx += Const.TTNodeEntrySize;
+        }
+        RTT.C += (Const.TTNodeEntrySize * 4);
+    }
+    Call TTResetSlots;
+    Call Log("info string tt resize ")((RTT.OldLen / Const.TTNodeEntrySize))(" -> ")((List.Length(TTNodeEntry) / Const.TTNodeEntrySize))(" entries, last hashfull ")(Ret.GetHashfull.Permill)(Operator.Join(", time ", Operator.Round((1000 * ((Sensing.DaysSince2000() * 86400) - Glob.ThinkTimeStart)))))(Operator.Join(", nodes ", ((Glob.InfoNodes + Glob.InfoNodesQ) + (Glob.NodeCount + Glob.NodeCountQuiescence))));
 }
 
 Define RevertMove(num Ply) (warp=true)
@@ -19115,26 +19170,80 @@ Define TestSuite(string TestCount)(string TestThinkTime) (warp=false)
     Glob.IsTestRunning = 0;
 }
 
+Define TTCheckResize (warp=true)
+{
+    Call //("Double the TT (TurboWarp only, up to 4M entries, 2M in DCI with two engines per page) when the current search reached hashfull 400; called from TTStoreNode every 50000 stores, before the store picks its slot");
+    If (Glob.IsScratch3 == 0)
+    {
+        If (List.Length(TTNodeEntry) < ((4194304 / (1 + Glob.IsDCI)) * Const.TTNodeEntrySize))
+        {
+            Call GetHashfull(Glob.TTCurrentAge);
+            If (Ret.GetHashfull.Permill > 399)
+            {
+                Call ResizeTT;
+            }
+        }
+    }
+}
+
+Define TTFindSlot(string NodeHash) (warp=true)
+{
+    TTFS.Bucket = (((NodeHash % floor((List.Length(TTNodeEntry) / (Const.TTNodeEntrySize * 4)))) * (Const.TTNodeEntrySize * 4)) + 1);
+    TTFS.Key = (NodeHash % 1073741824);
+    Ret.TTFindSlot.Found = 0;
+    Ret.TTFindSlot.Slot = Const.Null;
+    TTFS.EvictionSlot = Const.Null;
+    TTFS.Idx = 0;
+    Repeat Until ((Not ((Ret.TTFindSlot.Slot == Const.Null))) Or (TTFS.Idx == 4))
+    {
+        TTFS.Hash = TTNodeEntry[(TTFS.Bucket + Const.TTNodeCol.HashIdx)];
+        If (TTFS.Hash == Const.Null)
+        {
+            Ret.TTFindSlot.Slot = TTFS.Bucket;
+        }
+        Else
+        {
+            If (TTFS.Hash == TTFS.Key)
+            {
+                Ret.TTFindSlot.Slot = TTFS.Bucket;
+                Ret.TTFindSlot.Found = 1;
+            }
+            Else
+            {
+                TTFS.Meta = TTNodeEntry[(TTFS.Bucket + Const.TTNodeCol.MetaIdx)];
+                If ((TTFS.Meta % 256) == 0)
+                {
+                    TTFS.EntryValue = Const.Null;
+                }
+                Else
+                {
+                    TTFS.EntryValue = (((TTFS.Meta % 256) - 8) - ((Glob.TTCurrentAge - floor((TTFS.Meta / 16384))) % 131072));
+                }
+                If ((TTFS.EvictionSlot == Const.Null) Or ((Not ((TTFS.EvictionSlotValue == Const.Null))) And ((TTFS.EntryValue == Const.Null) Or (TTFS.EntryValue < TTFS.EvictionSlotValue))))
+                {
+                    TTFS.EvictionSlotValue = TTFS.EntryValue;
+                    TTFS.EvictionSlot = TTFS.Bucket;
+                }
+                TTFS.Bucket += Const.TTNodeEntrySize;
+            }
+        }
+        TTFS.Idx += 1;
+    }
+    If (Ret.TTFindSlot.Slot == Const.Null)
+    {
+        Ret.TTFindSlot.Slot = TTFS.EvictionSlot;
+    }
+}
+
 Define TTProbeNode(string BoardHash)(string Ply) (warp=true)
 {
     Call GetTTNodeHash(BoardHash)(Ply);
     TTPN.NodeHash = Ret.GetTTNodeHash.Hash;
-    TTPN.HashBucket = ((TTPN.NodeHash % (floor((List.Length(TTNodeEntry) / Const.TTNodeEntrySize)) - 5)) + 1);
-    TTPN.HashBucket = (((TTPN.HashBucket - 1) * Const.TTNodeEntrySize) + 1);
-    TTPN.ProbeFound = 0;
-    TTPN.ProbeIdx = 0;
-    Repeat Until ((TTPN.ProbeFound == 1) Or (TTPN.ProbeIdx == 5))
-    {
-        If ((Not ((TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.HashIdx)] == Const.Null))) And (TTNodeEntry[(TTPN.HashBucket + Const.TTNodeCol.HashIdx)] == (TTPN.NodeHash % 1073741824)))
-        {
-            TTPN.ProbeFound = 1;
-        }
-        Else
-        {
-            TTPN.HashBucket += Const.TTNodeEntrySize;
-            TTPN.ProbeIdx += 1;
-        }
-    }
+    Call TTFindSlot(TTPN.NodeHash);
+    TTPN.HashBucket = Ret.TTFindSlot.Slot;
+    TTPN.ProbeFound = Ret.TTFindSlot.Found;
+    List.ReplaceItem(TTSlot, Ply, TTPN.HashBucket);
+    List.ReplaceItem(TTSlotHash, Ply, TTPN.NodeHash);
     If (TTPN.ProbeFound == 0)
     {
         Ret.TTProbeNode.Hit = 0;
@@ -19215,11 +19324,27 @@ Define TTProbeNodeAtPly(string Ply) (warp=true)
     }
 }
 
+Define TTResetSlots (warp=true)
+{
+    TTRS.Idx = 1;
+    Repeat (List.Length(TTSlotHash))
+    {
+        List.ReplaceItem(TTSlotHash, TTRS.Idx, Const.Null);
+        TTRS.Idx += 1;
+    }
+}
+
 Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(string Type)(string Horizon)(string QSMeta)(string StaticEval) (warp=true)
 {
     If (Glob.IsSearchTimeout == 1)
     {
         Stop(this script);
+    }
+    Glob.TTStoreCount += 1;
+    If (Glob.TTStoreCount > Glob.TTCheckNext)
+    {
+        Glob.TTCheckNext = (Glob.TTStoreCount + 50000);
+        Call TTCheckResize;
     }
     Call GetTTNodeHash(BoardHash)(Ply);
     TTSN.Score = Score;
@@ -19242,59 +19367,19 @@ Define TTStoreNodeImpl(string NodeHash)(string Ply)(string Score)(string BestMov
 {
     If (Not ((List.Length(TTNodeEntry) == 0)))
     {
-        TTSNI.FirstBucket = ((NodeHash % (floor((List.Length(TTNodeEntry) / Const.TTNodeEntrySize)) - 5)) + 1);
-        TTSNI.FirstBucket = (((TTSNI.FirstBucket - 1) * Const.TTNodeEntrySize) + 1);
-        TTSNI.HashBucket = TTSNI.FirstBucket;
-        TTSNI.UpdateIdx = Const.Null;
-        TTSNI.EmptySlot = Const.Null;
-        TTSNI.EvictionSlot = Const.Null;
-        Repeat (5)
+        If (TTSlotHash[Ply] == NodeHash)
         {
-            TTSNI.Hash = TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.HashIdx)];
-            If (TTSNI.Hash == Const.Null)
-            {
-                TTSNI.EmptySlot = TTSNI.HashBucket;
-            }
-            Else
-            {
-                If (TTSNI.Hash == (NodeHash % 1073741824))
-                {
-                    TTSNI.UpdateIdx = TTSNI.HashBucket;
-                }
-                Else
-                {
-                    TTSNI.Meta = TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.MetaIdx)];
-                    If ((TTSNI.Meta % 256) == 0)
-                    {
-                        TTSNI.EntryValue = Const.Null;
-                    }
-                    Else
-                    {
-                        TTSNI.EntryValue = (((TTSNI.Meta % 256) - 8) - ((Glob.TTCurrentAge - floor((TTSNI.Meta / 16384))) % 131072));
-                    }
-                    If ((TTSNI.EvictionSlot == Const.Null) Or ((Not ((TTSNI.EvictionSlotValue == Const.Null))) And ((TTSNI.EntryValue == Const.Null) Or (TTSNI.EntryValue < TTSNI.EvictionSlotValue))))
-                    {
-                        TTSNI.EvictionSlotValue = TTSNI.EntryValue;
-                        TTSNI.EvictionSlot = TTSNI.HashBucket;
-                    }
-                }
-            }
-            TTSNI.HashBucket += Const.TTNodeEntrySize;
-        }
-        If (Not ((TTSNI.UpdateIdx == Const.Null)))
-        {
-            TTSNI.HashBucket = TTSNI.UpdateIdx;
+            TTSNI.HashBucket = TTSlot[Ply];
         }
         Else
         {
-            If (Not ((TTSNI.EmptySlot == Const.Null)))
-            {
-                TTSNI.HashBucket = TTSNI.EmptySlot;
-            }
-            Else
-            {
-                TTSNI.HashBucket = TTSNI.EvictionSlot;
-            }
+            Call TTFindSlot(NodeHash);
+            TTSNI.HashBucket = Ret.TTFindSlot.Slot;
+        }
+        TTSNI.UpdateIdx = Const.Null;
+        If (TTNodeEntry[(TTSNI.HashBucket + Const.TTNodeCol.HashIdx)] == (NodeHash % 1073741824))
+        {
+            TTSNI.UpdateIdx = TTSNI.HashBucket;
         }
         If (Not ((TTSNI.UpdateIdx == Const.Null)))
         {
@@ -19678,3 +19763,4 @@ Define _ClearLists (warp=true)
     List.DeleteItem(HistoryContinuation3, all);
     List.DeleteItem(HistoryContinuation4, all);
 }
+
