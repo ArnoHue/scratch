@@ -3,7 +3,7 @@
 WhenGreenFlagClicked()
 {
     Glob.Game.IsStarted = 0;
-    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.2869 (09.11.2026) by ArnoHu";
+    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.2873 (10.11.2026) by ArnoHu";
     Glob.Config.IsTestRunning = 0;
     Glob.Config.IsDCI = 0;
     Glob.NNUE.IsNetworkDecoded = 0;
@@ -407,7 +407,6 @@ WhenBroadcastReceived($gok_nnue stop)
 
 WhenBroadcastReceived(dci new game)
 {
-    Glob.Game.IsPlayerBlack = Const.Null;
     GoK_IsGameSuspended = 0;
     List.DeleteAll(BoardHistory);
     List.DeleteAll(BoardHistoryFiftyMoves);
@@ -416,6 +415,8 @@ WhenBroadcastReceived(dci new game)
     List.DeleteAll(BoardHistoryWasEngineMove);
     List.DeleteAll(GameMovesAN);
     List.DeleteAll(GameMoves);
+    Call InitBoard;
+    Call InitBoardPhase2;
     Glob.Clock.CurrentTime = Const.Null;
     Glob.Clock.MoveCount = 0;
     Glob.Config.IsTimeModelLogged = 0;
@@ -770,16 +771,30 @@ Define $gok_prepare (warp=true)
         Glob.Game.IsExecutionRunning = 0;
         Glob.Config.Level = 6;
         GoK_Level = 6;
-        $gok_prepare.SavedClockTime = Glob.Clock.CurrentTime;
-        $gok_prepare.SavedClockMoveCount = Glob.Clock.MoveCount;
-        $gok_prepare.SavedTimeModelLogged = Glob.Config.IsTimeModelLogged;
-        Call InitBoard;
-        Glob.Clock.CurrentTime = $gok_prepare.SavedClockTime;
-        Glob.Clock.MoveCount = $gok_prepare.SavedClockMoveCount;
-        Glob.Config.IsTimeModelLogged = $gok_prepare.SavedTimeModelLogged;
-        Call InitBoardPhase2;
-        Call ​​warn​​("$gok_reinit");
+        If (Glob.Game.IsNewGamePending == 1)
+        {
+            Call FillBoard;
+            List.DeleteAll(BoardHistory);
+            List.DeleteAll(BoardHistoryHash);
+            List.DeleteAll(BoardHistoryMetaState);
+            List.DeleteAll(BoardHistoryWasEngineMove);
+            Call CalcBoardStats;
+            Call AddBoardToHistory(Const.Null);
+        }
+        Else
+        {
+            $gok_prepare.SavedClockTime = Glob.Clock.CurrentTime;
+            $gok_prepare.SavedClockMoveCount = Glob.Clock.MoveCount;
+            $gok_prepare.SavedTimeModelLogged = Glob.Config.IsTimeModelLogged;
+            Call InitBoard;
+            Glob.Clock.CurrentTime = $gok_prepare.SavedClockTime;
+            Glob.Clock.MoveCount = $gok_prepare.SavedClockMoveCount;
+            Glob.Config.IsTimeModelLogged = $gok_prepare.SavedTimeModelLogged;
+            Call InitBoardPhase2;
+            Call ​​warn​​("$gok_reinit");
+        }
     }
+    Glob.Game.IsNewGamePending = 0;
     Call ImportFEN(_dci fen);
     Call CalcBoardStats;
     If (_dci think time == "Infinity")
@@ -1795,6 +1810,7 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
                 If (ApplyMove.PromotionCode == 3)
                 {
                     List.ReplaceItem(PromotionPieces, Ply, GoK_WhiteBishop);
+                    Glob.Board.WhiteBishopCount += 1;
                     Glob.Board.WhiteNonQueenMajorMinorCount += 1;
                 }
                 If (ApplyMove.PromotionCode == 4)
@@ -1821,6 +1837,7 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
                 If (ApplyMove.PromotionCode == 3)
                 {
                     List.ReplaceItem(PromotionPieces, Ply, GoK_BlackBishop);
+                    Glob.Board.BlackBishopCount += 1;
                     Glob.Board.BlackNonQueenMajorMinorCount += 1;
                 }
                 If (ApplyMove.PromotionCode == 4)
@@ -1967,6 +1984,10 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
                         {
                             Glob.Board.BlackRookCount += -1;
                         }
+                        If (ApplyMove.TargetPiece == GoK_BlackBishop)
+                        {
+                            Glob.Board.BlackBishopCount += -1;
+                        }
                     }
                     Else
                     {
@@ -1991,6 +2012,10 @@ Define ApplyMove(string Ply)(bool UpdateNNUE) (warp=true)
                         If (ApplyMove.TargetPiece == GoK_WhiteRook)
                         {
                             Glob.Board.WhiteRookCount += -1;
+                        }
+                        If (ApplyMove.TargetPiece == GoK_WhiteBishop)
+                        {
+                            Glob.Board.WhiteBishopCount += -1;
                         }
                     }
                     Else
@@ -2485,10 +2510,12 @@ Define CalcBoardStats (warp=true)
     Glob.Board.RootBlackQueenCount = 0;
     Glob.Board.RootBlackPawnCount = 0;
     CalcBoardStats.BlackRookCount = 0;
+    CalcBoardStats.BlackBishopCount = 0;
     Glob.Board.RootWhiteQueenCount = 0;
     Glob.Board.RootWhiteNonQueenMajorMinorCount = 0;
     Glob.Board.RootWhitePawnCount = 0;
     CalcBoardStats.WhiteRookCount = 0;
+    CalcBoardStats.WhiteBishopCount = 0;
     CalcBoardStats.SqIdx = 1;
     Repeat (64)
     {
@@ -2507,6 +2534,10 @@ Define CalcBoardStats (warp=true)
             {
                 CalcBoardStats.WhiteRookCount += 1;
             }
+            If (Board[CalcBoardStats.SqIdx] == GoK_WhiteBishop)
+            {
+                CalcBoardStats.WhiteBishopCount += 1;
+            }
         }
         If ((Board[CalcBoardStats.SqIdx] == GoK_BlackKnight) Or ((Board[CalcBoardStats.SqIdx] == GoK_BlackBishop) Or (Board[CalcBoardStats.SqIdx] == GoK_BlackRook)))
         {
@@ -2514,6 +2545,10 @@ Define CalcBoardStats (warp=true)
             If (Board[CalcBoardStats.SqIdx] == GoK_BlackRook)
             {
                 CalcBoardStats.BlackRookCount += 1;
+            }
+            If (Board[CalcBoardStats.SqIdx] == GoK_BlackBishop)
+            {
+                CalcBoardStats.BlackBishopCount += 1;
             }
         }
         If (Board[CalcBoardStats.SqIdx] == GoK_WhitePawn)
@@ -2566,7 +2601,9 @@ Define CalcBoardStats (warp=true)
     Glob.Board.BlackQueenCount = Glob.Board.RootBlackQueenCount;
     Glob.Board.BlackNonQueenMajorMinorCount = Glob.Board.RootBlackNonQueenMajorMinorCount;
     Glob.Board.WhiteRookCount = CalcBoardStats.WhiteRookCount;
+    Glob.Board.WhiteBishopCount = CalcBoardStats.WhiteBishopCount;
     Glob.Board.BlackRookCount = CalcBoardStats.BlackRookCount;
+    Glob.Board.BlackBishopCount = CalcBoardStats.BlackBishopCount;
     Glob.Board.WhitePawnCount = Glob.Board.RootWhitePawnCount;
     Glob.Board.BlackPawnCount = Glob.Board.RootBlackPawnCount;
     List.ReplaceItem(CastlingState, 1, ((((Glob.Board.HasBlackCastled * CastlingStatePow2[1]) + (Glob.Board.HasBlackKingMoved * CastlingStatePow2[2])) + ((Glob.Board.HasBlackRookKSMoved * CastlingStatePow2[3]) + (Glob.Board.HasBlackRookQSMoved * CastlingStatePow2[4]))) + (((Glob.Board.HasWhiteCastled * CastlingStatePow2[5]) + (Glob.Board.HasWhiteKingMoved * CastlingStatePow2[6])) + ((Glob.Board.HasWhiteRookKSMoved * CastlingStatePow2[7]) + (Glob.Board.HasWhiteRookQSMoved * CastlingStatePow2[8])))));
@@ -2630,6 +2667,7 @@ Define ClearTT (warp=true)
 
 Define ClearTTImpl(string Size) (warp=true)
 {
+    Call //("aot-hint: int32 TTNodeEntry (every TT cell is a small integer by design: 30-bit key, packed meta, move*10, scores)");
     Call //("Size must be a power of two (entries) for ResizeTT to keep the entries; only the Scratch 3 size 40000 is not, and it is never resized");
     If (List.Length(TTNodeEntry) == (Size * 5))
     {
@@ -3525,10 +3563,12 @@ Define EvalEG.Material(string StrongSide) (warp=true)
     {
         Ret.EvalEG.Material.StrongQueenCount = Glob.Board.BlackQueenCount;
         Ret.EvalEG.Material.StrongRookCount = Glob.Board.BlackRookCount;
+        Ret.EvalEG.Material.StrongBishopCount = Glob.Board.BlackBishopCount;
         EvalEG.Material.StrongMajorMinorCount = Glob.Board.BlackNonQueenMajorMinorCount;
         Ret.EvalEG.Material.StrongPawnCount = Glob.Board.BlackPawnCount;
         EvalEG.Material.WeakQueenCount = Glob.Board.WhiteQueenCount;
         Ret.EvalEG.Material.WeakRookCount = Glob.Board.WhiteRookCount;
+        EvalEG.Material.WeakBishopCount = Glob.Board.WhiteBishopCount;
         EvalEG.Material.WeakMajorMinorCount = Glob.Board.WhiteNonQueenMajorMinorCount;
         Ret.EvalEG.Material.WeakPawnCount = Glob.Board.WhitePawnCount;
     }
@@ -3536,27 +3576,14 @@ Define EvalEG.Material(string StrongSide) (warp=true)
     {
         Ret.EvalEG.Material.StrongQueenCount = Glob.Board.WhiteQueenCount;
         Ret.EvalEG.Material.StrongRookCount = Glob.Board.WhiteRookCount;
+        Ret.EvalEG.Material.StrongBishopCount = Glob.Board.WhiteBishopCount;
         EvalEG.Material.StrongMajorMinorCount = Glob.Board.WhiteNonQueenMajorMinorCount;
         Ret.EvalEG.Material.StrongPawnCount = Glob.Board.WhitePawnCount;
         EvalEG.Material.WeakQueenCount = Glob.Board.BlackQueenCount;
         Ret.EvalEG.Material.WeakRookCount = Glob.Board.BlackRookCount;
+        EvalEG.Material.WeakBishopCount = Glob.Board.BlackBishopCount;
         EvalEG.Material.WeakMajorMinorCount = Glob.Board.BlackNonQueenMajorMinorCount;
         Ret.EvalEG.Material.WeakPawnCount = Glob.Board.BlackPawnCount;
-    }
-    Ret.EvalEG.Material.StrongBishopCount = 0;
-    EvalEG.Material.WeakBishopCount = 0;
-    EvalEG.Material.ScanIdx = 1;
-    Repeat (64)
-    {
-        If ((Board[EvalEG.Material.ScanIdx] * StrongSide) == GoK_BlackBishop)
-        {
-            Ret.EvalEG.Material.StrongBishopCount += 1;
-        }
-        If ((Board[EvalEG.Material.ScanIdx] * StrongSide) == GoK_WhiteBishop)
-        {
-            EvalEG.Material.WeakBishopCount += 1;
-        }
-        EvalEG.Material.ScanIdx += 1;
     }
     Ret.EvalEG.Material.StrongKnightCount = ((EvalEG.Material.StrongMajorMinorCount - Ret.EvalEG.Material.StrongRookCount) - Ret.EvalEG.Material.StrongBishopCount);
     EvalEG.Material.StrongPieceCount = (Ret.EvalEG.Material.StrongQueenCount + EvalEG.Material.StrongMajorMinorCount);
@@ -5407,8 +5434,8 @@ Define GetOpeningMoves (warp=true)
     {
         Call GenerateMovesPublic(1);
         Call CreateCurrentBoardHash;
-        GetOpeningMoves.OpeningMovesMapMoveIdx = 1;
-        Repeat (List.Length(OpeningMovesMapHash))
+        GetOpeningMoves.OpeningMovesMapMoveIdx = NumBookMapSegments[(1 + (2 * Glob.Game.IsPlayerBlack))];
+        Repeat (NumBookMapSegments[(2 + (2 * Glob.Game.IsPlayerBlack))])
         {
             If (OpeningMovesMapHash[GetOpeningMoves.OpeningMovesMapMoveIdx] == Glob.Board.CurrentHash)
             {
@@ -5968,7 +5995,7 @@ Define ImportBoard(string ImpBoard) (warp=false)
         List.DeleteItem(BoardHistoryWasEngineMove, all);
         List.DeleteItem(GameMovesAN, all);
         Glob.Game.FenPlyBase = 0;
-        Call AddBoardToHistory("");
+        Call AddBoardToHistory(Const.Null);
         Call DrawBoardAndWait;
         GoK_IsGameSuspended = 0;
         Call CalcAttacked(1);
@@ -7005,8 +7032,31 @@ Define InitBoardPhase2 (warp=true)
     Call InitPieceSquareTables;
     Call CalcBoardStats;
     Call InitMovePos((1 == 1));
-    Call InitBook;
-    Call InitBookMap;
+    If (Glob.Book.IsBuilt == 0)
+    {
+        InitBoardPhase2.SavedIsPlayerBlack = Glob.Game.IsPlayerBlack;
+        List.DeleteAll(OpeningMovesMapHash);
+        List.DeleteAll(OpeningMovesMapMove);
+        List.DeleteAll(NumBookMapSegments);
+        Glob.Game.IsPlayerBlack = 0;
+        Call InitBoard;
+        Call CalcBoardStats;
+        Call InitBook;
+        List.Add(NumBookMapSegments, (List.Length(OpeningMovesMapHash) + 1));
+        Call InitBookMap;
+        List.Add(NumBookMapSegments, ((List.Length(OpeningMovesMapHash) + 1) - NumBookMapSegments[List.Length(NumBookMapSegments)]));
+        Glob.Game.IsPlayerBlack = 1;
+        Call InitBoard;
+        Call CalcBoardStats;
+        Call InitBook;
+        List.Add(NumBookMapSegments, (List.Length(OpeningMovesMapHash) + 1));
+        Call InitBookMap;
+        List.Add(NumBookMapSegments, ((List.Length(OpeningMovesMapHash) + 1) - NumBookMapSegments[List.Length(NumBookMapSegments)]));
+        Glob.Game.IsPlayerBlack = InitBoardPhase2.SavedIsPlayerBlack;
+        Call InitBoard;
+        Call CalcBoardStats;
+        Glob.Book.IsBuilt = 1;
+    }
     Call InitChebyshev;
     Call NNUE_Init;
     List.DeleteAll(CastlingKingMove);
@@ -7024,7 +7074,8 @@ Define InitBoardPhase2 (warp=true)
     List.ReplaceItem(CastlingRookMove, GoK_BlackKingsideCastling, ((NNUE_GoKIdxToSquare[8] * 100) + NNUE_GoKIdxToSquare[6]));
     List.ReplaceItem(CastlingKingMove, GoK_BlackQueensideCastling, ((NNUE_GoKIdxToSquare[5] * 100) + NNUE_GoKIdxToSquare[3]));
     List.ReplaceItem(CastlingRookMove, GoK_BlackQueensideCastling, ((NNUE_GoKIdxToSquare[1] * 100) + NNUE_GoKIdxToSquare[4]));
-    Call AddBoardToHistory("");
+    Call AddBoardToHistory(Const.Null);
+    Glob.Game.IsNewGamePending = 1;
 }
 
 Define InitBook (warp=true)
@@ -7450,8 +7501,6 @@ Define InitBook (warp=true)
 
 Define InitBookMap (warp=true)
 {
-    List.DeleteAll(OpeningMovesMapHash);
-    List.DeleteAll(OpeningMovesMapMove);
     List.DeleteAll(OpeningMovesMapStack);
     Repeat (List.Length(OpeningMoves))
     {
@@ -7502,7 +7551,7 @@ Define InitBookMapImpl(string Ply)(string GameMovesLen)(string Move)(bool Init) 
     }
     If (List.Length(OpeningMovesRes) > 0)
     {
-        List.DeleteAll(TmpList1);
+        List.DeleteAll(StrTmpList1);
         Call ClearMoveList(Ply);
         InitBookMapImpl.OpeningMovesReIdx = 1;
         Repeat (List.Length(OpeningMovesRes))
@@ -7510,10 +7559,10 @@ Define InitBookMapImpl(string Ply)(string GameMovesLen)(string Move)(bool Init) 
             InitBookMapImpl.MoveStr = OpeningMovesRes[InitBookMapImpl.OpeningMovesReIdx];
             List.Add(OpeningMovesMapHash, Glob.Board.CurrentHash);
             List.Add(OpeningMovesMapMove, InitBookMapImpl.MoveStr);
-            If (Not (List.ContainsItem(TmpList1, InitBookMapImpl.MoveStr)))
+            If (Not (List.ContainsItem(StrTmpList1, InitBookMapImpl.MoveStr)))
             {
                 Call AddMoveToList((InitBookMapImpl.MoveStr + 0))(Ply)(0);
-                List.Add(TmpList1, InitBookMapImpl.MoveStr);
+                List.Add(StrTmpList1, InitBookMapImpl.MoveStr);
             }
             InitBookMapImpl.OpeningMovesReIdx += 1;
         }
@@ -7592,14 +7641,14 @@ Define InitHashLookup (warp=true)
 {
     Glob.TT.CurrentAge = 0;
     List.DeleteItem(PosPieceHashLookup, all);
-    Call //("MINSTD LCG (x*48271 mod 2^31-1), two draws per entry -> 46-bit value; index = (pieceIdx-1)*64 + sq, +384 for opponent pieces");
+    Call //("46-bit value = 31 bits of LCG 40014 mod 2147483563 + 15 bits of LCG 40692 mod 2147483399 (two moduli: the halves must be independent); index = (pieceIdx-1)*64 + sq, +384 for opponent pieces");
     InitHashLookup.Seed = 1070372;
+    InitHashLookup.Seed2 = 2870001;
     Repeat (1024)
     {
-        InitHashLookup.Seed = ((InitHashLookup.Seed * 48271) % 2147483647);
-        InitHashLookup.High = InitHashLookup.Seed;
-        InitHashLookup.Seed = ((InitHashLookup.Seed * 48271) % 2147483647);
-        List.Add(PosPieceHashLookup, ((((InitHashLookup.High - 1) * 32768) + (InitHashLookup.Seed % 32768)) + 1));
+        InitHashLookup.Seed = ((InitHashLookup.Seed * 40014) % 2147483563);
+        InitHashLookup.Seed2 = ((InitHashLookup.Seed2 * 40692) % 2147483399);
+        List.Add(PosPieceHashLookup, ((((InitHashLookup.Seed - 1) * 32768) + (InitHashLookup.Seed2 % 32768)) + 1));
     }
     If (List.Length(TTNodeEntry) > 0)
     {
@@ -8065,7 +8114,7 @@ Define InitSearch(string Horizon) (warp=true)
         Call UI.FormatPV;
         List.DeleteAll(PVStable);
         List.DeleteAll(PVStablePrev);
-        Call //("TT age = search*100 + iteration, bumped at the first iteration of every search; hashfull = fill by the current search (UCI meaning); resize when one search fills 40 % (10-20 s games), never at 1 s");
+        Call //("TT age = search*100 + iteration, bumped at the first iteration of every search; hashfull = fill by the current search (UCI meaning); resize when one search fills 40 %");
         Glob.TT.CurrentAge = ((floor((Glob.TT.CurrentAge / 100)) + 1) * 100);
         InitSearch.KillerMoveIdx = 1;
         Repeat (List.Length(KillerMoves))
@@ -10096,23 +10145,23 @@ Define NNUE_DecodeNetwork (warp=true)
 
 Define NNUE_DecToHex(string CSV) (warp=true)
 {
-    List.DeleteAll(TmpList1);
-    List.Add(TmpList1, 0);
-    List.Add(TmpList1, 1);
-    List.Add(TmpList1, 2);
-    List.Add(TmpList1, 3);
-    List.Add(TmpList1, 4);
-    List.Add(TmpList1, 5);
-    List.Add(TmpList1, 6);
-    List.Add(TmpList1, 7);
-    List.Add(TmpList1, 8);
-    List.Add(TmpList1, 9);
-    List.Add(TmpList1, "a");
-    List.Add(TmpList1, "b");
-    List.Add(TmpList1, "c");
-    List.Add(TmpList1, "d");
-    List.Add(TmpList1, "e");
-    List.Add(TmpList1, "f");
+    List.DeleteAll(StrTmpList1);
+    List.Add(StrTmpList1, 0);
+    List.Add(StrTmpList1, 1);
+    List.Add(StrTmpList1, 2);
+    List.Add(StrTmpList1, 3);
+    List.Add(StrTmpList1, 4);
+    List.Add(StrTmpList1, 5);
+    List.Add(StrTmpList1, 6);
+    List.Add(StrTmpList1, 7);
+    List.Add(StrTmpList1, 8);
+    List.Add(StrTmpList1, 9);
+    List.Add(StrTmpList1, "a");
+    List.Add(StrTmpList1, "b");
+    List.Add(StrTmpList1, "c");
+    List.Add(StrTmpList1, "d");
+    List.Add(StrTmpList1, "e");
+    List.Add(StrTmpList1, "f");
     Call NNUE_LoadList(CSV);
     Ret.NNUE_DecToHex.Hex = "";
     NNUE_DecToHex.Idx = 1;
@@ -10123,9 +10172,9 @@ Define NNUE_DecToHex(string CSV) (warp=true)
         {
             NNUE_DecToHex.Word = (2048 - NNUE_DecToHex.Word);
         }
-        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, TmpList1[((floor((NNUE_DecToHex.Word / 256)) % 16) + 1)]);
-        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, TmpList1[((floor((NNUE_DecToHex.Word / 16)) % 16) + 1)]);
-        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, TmpList1[((NNUE_DecToHex.Word % 16) + 1)]);
+        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, StrTmpList1[((floor((NNUE_DecToHex.Word / 256)) % 16) + 1)]);
+        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, StrTmpList1[((floor((NNUE_DecToHex.Word / 16)) % 16) + 1)]);
+        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, StrTmpList1[((NNUE_DecToHex.Word % 16) + 1)]);
         NNUE_DecToHex.Idx += 1;
     }
     NNUE_DecToHex.Idx = 1;
@@ -10136,9 +10185,9 @@ Define NNUE_DecToHex(string CSV) (warp=true)
         {
             NNUE_DecToHex.Word = (2048 - NNUE_DecToHex.Word);
         }
-        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, TmpList1[((floor((NNUE_DecToHex.Word / 256)) % 16) + 1)]);
-        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, TmpList1[((floor((NNUE_DecToHex.Word / 16)) % 16) + 1)]);
-        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, TmpList1[((NNUE_DecToHex.Word % 16) + 1)]);
+        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, StrTmpList1[((floor((NNUE_DecToHex.Word / 256)) % 16) + 1)]);
+        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, StrTmpList1[((floor((NNUE_DecToHex.Word / 16)) % 16) + 1)]);
+        Ret.NNUE_DecToHex.Hex = Operator.Join(Ret.NNUE_DecToHex.Hex, StrTmpList1[((NNUE_DecToHex.Word % 16) + 1)]);
         NNUE_DecToHex.Idx += 1;
     }
 }
@@ -10247,29 +10296,29 @@ Define NNUE_Evaluate(string Side)(string Ply) (warp=true)
 
 Define NNUE_HexToDec(string Hex) (warp=true)
 {
-    List.DeleteAll(TmpList1);
-    List.Add(TmpList1, 0);
-    List.Add(TmpList1, 1);
-    List.Add(TmpList1, 2);
-    List.Add(TmpList1, 3);
-    List.Add(TmpList1, 4);
-    List.Add(TmpList1, 5);
-    List.Add(TmpList1, 6);
-    List.Add(TmpList1, 7);
-    List.Add(TmpList1, 8);
-    List.Add(TmpList1, 9);
-    List.Add(TmpList1, "a");
-    List.Add(TmpList1, "b");
-    List.Add(TmpList1, "c");
-    List.Add(TmpList1, "d");
-    List.Add(TmpList1, "e");
-    List.Add(TmpList1, "f");
+    List.DeleteAll(StrTmpList1);
+    List.Add(StrTmpList1, 0);
+    List.Add(StrTmpList1, 1);
+    List.Add(StrTmpList1, 2);
+    List.Add(StrTmpList1, 3);
+    List.Add(StrTmpList1, 4);
+    List.Add(StrTmpList1, 5);
+    List.Add(StrTmpList1, 6);
+    List.Add(StrTmpList1, 7);
+    List.Add(StrTmpList1, 8);
+    List.Add(StrTmpList1, 9);
+    List.Add(StrTmpList1, "a");
+    List.Add(StrTmpList1, "b");
+    List.Add(StrTmpList1, "c");
+    List.Add(StrTmpList1, "d");
+    List.Add(StrTmpList1, "e");
+    List.Add(StrTmpList1, "f");
     List.DeleteAll(NNUE_ListRes_1);
     List.DeleteAll(NNUE_ListRes_2);
     NNUE_HexToDec.Idx = 1;
     Repeat ((Variable.Length(Hex) / 3))
     {
-        NNUE_HexToDec.Word = ((((List.IndexOf(TmpList1, Operator.LetterOf(Hex, NNUE_HexToDec.Idx)) - 1) * 256) + ((List.IndexOf(TmpList1, Operator.LetterOf(Hex, (NNUE_HexToDec.Idx + 1))) - 1) * 16)) + (List.IndexOf(TmpList1, Operator.LetterOf(Hex, (NNUE_HexToDec.Idx + 2))) - 1));
+        NNUE_HexToDec.Word = ((((List.IndexOf(StrTmpList1, Operator.LetterOf(Hex, NNUE_HexToDec.Idx)) - 1) * 256) + ((List.IndexOf(StrTmpList1, Operator.LetterOf(Hex, (NNUE_HexToDec.Idx + 1))) - 1) * 16)) + (List.IndexOf(StrTmpList1, Operator.LetterOf(Hex, (NNUE_HexToDec.Idx + 2))) - 1));
         If (NNUE_HexToDec.Word > 2048)
         {
             NNUE_HexToDec.Word = (2048 - NNUE_HexToDec.Word);
@@ -10614,6 +10663,7 @@ Define OnProgressChanged(string Progress) (warp=false)
 
 Define OnRestart (warp=true)
 {
+    Glob.Book.IsBuilt = 0;
     Const.ProfilerMode.Off = 0;
     Const.ProfilerMode.Std = 1;
     Const.ProfilerMode.Full = 2;
@@ -10810,6 +10860,8 @@ Define PerftPrepareNode(string PerftPrepPly)(string PerftPrepStaged) (warp=true)
         Call CalcBoardAttackedOnDemand(PerftPrepPly)((1 == 0))((1 == 1))(99);
         Call GenMovesWrapper(PerftPrepPly)((1 == 0))((1 == 0))((1 == 0));
     }
+    List.ReplaceItem(Quiescence, PerftPrepPly, 0);
+    List.ReplaceItem(PreLMPLimit, PerftPrepPly, Const.Null);
 }
 
 Define PerftValidateCheck(string ValPly) (warp=true)
@@ -12079,6 +12131,7 @@ Define RevertMove(num Ply) (warp=true)
             }
             If (RevertMove.PromotionCode == 3)
             {
+                Glob.Board.BlackBishopCount += -1;
                 Glob.Board.BlackNonQueenMajorMinorCount += -1;
             }
             If (RevertMove.PromotionCode == 4)
@@ -12104,6 +12157,7 @@ Define RevertMove(num Ply) (warp=true)
                 }
                 If (RevertMove.PromotionCode == 3)
                 {
+                    Glob.Board.WhiteBishopCount += -1;
                     Glob.Board.WhiteNonQueenMajorMinorCount += -1;
                 }
                 If (RevertMove.PromotionCode == 4)
@@ -12138,6 +12192,10 @@ Define RevertMove(num Ply) (warp=true)
                     {
                         Glob.Board.BlackRookCount += 1;
                     }
+                    If (RevertMove.TargetPiece == GoK_BlackBishop)
+                    {
+                        Glob.Board.BlackBishopCount += 1;
+                    }
                 }
                 Else
                 {
@@ -12162,6 +12220,10 @@ Define RevertMove(num Ply) (warp=true)
                     If (RevertMove.TargetPiece == GoK_WhiteRook)
                     {
                         Glob.Board.WhiteRookCount += 1;
+                    }
+                    If (RevertMove.TargetPiece == GoK_WhiteBishop)
+                    {
+                        Glob.Board.WhiteBishopCount += 1;
                     }
                 }
                 Else
@@ -14863,18 +14925,18 @@ Define SEE(string MovePly)(bool WithPinFilter) (warp=true)
         Ret.SEE.Gain = 0;
         Stop(this script);
     }
-    List.DeleteAll(SEE.TmpList4);
-    List.DeleteAll(SEE.TmpList5);
+    List.DeleteAll(SEE.NumTmpList4);
+    List.DeleteAll(SEE.NumTmpList5);
     SEE.Idx = 1;
     Repeat (List.Length(CalcMovesMoveList))
     {
-        List.Add(SEE.TmpList4, CalcMovesMoveList[SEE.Idx]);
+        List.Add(SEE.NumTmpList4, CalcMovesMoveList[SEE.Idx]);
         SEE.Idx += 1;
     }
     SEE.Idx = 1;
     Repeat (List.Length(CalcMovesScoreList))
     {
-        List.Add(SEE.TmpList5, CalcMovesScoreList[SEE.Idx]);
+        List.Add(SEE.NumTmpList5, CalcMovesScoreList[SEE.Idx]);
         SEE.Idx += 1;
     }
     SEE.Side = 1;
@@ -15036,15 +15098,15 @@ Define SEE(string MovePly)(bool WithPinFilter) (warp=true)
     List.DeleteAll(CalcMovesMoveList);
     List.DeleteAll(CalcMovesScoreList);
     SEE.Idx = 1;
-    Repeat (List.Length(SEE.TmpList4))
+    Repeat (List.Length(SEE.NumTmpList4))
     {
-        List.Add(CalcMovesMoveList, SEE.TmpList4[SEE.Idx]);
+        List.Add(CalcMovesMoveList, SEE.NumTmpList4[SEE.Idx]);
         SEE.Idx += 1;
     }
     SEE.Idx = 1;
-    Repeat (List.Length(SEE.TmpList5))
+    Repeat (List.Length(SEE.NumTmpList5))
     {
-        List.Add(CalcMovesScoreList, SEE.TmpList5[SEE.Idx]);
+        List.Add(CalcMovesScoreList, SEE.NumTmpList5[SEE.Idx]);
         SEE.Idx += 1;
     }
 }
@@ -15550,10 +15612,10 @@ Define TestSuite(string TestCount)(string TestThinkTime) (warp=false)
 
 Define TTCheckResize (warp=true)
 {
-    Call //("Double the TT (TurboWarp only, up to 4M entries, 2M in DCI with two engines per page) when the current search reached hashfull 400; called from TTStoreNode every 50000 stores, before the store picks its slot");
+    Call //("Double the TT (TurboWarp only, up to 8M entries) when the current search reached hashfull 400; called from TTStoreNode every 50000 stores, before the store picks its slot");
     If (Glob.Config.IsScratch3 == 0)
     {
-        If ((List.Length(TTNodeEntry) > 0) And (List.Length(TTNodeEntry) < ((4194304 / (1 + Glob.Config.IsDCI)) * Const.TTNodeEntrySize)))
+        If ((List.Length(TTNodeEntry) > 0) And (List.Length(TTNodeEntry) < (8388608 * Const.TTNodeEntrySize)))
         {
             Call GetHashfull(Glob.TT.CurrentAge);
             If (Ret.GetHashfull.Permill > 399)
@@ -15567,7 +15629,7 @@ Define TTCheckResize (warp=true)
 Define TTFindSlot(string NodeHash) (warp=true)
 {
     TTFindSlot.Bucket = (((NodeHash % floor((List.Length(TTNodeEntry) / (Const.TTNodeEntrySize * 4)))) * (Const.TTNodeEntrySize * 4)) + 1);
-    Call //("Key = (hash >> 16) & 0x3FFFFFFF: bits 16-45, 30 bits, below 2^31 for SMI cells; bits 0-19 are the cluster index and stay out of the key");
+    Call //("Key = (hash >> 16) & 0x3FFFFFFF: bits 16-45, 30 bits, SMI cell; cluster index = low hash bits; index and key together = hash bits 0-45 at every table size");
     TTFindSlot.Key = (floor((NodeHash / 65536)) % 1073741824);
     Ret.TTFindSlot.Found = 0;
     Ret.TTFindSlot.Slot = Const.Null;
