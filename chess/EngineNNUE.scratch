@@ -3,7 +3,7 @@
 WhenGreenFlagClicked()
 {
     Glob.Game.IsStarted = 0;
-    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.2873 (10.11.2026) by ArnoHu";
+    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.2890 (13.11.2026) by ArnoHu";
     Glob.Config.IsTestRunning = 0;
     Glob.Config.IsDCI = 0;
     Glob.NNUE.IsNetworkDecoded = 0;
@@ -968,6 +968,62 @@ Define //(string Comment) (warp=true)
 {
 }
 
+Define AddAttackWalk(string SourceIdx)(string Start)(string End) (warp=true)
+{
+    Call //("Marks SourceIdx as attacker of the targets RayTgt[Start .. End - 1]: attack count (capped at 9), least valuable attacker, check flag. An occupied target ends its ray (RayNext)");
+    AddAttackWalk.SourcePiece = (Board[(SourceIdx + 0)] + 0);
+    AddAttackWalk.IsBlack = ((AddAttackWalk.SourcePiece > 0) + 0);
+    AddAttackWalk.RayIdx = (Start + 0);
+    AddAttackWalk.End = (End + 0);
+    Repeat Until (Not ((AddAttackWalk.RayIdx < AddAttackWalk.End)))
+    {
+        AddAttackWalk.TargetIdx = (RayTgt[AddAttackWalk.RayIdx] + 0);
+        AddAttackWalk.TargetPiece = (Board[AddAttackWalk.TargetIdx] + 0);
+        If (AddAttackWalk.IsBlack == 1)
+        {
+            AddAttackWalk.AttackCount = (BoardAttackedByBlack[AddAttackWalk.TargetIdx] + 0);
+            If (AddAttackWalk.AttackCount < 9)
+            {
+                List.ReplaceItem(BoardAttackedByBlack, AddAttackWalk.TargetIdx, (AddAttackWalk.AttackCount + 1));
+            }
+            AddAttackWalk.PrevAttackerIdx = (BoardAttackedByBlackPiece[AddAttackWalk.TargetIdx] + 0);
+            If ((AddAttackWalk.PrevAttackerIdx == 0) Or ((Board[AddAttackWalk.PrevAttackerIdx] + 0) > AddAttackWalk.SourcePiece))
+            {
+                List.ReplaceItem(BoardAttackedByBlackPiece, AddAttackWalk.TargetIdx, SourceIdx);
+            }
+            If (AddAttackWalk.TargetPiece == (GoK_WhiteKing + 0))
+            {
+                Glob.Board.IsWhiteChecked = 1;
+            }
+        }
+        Else
+        {
+            AddAttackWalk.AttackCount = (BoardAttackedByWhite[AddAttackWalk.TargetIdx] + 0);
+            If (AddAttackWalk.AttackCount < 9)
+            {
+                List.ReplaceItem(BoardAttackedByWhite, AddAttackWalk.TargetIdx, (AddAttackWalk.AttackCount + 1));
+            }
+            AddAttackWalk.PrevAttackerIdx = (BoardAttackedByWhitePiece[AddAttackWalk.TargetIdx] + 0);
+            If ((AddAttackWalk.PrevAttackerIdx == 0) Or ((Board[AddAttackWalk.PrevAttackerIdx] + 0) < AddAttackWalk.SourcePiece))
+            {
+                List.ReplaceItem(BoardAttackedByWhitePiece, AddAttackWalk.TargetIdx, SourceIdx);
+            }
+            If (AddAttackWalk.TargetPiece == (GoK_BlackKing + 0))
+            {
+                Glob.Board.IsBlackChecked = 1;
+            }
+        }
+        If (AddAttackWalk.TargetPiece == 0)
+        {
+            AddAttackWalk.RayIdx += 1;
+        }
+        Else
+        {
+            AddAttackWalk.RayIdx = (RayNext[AddAttackWalk.RayIdx] + 0);
+        }
+    }
+}
+
 Define AddBoardToHistory(string WasEngineMove) (warp=true)
 {
     Call GetBoardString;
@@ -992,45 +1048,32 @@ Define AddBoardToHistory(string WasEngineMove) (warp=true)
     List.Add(BoardHistoryWasEngineMove, WasEngineMove);
 }
 
-Define AddLookupMove(string SourceIdx)(string Ply)(bool CalcAttackState)(bool CapturesOnly)(bool LookupMoveTypeKing)(bool QuietsOnly)(bool QuietChecks) (warp=true)
+Define AddLookupMove(string SourceIdx)(string Ply)(bool CapturesOnly)(bool LookupMoveTypeKing)(bool QuietsOnly)(bool QuietChecks) (warp=true)
 {
+    Call //("Knight and king moves: walks the target group of the source square (see InitAttackWalk)");
     AddLookupMove.SourcePiece = (Board[(SourceIdx + 0)] + 0);
-    AddLookupMove.Idx = (MoveSourceIdxToListOffsetNonSliding[(SourceIdx + 0)] + 0);
-    AddLookupMove.Count = 1;
-    Repeat (8)
+    If LookupMoveTypeKing
     {
-        If LookupMoveTypeKing
+        AddLookupMove.GroupIdx = (((SourceIdx - 1) * Const.AtkGroup.PerSquare) + Const.AtkGroup.King);
+    }
+    Else
+    {
+        AddLookupMove.GroupIdx = (((SourceIdx - 1) * Const.AtkGroup.PerSquare) + Const.AtkGroup.Knight);
+    }
+    AddLookupMove.RayIdx = (AtkStart[AddLookupMove.GroupIdx] + 0);
+    AddLookupMove.End = (AtkStart[(AddLookupMove.GroupIdx + 1)] + 0);
+    Repeat Until (Not ((AddLookupMove.RayIdx < AddLookupMove.End)))
+    {
+        AddLookupMove.TargetIdx = (RayTgt[AddLookupMove.RayIdx] + 0);
+        If (Board[AddLookupMove.TargetIdx] == 0)
         {
-            AddLookupMove.TargetIdx = (MoveListOffsetToTargetIdxKing[(AddLookupMove.Idx + AddLookupMove.Count)] + 0);
-        }
-        Else
-        {
-            AddLookupMove.TargetIdx = (MoveListOffsetToTargetIdxKnight[(AddLookupMove.Idx + AddLookupMove.Count)] + 0);
-        }
-        If (AddLookupMove.TargetIdx == -1)
-        {
-            Stop(this script);
-        }
-        If CalcAttackState
-        {
-            Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
-        }
-        Else
-        {
-            If (Board[AddLookupMove.TargetIdx] == 0)
+            If CapturesOnly
             {
-                If CapturesOnly
+                If LookupMoveTypeKing
                 {
-                    If LookupMoveTypeKing
+                    If (CheckedState[Ply] == 1)
                     {
-                        If (CheckedState[Ply] == 1)
-                        {
-                            Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
-                        }
-                        Else
-                        {
-                            Call AddPotentialQMove(SourceIdx)(AddLookupMove.TargetIdx)(AddLookupMove.SourcePiece)(Ply)(QuietChecks);
-                        }
+                        Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CapturesOnly)(LookupMoveTypeKing);
                     }
                     Else
                     {
@@ -1039,73 +1082,40 @@ Define AddLookupMove(string SourceIdx)(string Ply)(bool CalcAttackState)(bool Ca
                 }
                 Else
                 {
-                    Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
+                    Call AddPotentialQMove(SourceIdx)(AddLookupMove.TargetIdx)(AddLookupMove.SourcePiece)(Ply)(QuietChecks);
                 }
             }
             Else
             {
-                If (Not (QuietsOnly))
-                {
-                    If (AddLookupMove.SourcePiece > 0)
-                    {
-                        If (Board[AddLookupMove.TargetIdx] < 0)
-                        {
-                            Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
-                        }
-                    }
-                    Else
-                    {
-                        If (Board[AddLookupMove.TargetIdx] > 0)
-                        {
-                            Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CalcAttackState)(CapturesOnly)(LookupMoveTypeKing);
-                        }
-                    }
-                }
-            }
-        }
-        AddLookupMove.Count += 1;
-    }
-}
-
-Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Ply)(bool AttackTableOnly)(bool Quiescence) (warp=true)
-{
-    If AttackTableOnly
-    {
-        AddMoveImpl.SourcePiece = (Board[(SourceIdx + 0)] + 0);
-        If (AddMoveImpl.SourcePiece > 0)
-        {
-            AddMoveImpl.AttackCount = (BoardAttackedByBlack[(TargetIdx + 0)] + 0);
-            If (AddMoveImpl.AttackCount < 9)
-            {
-                List.ReplaceItem(BoardAttackedByBlack, (TargetIdx + 0), (AddMoveImpl.AttackCount + 1));
-            }
-            If (((BoardAttackedByBlackPiece[(TargetIdx + 0)] + 0) == 0) Or ((Board[BoardAttackedByBlackPiece[(TargetIdx + 0)]] + 0) > (AddMoveImpl.SourcePiece + 0)))
-            {
-                List.ReplaceItem(BoardAttackedByBlackPiece, (TargetIdx + 0), SourceIdx);
-            }
-            If ((Board[(TargetIdx + 0)] + 0) == (GoK_WhiteKing + 0))
-            {
-                Glob.Board.IsWhiteChecked = 1;
+                Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CapturesOnly)(LookupMoveTypeKing);
             }
         }
         Else
         {
-            AddMoveImpl.AttackCount = (BoardAttackedByWhite[(TargetIdx + 0)] + 0);
-            If (AddMoveImpl.AttackCount < 9)
+            If (Not (QuietsOnly))
             {
-                List.ReplaceItem(BoardAttackedByWhite, (TargetIdx + 0), (AddMoveImpl.AttackCount + 1));
-            }
-            If (((BoardAttackedByWhitePiece[(TargetIdx + 0)] + 0) == 0) Or ((Board[BoardAttackedByWhitePiece[(TargetIdx + 0)]] + 0) < (AddMoveImpl.SourcePiece + 0)))
-            {
-                List.ReplaceItem(BoardAttackedByWhitePiece, (TargetIdx + 0), SourceIdx);
-            }
-            If ((Board[(TargetIdx + 0)] + 0) == (GoK_BlackKing + 0))
-            {
-                Glob.Board.IsBlackChecked = 1;
+                If (AddLookupMove.SourcePiece > 0)
+                {
+                    If (Board[AddLookupMove.TargetIdx] < 0)
+                    {
+                        Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CapturesOnly)(LookupMoveTypeKing);
+                    }
+                }
+                Else
+                {
+                    If (Board[AddLookupMove.TargetIdx] > 0)
+                    {
+                        Call AddMoveImplLookup(SourceIdx)(AddLookupMove.TargetIdx)(Ply)(CapturesOnly)(LookupMoveTypeKing);
+                    }
+                }
             }
         }
-        Stop(this script);
+        AddLookupMove.RayIdx += 1;
     }
+}
+
+Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Ply)(bool Quiescence) (warp=true)
+{
     If ((CheckedState[Ply] + 0) == 1)
     {
         If (Not (((BoardAttackedEvasionTarget[(TargetIdx + 0)] + 0) == 1)))
@@ -1152,31 +1162,28 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Ply)(bool AttackTa
     List.Add(CalcMovesScoreList, Ret.MoveScore.Score);
 }
 
-Define AddMoveImplLookup(string SourceIdx)(string TargetIdx)(string Ply)(bool CalcAttackState)(bool CapturesOnly)(bool IsKing) (warp=true)
+Define AddMoveImplLookup(string SourceIdx)(string TargetIdx)(string Ply)(bool CapturesOnly)(bool IsKing) (warp=true)
 {
     If IsKing
     {
-        If (Not (CalcAttackState))
+        If ((BoardAttackedCalculated[Ply] == 1) And (BoardAttackedByOpponentSnapshot[(((Ply - 1) * Const.SnapshotPlyStride) + TargetIdx)] > 0))
         {
-            If ((BoardAttackedCalculated[Ply] == 1) And (BoardAttackedByOpponentSnapshot[(((Ply - 1) * Const.SnapshotPlyStride) + TargetIdx)] > 0))
-            {
-                Stop(this script);
-            }
-            If (PlyIsOwn[Ply] == 1)
-            {
-                AddMoveImplLookup.KingIdx = Glob.Board.WhiteKingIdx;
-            }
-            Else
-            {
-                AddMoveImplLookup.KingIdx = Glob.Board.BlackKingIdx;
-            }
-            If (ChebyshevDistance[((AddMoveImplLookup.KingIdx * 100) + TargetIdx)] < 2)
-            {
-                Stop(this script);
-            }
+            Stop(this script);
+        }
+        If (PlyIsOwn[Ply] == 1)
+        {
+            AddMoveImplLookup.KingIdx = Glob.Board.WhiteKingIdx;
+        }
+        Else
+        {
+            AddMoveImplLookup.KingIdx = Glob.Board.BlackKingIdx;
+        }
+        If (ChebyshevDistance[((AddMoveImplLookup.KingIdx * 100) + TargetIdx)] < 2)
+        {
+            Stop(this script);
         }
     }
-    Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)(CalcAttackState)(CapturesOnly);
+    Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)(CapturesOnly);
 }
 
 Define AddMoveToList(string Move)(string Ply)(string MoveScore) (warp=true)
@@ -1211,11 +1218,11 @@ Define AddPotentialQMove(string SourceIdx)(string TargetIdx)(string Piece)(strin
             {
                 Stop(this script);
             }
-            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 0))((1 == 1));
+            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 1));
         }
         Else
         {
-            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 0))((1 == 1));
+            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 1));
         }
         Stop(this script);
     }
@@ -1223,7 +1230,7 @@ Define AddPotentialQMove(string SourceIdx)(string TargetIdx)(string Piece)(strin
     {
         If (IdxToRank[TargetIdx] == 8)
         {
-            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 0))((1 == 1));
+            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 1));
             Stop(this script);
         }
     }
@@ -1231,7 +1238,7 @@ Define AddPotentialQMove(string SourceIdx)(string TargetIdx)(string Piece)(strin
     {
         If (IdxToRank[TargetIdx] == 1)
         {
-            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 0))((1 == 1));
+            Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 1));
             Stop(this script);
         }
     }
@@ -1247,7 +1254,7 @@ Define AddPotentialQMove(string SourceIdx)(string TargetIdx)(string Piece)(strin
     List.ReplaceItem(Board, TargetIdx, AddPotentialQMove.TargetPiece);
     If (Ret.IsCheckingPieceDiscovery.IsChecking == 1)
     {
-        Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 0))((1 == 1));
+        Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 1));
         Stop(this script);
     }
     If (abs(Piece) == GoK_BlackKing)
@@ -1264,171 +1271,61 @@ Define AddPotentialQMove(string SourceIdx)(string TargetIdx)(string Piece)(strin
     }
     If (Ret.IsReachableForAttack.IsReachable == 1)
     {
-        Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 0))((1 == 1));
-    }
-}
-
-Define AddSliderAT(string SourceIdx)(string Ply)(bool SlidingStraight) (warp=true)
-{
-    AddSliderAT.SourcePiece = (Board[(SourceIdx + 0)] + 0);
-    AddSliderAT.RaySlot = 1;
-    AddSliderAT.RayOffset = (MoveSourceIdxToListOffsetSliding[(SourceIdx + 0)] + 0);
-    AddSliderAT.RaySqLeft = 8;
-    Repeat Until (AddSliderAT.RaySlot > 32)
-    {
-        If SlidingStraight
-        {
-            AddSliderAT.TargetIdx = (MoveSlidingStraightListIdxToTargetIdx[(AddSliderAT.RayOffset + AddSliderAT.RaySlot)] + 0);
-        }
-        Else
-        {
-            AddSliderAT.TargetIdx = (MoveCrossListIdxToTargetIdx[(AddSliderAT.RayOffset + AddSliderAT.RaySlot)] + 0);
-        }
-        If (AddSliderAT.TargetIdx == -1)
-        {
-            AddSliderAT.RaySlot += AddSliderAT.RaySqLeft;
-            AddSliderAT.RaySqLeft = 8;
-        }
-        Else
-        {
-            AddSliderAT.TargetPiece = (Board[(AddSliderAT.TargetIdx + 0)] + 0);
-            If (AddSliderAT.TargetPiece == 0)
-            {
-                Call AddMoveImpl(SourceIdx)(AddSliderAT.TargetIdx)(Ply)((1 == 1))((1 == 0));
-                AddSliderAT.RaySlot += 1;
-                AddSliderAT.RaySqLeft += -1;
-            }
-            Else
-            {
-                Call AddMoveImpl(SourceIdx)(AddSliderAT.TargetIdx)(Ply)((1 == 1))((1 == 0));
-                AddSliderAT.IsXRay = 0;
-                If (AddSliderAT.SourcePiece > 0)
-                {
-                    If (AddSliderAT.TargetPiece > GoK_BlackKnight)
-                    {
-                        If SlidingStraight
-                        {
-                            If ((AddSliderAT.TargetPiece == GoK_BlackQueen) Or (AddSliderAT.TargetPiece == GoK_BlackRook))
-                            {
-                                AddSliderAT.IsXRay = 0;
-                            }
-                        }
-                        Else
-                        {
-                            If ((AddSliderAT.TargetPiece == GoK_BlackQueen) Or (AddSliderAT.TargetPiece == GoK_BlackBishop))
-                            {
-                                AddSliderAT.IsXRay = 0;
-                            }
-                        }
-                    }
-                }
-                Else
-                {
-                    If (AddSliderAT.TargetPiece < GoK_WhiteKnight)
-                    {
-                        If SlidingStraight
-                        {
-                            If ((AddSliderAT.TargetPiece == GoK_WhiteQueen) Or (AddSliderAT.TargetPiece == GoK_WhiteRook))
-                            {
-                                AddSliderAT.IsXRay = 0;
-                            }
-                        }
-                        Else
-                        {
-                            If ((AddSliderAT.TargetPiece == GoK_WhiteQueen) Or (AddSliderAT.TargetPiece == GoK_WhiteBishop))
-                            {
-                                AddSliderAT.IsXRay = 0;
-                            }
-                        }
-                    }
-                }
-                If (AddSliderAT.IsXRay == 1)
-                {
-                    AddSliderAT.RaySlot += 1;
-                    AddSliderAT.RaySqLeft += -1;
-                }
-                Else
-                {
-                    AddSliderAT.RaySlot += AddSliderAT.RaySqLeft;
-                    AddSliderAT.RaySqLeft = 8;
-                }
-            }
-        }
+        Call AddMoveImpl(SourceIdx)(TargetIdx)(Ply)((1 == 1));
     }
 }
 
 Define AddSliderRays(string SourceIdx)(string Ply)(bool Quiescence)(bool SlidingStraight)(bool QuietsOnly)(bool QuietChecks) (warp=true)
 {
+    Call //("Rook, bishop and queen moves: walks the 4 rays of the source square; an occupied target jumps to the next ray (RayNext)");
     AddSliderRays.SourcePiece = (Board[(SourceIdx + 0)] + 0);
-    AddSliderRays.RaySlot = 1;
-    AddSliderRays.RayOffset = (MoveSourceIdxToListOffsetSliding[(SourceIdx + 0)] + 0);
-    AddSliderRays.RaySqLeft = 8;
-    Repeat Until (AddSliderRays.RaySlot > 32)
+    If SlidingStraight
     {
-        If SlidingStraight
-        {
-            AddSliderRays.TargetIdx = (MoveSlidingStraightListIdxToTargetIdx[(AddSliderRays.RayOffset + AddSliderRays.RaySlot)] + 0);
-        }
-        Else
-        {
-            AddSliderRays.TargetIdx = (MoveCrossListIdxToTargetIdx[(AddSliderRays.RayOffset + AddSliderRays.RaySlot)] + 0);
-        }
-        If (AddSliderRays.TargetIdx == -1)
-        {
-            AddSliderRays.RaySlot += AddSliderRays.RaySqLeft;
-            AddSliderRays.RaySqLeft = 8;
-        }
-        Else
-        {
-            AddSliderRays.TargetPiece = (Board[(AddSliderRays.TargetIdx + 0)] + 0);
-            If (AddSliderRays.TargetPiece == 0)
-            {
-                If Quiescence
-                {
-                    Call AddPotentialQMove(SourceIdx)(AddSliderRays.TargetIdx)(AddSliderRays.SourcePiece)(Ply)(QuietChecks);
-                }
-                Else
-                {
-                    Call AddMoveImpl(SourceIdx)(AddSliderRays.TargetIdx)(Ply)((1 == 0))(Quiescence);
-                }
-                AddSliderRays.RaySlot += 1;
-                AddSliderRays.RaySqLeft += -1;
-            }
-            Else
-            {
-                If (Not (QuietsOnly))
-                {
-                    If (AddSliderRays.SourcePiece > 0)
-                    {
-                        If (AddSliderRays.TargetPiece < 0)
-                        {
-                            Call AddMoveImpl(SourceIdx)(AddSliderRays.TargetIdx)(Ply)((1 == 0))(Quiescence);
-                        }
-                    }
-                    Else
-                    {
-                        If (AddSliderRays.TargetPiece > 0)
-                        {
-                            Call AddMoveImpl(SourceIdx)(AddSliderRays.TargetIdx)(Ply)((1 == 0))(Quiescence);
-                        }
-                    }
-                }
-                AddSliderRays.RaySlot += AddSliderRays.RaySqLeft;
-                AddSliderRays.RaySqLeft = 8;
-            }
-        }
-    }
-}
-
-Define AddSlidingMove(string SourceIdx)(string Ply)(bool AttackTableOnly)(bool Quiescence)(bool SlidingStraight)(bool QuietsOnly)(bool QuietChecks) (warp=true)
-{
-    If AttackTableOnly
-    {
-        Call AddSliderAT(SourceIdx)(Ply)(SlidingStraight);
+        AddSliderRays.GroupIdx = (((SourceIdx - 1) * Const.AtkGroup.PerSquare) + Const.AtkGroup.Straight);
     }
     Else
     {
-        Call AddSliderRays(SourceIdx)(Ply)(Quiescence)(SlidingStraight)(QuietsOnly)(QuietChecks);
+        AddSliderRays.GroupIdx = (((SourceIdx - 1) * Const.AtkGroup.PerSquare) + Const.AtkGroup.Diagonal);
+    }
+    AddSliderRays.RayIdx = (AtkStart[AddSliderRays.GroupIdx] + 0);
+    AddSliderRays.End = (AtkStart[(AddSliderRays.GroupIdx + 1)] + 0);
+    Repeat Until (Not ((AddSliderRays.RayIdx < AddSliderRays.End)))
+    {
+        AddSliderRays.TargetIdx = (RayTgt[AddSliderRays.RayIdx] + 0);
+        AddSliderRays.TargetPiece = (Board[(AddSliderRays.TargetIdx + 0)] + 0);
+        If (AddSliderRays.TargetPiece == 0)
+        {
+            If Quiescence
+            {
+                Call AddPotentialQMove(SourceIdx)(AddSliderRays.TargetIdx)(AddSliderRays.SourcePiece)(Ply)(QuietChecks);
+            }
+            Else
+            {
+                Call AddMoveImpl(SourceIdx)(AddSliderRays.TargetIdx)(Ply)(Quiescence);
+            }
+            AddSliderRays.RayIdx += 1;
+        }
+        Else
+        {
+            If (Not (QuietsOnly))
+            {
+                If (AddSliderRays.SourcePiece > 0)
+                {
+                    If (AddSliderRays.TargetPiece < 0)
+                    {
+                        Call AddMoveImpl(SourceIdx)(AddSliderRays.TargetIdx)(Ply)(Quiescence);
+                    }
+                }
+                Else
+                {
+                    If (AddSliderRays.TargetPiece > 0)
+                    {
+                        Call AddMoveImpl(SourceIdx)(AddSliderRays.TargetIdx)(Ply)(Quiescence);
+                    }
+                }
+            }
+            AddSliderRays.RayIdx = (RayNext[AddSliderRays.RayIdx] + 0);
+        }
     }
 }
 
@@ -4976,122 +4873,81 @@ Define GenMoves(string Ply)(bool AttackTableOnly)(bool Quiescence)(bool IsBlackM
 Define GenMovesSrc(string Ply)(string SourceIdx)(bool AttackTableOnly)(bool Quiescence)(bool QuietsOnly)(bool QuietChecks) (warp=true)
 {
     GenMovesSrc.SourcePiece = (Board[(SourceIdx + 0)] + 0);
-    Call //("Pawn moves (generated via code logic)");
-    If (GenMovesSrc.SourcePiece == GoK_BlackPawn)
+    If AttackTableOnly
     {
-        If (IdxToFile[(SourceIdx + 0)] > 1)
-        {
-            If (AttackTableOnly Or (Board[(SourceIdx + 7)] < 0))
-            {
-                If ((Not (QuietsOnly)) Or (IdxToRank[(SourceIdx + 0)] == 7))
-                {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx + 7))(Ply)(AttackTableOnly)(Quiescence);
-                }
-            }
-        }
-        If (IdxToFile[(SourceIdx + 0)] < 8)
-        {
-            If (AttackTableOnly Or (Board[(SourceIdx + 9)] < 0))
-            {
-                If ((Not (QuietsOnly)) Or (IdxToRank[(SourceIdx + 0)] == 7))
-                {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx + 9))(Ply)(AttackTableOnly)(Quiescence);
-                }
-            }
-        }
-        If (Not (AttackTableOnly))
-        {
-            If (Board[(SourceIdx + 8)] == 0)
-            {
-                If Quiescence
-                {
-                    Call AddPotentialQMove(SourceIdx)((SourceIdx + 8))(GoK_BlackPawn)(Ply)(QuietChecks);
-                }
-                Else
-                {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx + 8))(Ply)(AttackTableOnly)(Quiescence);
-                }
-                If ((IdxToRank[(SourceIdx + 0)] == 2) And (Board[(SourceIdx + 16)] == 0))
-                {
-                    If Quiescence
-                    {
-                        Call AddPotentialQMove(SourceIdx)((SourceIdx + 16))(GoK_BlackPawn)(Ply)(QuietChecks);
-                    }
-                    Else
-                    {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx + 16))(Ply)(AttackTableOnly)(Quiescence);
-                    }
-                }
-            }
-        }
-        If (Not ((EnPassantTarget[Ply] == Const.Null)))
-        {
-            GenMovesSrc.TargetIdx = EnPassantTarget[Ply];
-            If ((Not (AttackTableOnly)) And (IdxToRank[(SourceIdx + 0)] == IdxToRank[GenMovesSrc.TargetIdx]))
-            {
-                If (abs((IdxToFile[(SourceIdx + 0)] - IdxToFile[GenMovesSrc.TargetIdx])) == 1)
-                {
-                    Call AddMoveImpl(SourceIdx)((GenMovesSrc.TargetIdx + 8))(Ply)(AttackTableOnly)(Quiescence);
-                }
-            }
-        }
+        Call //("Attack tables only: mark every target of this piece (its target groups, see InitAttackWalk) and stop");
+        GenMovesSrc.GroupBase = ((SourceIdx - 1) * Const.AtkGroup.PerSquare);
+        GenMovesSrc.PieceIdx = ((PieceIdxLookup[abs(GenMovesSrc.SourcePiece)] + 0) + (6 * (GenMovesSrc.SourcePiece < 0)));
+        Call AddAttackWalk(SourceIdx)((AtkStart[(GenMovesSrc.GroupBase + (PieceAtkGroupFrom[GenMovesSrc.PieceIdx] + 0))] + 0))((AtkStart[(GenMovesSrc.GroupBase + (PieceAtkGroupTo[GenMovesSrc.PieceIdx] + 0))] + 0));
         Stop(this script);
     }
-    If (GenMovesSrc.SourcePiece == GoK_WhitePawn)
+    Call //("Pawn moves (generated via code logic)");
+    Call //("One block for both colours: Black (positive piece codes) steps +8, White -8. PawnRelRank = rank seen from the pawn's own side (2 = start rank, 7 = one step before promotion)");
+    Call //("Order: capture toward file a, capture toward file h, single step, double step, en passant (EnPassantTarget = square of the pawn that just made a double step)");
+    If ((GenMovesSrc.SourcePiece == GoK_BlackPawn) Or (GenMovesSrc.SourcePiece == GoK_WhitePawn))
     {
-        If (IdxToFile[(SourceIdx + 0)] > 1)
+        GenMovesSrc.PawnFile = (IdxToFile[(SourceIdx + 0)] + 0);
+        GenMovesSrc.PawnRank = (IdxToRank[(SourceIdx + 0)] + 0);
+        If (GenMovesSrc.SourcePiece > 0)
         {
-            If (AttackTableOnly Or (Board[(SourceIdx - 9)] > 0))
+            GenMovesSrc.PawnStep = 8;
+            GenMovesSrc.PawnRelRank = GenMovesSrc.PawnRank;
+        }
+        Else
+        {
+            GenMovesSrc.PawnStep = -8;
+            GenMovesSrc.PawnRelRank = (9 - GenMovesSrc.PawnRank);
+        }
+        If (GenMovesSrc.PawnFile > 1)
+        {
+            If (((Board[(SourceIdx + (GenMovesSrc.PawnStep + -1))] + 0) * GenMovesSrc.SourcePiece) < 0)
             {
-                If ((Not (QuietsOnly)) Or (IdxToRank[(SourceIdx + 0)] == 2))
+                If ((Not (QuietsOnly)) Or (GenMovesSrc.PawnRelRank == 7))
                 {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx - 9))(Ply)(AttackTableOnly)(Quiescence);
+                    Call AddMoveImpl(SourceIdx)((SourceIdx + (GenMovesSrc.PawnStep + -1)))(Ply)(Quiescence);
                 }
             }
         }
-        If (IdxToFile[(SourceIdx + 0)] < 8)
+        If (GenMovesSrc.PawnFile < 8)
         {
-            If (AttackTableOnly Or (Board[(SourceIdx - 7)] > 0))
+            If (((Board[(SourceIdx + (GenMovesSrc.PawnStep + 1))] + 0) * GenMovesSrc.SourcePiece) < 0)
             {
-                If ((Not (QuietsOnly)) Or (IdxToRank[(SourceIdx + 0)] == 2))
+                If ((Not (QuietsOnly)) Or (GenMovesSrc.PawnRelRank == 7))
                 {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx - 7))(Ply)(AttackTableOnly)(Quiescence);
+                    Call AddMoveImpl(SourceIdx)((SourceIdx + (GenMovesSrc.PawnStep + 1)))(Ply)(Quiescence);
                 }
             }
         }
-        If (Not (AttackTableOnly))
+        If (Board[(SourceIdx + GenMovesSrc.PawnStep)] == 0)
         {
-            If (Board[(SourceIdx - 8)] == 0)
+            If Quiescence
+            {
+                Call AddPotentialQMove(SourceIdx)((SourceIdx + GenMovesSrc.PawnStep))(GenMovesSrc.SourcePiece)(Ply)(QuietChecks);
+            }
+            Else
+            {
+                Call AddMoveImpl(SourceIdx)((SourceIdx + GenMovesSrc.PawnStep))(Ply)(Quiescence);
+            }
+            If ((GenMovesSrc.PawnRelRank == 2) And (Board[(SourceIdx + (GenMovesSrc.PawnStep * 2))] == 0))
             {
                 If Quiescence
                 {
-                    Call AddPotentialQMove(SourceIdx)((SourceIdx - 8))(GoK_WhitePawn)(Ply)(QuietChecks);
+                    Call AddPotentialQMove(SourceIdx)((SourceIdx + (GenMovesSrc.PawnStep * 2)))(GenMovesSrc.SourcePiece)(Ply)(QuietChecks);
                 }
                 Else
                 {
-                    Call AddMoveImpl(SourceIdx)((SourceIdx - 8))(Ply)(AttackTableOnly)(Quiescence);
-                }
-                If ((IdxToRank[(SourceIdx + 0)] == 7) And (Board[(SourceIdx - 16)] == 0))
-                {
-                    If Quiescence
-                    {
-                        Call AddPotentialQMove(SourceIdx)((SourceIdx - 16))(GoK_WhitePawn)(Ply)(QuietChecks);
-                    }
-                    Else
-                    {
-                        Call AddMoveImpl(SourceIdx)((SourceIdx - 16))(Ply)(AttackTableOnly)(Quiescence);
-                    }
+                    Call AddMoveImpl(SourceIdx)((SourceIdx + (GenMovesSrc.PawnStep * 2)))(Ply)(Quiescence);
                 }
             }
         }
         If (Not ((EnPassantTarget[Ply] == Const.Null)))
         {
             GenMovesSrc.TargetIdx = EnPassantTarget[Ply];
-            If ((Not (AttackTableOnly)) And (IdxToRank[(SourceIdx + 0)] == IdxToRank[GenMovesSrc.TargetIdx]))
+            If (GenMovesSrc.PawnRank == IdxToRank[GenMovesSrc.TargetIdx])
             {
-                If (abs((IdxToFile[(SourceIdx + 0)] - IdxToFile[GenMovesSrc.TargetIdx])) == 1)
+                If (abs((GenMovesSrc.PawnFile - IdxToFile[GenMovesSrc.TargetIdx])) == 1)
                 {
-                    Call AddMoveImpl(SourceIdx)((GenMovesSrc.TargetIdx - 8))(Ply)(AttackTableOnly)(Quiescence);
+                    Call AddMoveImpl(SourceIdx)((GenMovesSrc.TargetIdx + GenMovesSrc.PawnStep))(Ply)(Quiescence);
                 }
             }
         }
@@ -5101,28 +4957,28 @@ Define GenMovesSrc(string Ply)(string SourceIdx)(bool AttackTableOnly)(bool Quie
     GenMovesSrc.SourcePiece = abs(GenMovesSrc.SourcePiece);
     If (GenMovesSrc.SourcePiece == GoK_BlackRook)
     {
-        Call AddSlidingMove(SourceIdx)(Ply)(AttackTableOnly)(Quiescence)((1 == 1))(QuietsOnly)(QuietChecks);
+        Call AddSliderRays(SourceIdx)(Ply)(Quiescence)((1 == 1))(QuietsOnly)(QuietChecks);
         Stop(this script);
     }
     If (GenMovesSrc.SourcePiece == GoK_BlackBishop)
     {
-        Call AddSlidingMove(SourceIdx)(Ply)(AttackTableOnly)(Quiescence)((1 == 0))(QuietsOnly)(QuietChecks);
+        Call AddSliderRays(SourceIdx)(Ply)(Quiescence)((1 == 0))(QuietsOnly)(QuietChecks);
         Stop(this script);
     }
     If (GenMovesSrc.SourcePiece == GoK_BlackKnight)
     {
-        Call AddLookupMove(SourceIdx)(Ply)(AttackTableOnly)(Quiescence)((1 == 0))(QuietsOnly)(QuietChecks);
+        Call AddLookupMove(SourceIdx)(Ply)(Quiescence)((1 == 0))(QuietsOnly)(QuietChecks);
         Stop(this script);
     }
     If (GenMovesSrc.SourcePiece == GoK_BlackKing)
     {
-        Call AddLookupMove(SourceIdx)(Ply)(AttackTableOnly)(Quiescence)((1 == 1))(QuietsOnly)(QuietChecks);
+        Call AddLookupMove(SourceIdx)(Ply)(Quiescence)((1 == 1))(QuietsOnly)(QuietChecks);
         Stop(this script);
     }
     If (GenMovesSrc.SourcePiece == GoK_BlackQueen)
     {
-        Call AddSlidingMove(SourceIdx)(Ply)(AttackTableOnly)(Quiescence)((1 == 1))(QuietsOnly)(QuietChecks);
-        Call AddSlidingMove(SourceIdx)(Ply)(AttackTableOnly)(Quiescence)((1 == 0))(QuietsOnly)(QuietChecks);
+        Call AddSliderRays(SourceIdx)(Ply)(Quiescence)((1 == 1))(QuietsOnly)(QuietChecks);
+        Call AddSliderRays(SourceIdx)(Ply)(Quiescence)((1 == 0))(QuietsOnly)(QuietChecks);
         Stop(this script);
     }
 }
@@ -6400,6 +6256,134 @@ Define ImportFEN(string FenText) (warp=true)
     {
         ImportFEN.HalfCount += 1;
         List.Add(BoardHistoryFiftyMoves, ImportFEN.HalfCount);
+    }
+}
+
+Define InitAttackWalk (warp=true)
+{
+    Call //("Target tables of the move generator. RayTgt = target squares, stored per source square in 6 groups (Const.AtkGroup.*): 1 straight rays, 2 diagonal rays, 3 knight jumps, 4 king steps, 5 black pawn captures, 6 white pawn captures");
+    Call //("AtkStart[(square - 1) * Const.AtkGroup.PerSquare + group] = first RayTgt index of that group; the entry after it is the end of the group (the 7th entry per square ends group 6)");
+    Call //("RayNext[i] = where to continue when the target at i is occupied: for a ray the start of the next ray (the rest of the ray is blocked), for jumps and pawn captures simply i + 1");
+    Call //("PieceAtkGroupFrom / PieceAtkGroupTo = first group and end group per piece; index = piece type 1..6 (pawn, knight, bishop, rook, queen, king), + 6 for White. A queen walks groups 1 and 2");
+    Const.AtkGroup.PerSquare = 7;
+    Const.AtkGroup.Straight = 1;
+    Const.AtkGroup.Diagonal = 2;
+    Const.AtkGroup.Knight = 3;
+    Const.AtkGroup.King = 4;
+    Const.AtkGroup.BlackPawn = 5;
+    Const.AtkGroup.WhitePawn = 6;
+    List.DeleteAll(RayTgt);
+    List.DeleteAll(RayNext);
+    List.DeleteAll(AtkStart);
+    List.DeleteAll(PieceAtkGroupFrom);
+    List.DeleteAll(PieceAtkGroupTo);
+    InitAttackWalk.PieceIdx = 1;
+    Repeat (12)
+    {
+        List.Add(PieceAtkGroupFrom, (Operator.LetterOf(532114632114, InitAttackWalk.PieceIdx) + 0));
+        List.Add(PieceAtkGroupTo, (Operator.LetterOf(643235743235, InitAttackWalk.PieceIdx) + 0));
+        InitAttackWalk.PieceIdx += 1;
+    }
+    InitAttackWalk.SquareIdx = 1;
+    Repeat (64)
+    {
+        List.Add(AtkStart, (List.Length(RayTgt) + 1));
+        Call InitAttackWalk.AddRays((MoveSourceIdxToListOffsetSliding[InitAttackWalk.SquareIdx] + 0))(1);
+        List.Add(AtkStart, (List.Length(RayTgt) + 1));
+        Call InitAttackWalk.AddRays((MoveSourceIdxToListOffsetSliding[InitAttackWalk.SquareIdx] + 0))(0);
+        List.Add(AtkStart, (List.Length(RayTgt) + 1));
+        Call InitAttackWalk.AddJumps((MoveSourceIdxToListOffsetNonSliding[InitAttackWalk.SquareIdx] + 0))(0);
+        List.Add(AtkStart, (List.Length(RayTgt) + 1));
+        Call InitAttackWalk.AddJumps((MoveSourceIdxToListOffsetNonSliding[InitAttackWalk.SquareIdx] + 0))(1);
+        List.Add(AtkStart, (List.Length(RayTgt) + 1));
+        Call InitAttackWalk.AddPawnAtks(InitAttackWalk.SquareIdx)(7)(9);
+        List.Add(AtkStart, (List.Length(RayTgt) + 1));
+        Call InitAttackWalk.AddPawnAtks(InitAttackWalk.SquareIdx)(-9)(-7);
+        List.Add(AtkStart, (List.Length(RayTgt) + 1));
+        InitAttackWalk.SquareIdx += 1;
+    }
+}
+
+Define InitAttackWalk.AddJumps(string TableOffset)(string IsKing) (warp=true)
+{
+    Call //("Copies the knight or king targets of one square from the old move table (up to 8, -1 ends the list)");
+    InitAttackWalk.AddJumps.Step = 1;
+    InitAttackWalk.AddJumps.ListEnded = 0;
+    Repeat Until ((InitAttackWalk.AddJumps.Step > 8) Or (InitAttackWalk.AddJumps.ListEnded == 1))
+    {
+        If (IsKing == 1)
+        {
+            InitAttackWalk.AddJumps.TargetIdx = (MoveListOffsetToTargetIdxKing[(TableOffset + InitAttackWalk.AddJumps.Step)] + 0);
+        }
+        Else
+        {
+            InitAttackWalk.AddJumps.TargetIdx = (MoveListOffsetToTargetIdxKnight[(TableOffset + InitAttackWalk.AddJumps.Step)] + 0);
+        }
+        If (InitAttackWalk.AddJumps.TargetIdx == -1)
+        {
+            InitAttackWalk.AddJumps.ListEnded = 1;
+        }
+        Else
+        {
+            List.Add(RayTgt, InitAttackWalk.AddJumps.TargetIdx);
+            List.Add(RayNext, (List.Length(RayTgt) + 1));
+            InitAttackWalk.AddJumps.Step += 1;
+        }
+    }
+}
+
+Define InitAttackWalk.AddPawnAtks(string SquareIdx)(string LeftDelta)(string RightDelta) (warp=true)
+{
+    Call //("Adds the two capture targets of a pawn on SquareIdx (LeftDelta toward file a, RightDelta toward file h) if they are on the board");
+    If (((IdxToFile[SquareIdx] + 0) > 1) And (((SquareIdx + LeftDelta) > 0) And ((SquareIdx + LeftDelta) < 65)))
+    {
+        List.Add(RayTgt, (SquareIdx + LeftDelta));
+        List.Add(RayNext, (List.Length(RayTgt) + 1));
+    }
+    If (((IdxToFile[SquareIdx] + 0) < 8) And (((SquareIdx + RightDelta) > 0) And ((SquareIdx + RightDelta) < 65)))
+    {
+        List.Add(RayTgt, (SquareIdx + RightDelta));
+        List.Add(RayNext, (List.Length(RayTgt) + 1));
+    }
+}
+
+Define InitAttackWalk.AddRays(string TableOffset)(string IsStraight) (warp=true)
+{
+    Call //("Copies the 4 rays of one square from the old move table (8 slots per ray, -1 ends a ray); then RayNext of every entry of a ray is set to the first index after that ray");
+    InitAttackWalk.AddRays.RayNo = 0;
+    Repeat (4)
+    {
+        InitAttackWalk.AddRays.Step = 1;
+        InitAttackWalk.AddRays.RayEnded = 0;
+        InitAttackWalk.AddRays.FirstEntry = (List.Length(RayTgt) + 1);
+        Repeat Until ((InitAttackWalk.AddRays.Step > 8) Or (InitAttackWalk.AddRays.RayEnded == 1))
+        {
+            If (IsStraight == 1)
+            {
+                InitAttackWalk.AddRays.TargetIdx = (MoveSlidingStraightListIdxToTargetIdx[((TableOffset + (InitAttackWalk.AddRays.RayNo * 8)) + InitAttackWalk.AddRays.Step)] + 0);
+            }
+            Else
+            {
+                InitAttackWalk.AddRays.TargetIdx = (MoveCrossListIdxToTargetIdx[((TableOffset + (InitAttackWalk.AddRays.RayNo * 8)) + InitAttackWalk.AddRays.Step)] + 0);
+            }
+            If (InitAttackWalk.AddRays.TargetIdx == -1)
+            {
+                InitAttackWalk.AddRays.RayEnded = 1;
+            }
+            Else
+            {
+                List.Add(RayTgt, InitAttackWalk.AddRays.TargetIdx);
+                List.Add(RayNext, 0);
+                InitAttackWalk.AddRays.Step += 1;
+            }
+        }
+        InitAttackWalk.AddRays.EntryIdx = InitAttackWalk.AddRays.FirstEntry;
+        Repeat Until (InitAttackWalk.AddRays.EntryIdx > List.Length(RayTgt))
+        {
+            List.ReplaceItem(RayNext, InitAttackWalk.AddRays.EntryIdx, (List.Length(RayTgt) + 1));
+            InitAttackWalk.AddRays.EntryIdx += 1;
+        }
+        InitAttackWalk.AddRays.RayNo += 1;
     }
 }
 
@@ -7871,6 +7855,7 @@ Define InitMoveLk (warp=true)
         }
         InitMoveLk.FromSqIdx += 1;
     }
+    Call InitAttackWalk;
 }
 
 Define InitMovePos(bool Init) (warp=true)
