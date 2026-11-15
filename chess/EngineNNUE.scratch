@@ -3,7 +3,7 @@
 WhenGreenFlagClicked()
 {
     Glob.Game.IsStarted = 0;
-    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.2933 (15.11.2026) by ArnoHu";
+    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.2934 (15.11.2026) by ArnoHu";
     Glob.Config.IsTestRunning = 0;
     Glob.Config.IsDCI = 0;
     Glob.NNUE.IsNetworkDecoded = 0;
@@ -13514,6 +13514,21 @@ Define SearchWrp.Iter (warp=true)
                 SearchWrp.Iter.SoftThinkTime = Glob.SearchWrp.ThinkTimeLimit;
             }
             SearchWrp.Iter.DepthTimeGrowth = 1;
+            If (Glob.SearchWrp.IsClockGame == 1)
+            {
+                Call //("Clock game: stop before the next iteration once the time used exceeds planned time x falling-score factor (0.5 to 1.5) x stability factor x (1 + 1.7 x recent best-move changes). Stability value: 1.63 when the best move has not changed for more than 10 iterations, otherwise 0.73; the factor is (1.56 + value of the previous move) / (2.2 x value of this move)");
+                Glob.SearchWrp.TimeReduction = 0.73;
+                If (Glob.SearchWrp.StableBestMoveCount > 10)
+                {
+                    Glob.SearchWrp.TimeReduction = 1.63;
+                }
+                SearchWrp.Iter.SoftThinkTime = (((Glob.SearchWrp.OptimumThinkTime * SearchWrp.Iter.FallingEval) * ((1.56 + Glob.SearchWrp.PrevTimeReduction) / (2.2 * Glob.SearchWrp.TimeReduction))) * (1 + (1.7 * Glob.SearchWrp.BestMoveChanges)));
+                If (SearchWrp.Iter.SoftThinkTime > Glob.SearchWrp.ThinkTimeLimit)
+                {
+                    SearchWrp.Iter.SoftThinkTime = Glob.SearchWrp.ThinkTimeLimit;
+                }
+                SearchWrp.Iter.DepthTimeGrowth = 1;
+            }
             If ((((((Sensing.DaysSince2000() * 86400) - Glob.Search.ThinkTimeStart) * SearchWrp.Iter.DepthTimeGrowth) > SearchWrp.Iter.SoftThinkTime) And (Not ((Glob.Search.IterationIdx < Glob.SearchWrp.MinThinkDepth)))) Or ((((Sensing.DaysSince2000() * 86400) - Glob.Search.ThinkTimeStart) * 1.9) > Glob.SearchWrp.ThinkTimeLimit))
             {
                 Ret.SearchWrp.IsDone = 1;
@@ -13643,6 +13658,7 @@ Define SearchWrp.Prep (warp=true)
         }
         Glob.Clock.CurrentTime = 0;
     }
+    Glob.SearchWrp.IsClockGame = 0;
     If (((Glob.Clock.TimeInc > 0) Or (Glob.Clock.InitialTime > 0)) And (Glob.Config.CustomMaxDepth == 0))
     {
         SearchWrp.Prep.RemainingTime = (Glob.Clock.CurrentTime + Glob.Clock.TimeInc);
@@ -13726,6 +13742,60 @@ Define SearchWrp.Prep (warp=true)
         Glob.SearchWrp.StableBestMoveCount = 0;
         Glob.SearchWrp.StableBestMove = Const.Null;
         Glob.SearchWrp.PrevIterEval = Glob.SearchWrp.PrevMoveEval;
+        If ((Glob.Clock.InitialTime > 0) And (Glob.Clock.StageMoves == 0))
+        {
+            Call //("Clock game with a base time (e.g. 3+2), no move stages. Time planned for this move = a share of the pool "clock + 49 increments" (a horizon of 50 moves). The share grows with the square root of the moves played, so the opening gets less than the middlegame, and is capped at 20 % of the clock");
+            Glob.SearchWrp.IsClockGame = 1;
+            SearchWrp.Prep.GamePly = List.Length(GameMovesAN);
+            SearchWrp.Prep.ClockNow = Glob.Clock.CurrentTime;
+            If (SearchWrp.Prep.ClockNow < 0.001)
+            {
+                SearchWrp.Prep.ClockNow = 0.001;
+            }
+            Call //("Pool: the clock plus the increments of the next 49 moves, minus a safety margin of 0.05 s per move for the delay between engine and host");
+            SearchWrp.Prep.ClockPool = ((SearchWrp.Prep.ClockNow + (49 * Glob.Clock.TimeInc)) - (52 * 0.05));
+            If (SearchWrp.Prep.ClockPool < 0.001)
+            {
+                SearchWrp.Prep.ClockPool = 0.001;
+            }
+            Call //("A large increment compared with the clock allows up to 12 % more");
+            SearchWrp.Prep.ClockIncBonus = (1 + ((12 * Glob.Clock.TimeInc) / SearchWrp.Prep.ClockNow));
+            If (SearchWrp.Prep.ClockIncBonus > 1.12)
+            {
+                SearchWrp.Prep.ClockIncBonus = 1.12;
+            }
+            SearchWrp.Prep.ClockShare = (0.0084 + (sqrt((SearchWrp.Prep.GamePly + 3)) * 0.0042));
+            SearchWrp.Prep.ClockShareCap = ((0.2 * SearchWrp.Prep.ClockNow) / SearchWrp.Prep.ClockPool);
+            If (SearchWrp.Prep.ClockShare > SearchWrp.Prep.ClockShareCap)
+            {
+                SearchWrp.Prep.ClockShare = SearchWrp.Prep.ClockShareCap;
+            }
+            Glob.SearchWrp.OptimumThinkTime = ((SearchWrp.Prep.ClockShare * SearchWrp.Prep.ClockIncBonus) * SearchWrp.Prep.ClockPool);
+            Call //("Longest time for this move: 4 to 7 times the planned time (more later in the game), never more than 80 % of the clock itself minus the safety margin - the increment is only added after the move, it cannot be spent now");
+            SearchWrp.Prep.ClockMaxFactor = (4 + (SearchWrp.Prep.GamePly / 12));
+            If (SearchWrp.Prep.ClockMaxFactor > 7)
+            {
+                SearchWrp.Prep.ClockMaxFactor = 7;
+            }
+            Glob.SearchWrp.MaxThinkTime = (SearchWrp.Prep.ClockMaxFactor * Glob.SearchWrp.OptimumThinkTime);
+            If (Glob.SearchWrp.MaxThinkTime > ((0.8 * SearchWrp.Prep.ClockNow) - 0.05))
+            {
+                Glob.SearchWrp.MaxThinkTime = ((0.8 * SearchWrp.Prep.ClockNow) - 0.05);
+            }
+            If (Glob.SearchWrp.MaxThinkTime < 0.05)
+            {
+                Glob.SearchWrp.MaxThinkTime = 0.05;
+            }
+            Glob.SearchWrp.ThinkTimeLimit = Glob.SearchWrp.MaxThinkTime;
+            Call //("No minimum depth in a clock game: the clock decides. The stability value of the previous move is carried over (1 at the first move)");
+            Glob.SearchWrp.MinThinkDepth = 0;
+            Glob.SearchWrp.PrevTimeReduction = Glob.SearchWrp.TimeReduction;
+            If (Glob.SearchWrp.PrevTimeReduction < 0.5)
+            {
+                Glob.SearchWrp.PrevTimeReduction = 1;
+            }
+            Glob.SearchWrp.TimeReduction = 1;
+        }
     }
     If (((Glob.Config.IsDCI == 0) And (Glob.Config.CustomThinkTime == 0)) And (Glob.Clock.TimeControl == 0))
     {
