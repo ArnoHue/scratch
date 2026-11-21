@@ -3,7 +3,7 @@
 WhenGreenFlagClicked()
 {
     Glob.Game.IsStarted = 0;
-    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.2934 (15.11.2026) by ArnoHu";
+    Glob.Config.VersionString = "Game of Kings Chess NNUE Version 7.3383.3295 (19.11.2026) by ArnoHu";
     Glob.Config.IsTestRunning = 0;
     Glob.Config.IsDCI = 0;
     Glob.NNUE.IsNetworkDecoded = 0;
@@ -18,6 +18,8 @@ WhenGreenFlagClicked()
     {
         Glob.Config.IsScratch3 = 1;
     }
+    Call //("The opening book is built once per program start (InitBoardPhase2), not on every restart");
+    Glob.Book.IsBuilt = 0;
     Call OnRestart;
 }
 
@@ -141,7 +143,15 @@ WhenBroadcastReceived($gok_nnue)
     Glob.Config.IsDCI = 1;
     Call ​​log​​("$gok1");
     Call $gok_prepare;
-    Call AddBoardToHistory(0);
+    Call CreateCurrentBoardHash;
+    If ((List.Length(BoardHistoryHash) == 1) And (Glob.Board.CurrentHash == BoardHistoryHash[1]))
+    {
+        List.ReplaceItem(BoardHistoryWasEngineMove, 1, (0 + 0));
+    }
+    Else
+    {
+        Call AddBoardToHistory(0);
+    }
     Call IsOwnKingCheckMate;
     If (Ret.IsOwnKingCheckMate.IsCheckMate == 1)
     {
@@ -206,16 +216,16 @@ WhenBroadcastReceived($gok_nnue)
     If (List.Length(OpeningMovesRes) > 0)
     {
         DCI.Move = OpeningMovesRes[Operator.Random(1 , List.Length(OpeningMovesRes))];
-        Ret.SearchWrp.BestMoveEval = 0;
-        If (Ret.SearchWrp.BestMoveEval == Const.Null)
+        Glob.Search.BestMoveEval = 0;
+        If (Glob.Search.BestMoveEval == Const.Null)
         {
             Glob.UI.Eval = "EV: 0";
         }
         Else
         {
-            Glob.UI.Eval = Operator.Join("EV: ", Ret.SearchWrp.BestMoveEval);
+            Glob.UI.Eval = Operator.Join("EV: ", Glob.Search.BestMoveEval);
         }
-        Ret.Search.PV = "book";
+        Glob.Search.PV = "book";
         Call UI.FormatPV;
         If (((Glob.Clock.TimeInc > 0) Or (Glob.Clock.InitialTime > 0)) And (Glob.Config.CustomMaxDepth == 0))
         {
@@ -231,7 +241,7 @@ WhenBroadcastReceived($gok_nnue)
     {
         Call SearchWrp.Prep;
         Glob.UI.PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
-        Repeat Until (Ret.SearchWrp.IsDone == 1)
+        Repeat Until (Glob.Search.IsDone == 1)
         {
             Call SearchWrp.DCISlice;
             If ((Glob.Clock.TimeInc > 0) Or (Glob.Clock.InitialTime > 0))
@@ -284,7 +294,7 @@ WhenBroadcastReceived($gok_nnue)
         }
         Else
         {
-            DCI.PromotionCode = Operator.Round(((Ret.GetMoveNotation.VirtualMove * 10) % 10));
+            DCI.PromotionCode = floor(((Ret.GetMoveNotation.VirtualMove * 10) % 10));
             DCI.PromotionLetter = "";
             If (DCI.PromotionCode == 1)
             {
@@ -314,8 +324,8 @@ WhenBroadcastReceived($gok_nnue)
     {
         _dci clock = "";
     }
-    _dci pv = Ret.Search.PV;
-    If (Ret.Search.PV == "book")
+    _dci pv = Glob.Search.PV;
+    If (Glob.Search.PV == "book")
     {
         _dci search depth = "";
     }
@@ -323,12 +333,12 @@ WhenBroadcastReceived($gok_nnue)
     {
         _dci search depth = (Glob.Search.IterationIdx - Glob.Search.IsTimeout);
     }
-    If (Not ((Ret.SearchWrp.BestMoveEval == Const.Null)))
+    If (Not ((Glob.Search.BestMoveEval == Const.Null)))
     {
-        DCI.WhiteEval = (Ret.SearchWrp.BestMoveEval * _dci turn);
-        If (abs(Ret.SearchWrp.BestMoveEval) > Const.AbsMinCheckmateEval)
+        DCI.WhiteEval = (Glob.Search.BestMoveEval * _dci turn);
+        If (abs(Glob.Search.BestMoveEval) > Const.AbsMinCheckmateEval)
         {
-            _dci evaluation = Operator.Join("M", ceiling((((100000 - abs(Ret.SearchWrp.BestMoveEval)) - List.Length(BoardHistoryFiftyMoves)) / 2)));
+            _dci evaluation = Operator.Join("M", ceiling((((100000 - abs(Glob.Search.BestMoveEval)) - List.Length(BoardHistoryFiftyMoves)) / 2)));
             If (DCI.WhiteEval < 0)
             {
                 _dci evaluation = Operator.Join("-", _dci evaluation);
@@ -353,15 +363,23 @@ WhenBroadcastReceived($gok_nnue draw?)
 {
     Glob.Config.IsDCI = 1;
     Call $gok_prepare;
-    Call AddBoardToHistory(0);
-    Ret.SearchWrp.BestMoveEval = 0;
-    If (Ret.SearchWrp.BestMoveEval == Const.Null)
+    Call CreateCurrentBoardHash;
+    If ((List.Length(BoardHistoryHash) == 1) And (Glob.Board.CurrentHash == BoardHistoryHash[1]))
+    {
+        List.ReplaceItem(BoardHistoryWasEngineMove, 1, (0 + 0));
+    }
+    Else
+    {
+        Call AddBoardToHistory(0);
+    }
+    Glob.Search.BestMoveEval = 0;
+    If (Glob.Search.BestMoveEval == Const.Null)
     {
         Glob.UI.Eval = "EV: 0";
     }
     Else
     {
-        Glob.UI.Eval = Operator.Join("EV: ", Ret.SearchWrp.BestMoveEval);
+        Glob.UI.Eval = Operator.Join("EV: ", Glob.Search.BestMoveEval);
     }
     DCI.SavedClockTime = Glob.Clock.CurrentTime;
     DCI.SavedClockMoveCount = Glob.Clock.MoveCount;
@@ -369,7 +387,7 @@ WhenBroadcastReceived($gok_nnue draw?)
     DCI.SavedAvgCompletedDepth = Glob.SearchWrp.AvgCompletedDepth;
     Call SearchWrp.Prep;
     Glob.UI.PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
-    Repeat Until (Ret.SearchWrp.IsDone == 1)
+    Repeat Until (Glob.Search.IsDone == 1)
     {
         Call SearchWrp.DCISlice;
     }
@@ -381,13 +399,13 @@ WhenBroadcastReceived($gok_nnue draw?)
     Glob.Clock.MoveCount = DCI.SavedClockMoveCount;
     Glob.SearchWrp.PrevMoveEval = DCI.SavedPrevMoveEval;
     Glob.SearchWrp.AvgCompletedDepth = DCI.SavedAvgCompletedDepth;
-    If (Ret.SearchWrp.BestMoveEval == Const.Null)
+    If (Glob.Search.BestMoveEval == Const.Null)
     {
         List.Add(_dci, "decline");
     }
     Else
     {
-        If (Ret.SearchWrp.BestMoveEval < 0)
+        If (Glob.Search.BestMoveEval < 0)
         {
             List.Add(_dci, "accept");
         }
@@ -800,13 +818,13 @@ Define $gok_prepare (warp=true)
     If (_dci think time == "Infinity")
     {
         Glob.Config.CustomThinkTime = 100000;
-        Glob.Config.CustomMaxDepth = _dci max depth;
+        Glob.Config.CustomMaxDepth = (_dci max depth + 0);
     }
     Else
     {
         If (_dci think time > 0)
         {
-            Glob.Config.CustomThinkTime = _dci think time;
+            Glob.Config.CustomThinkTime = (_dci think time + 0);
         }
         Else
         {
@@ -846,7 +864,7 @@ Define $gok_prepare (warp=true)
             }
             If (Not (($gok_prepare.ClockPart == "")))
             {
-                Glob.Clock.InitialTime = $gok_prepare.ClockPart;
+                Glob.Clock.InitialTime = ($gok_prepare.ClockPart + 0);
             }
             If ($gok_prepare.ClockPlusIdx > $gok_prepare.ClockSlashIdx)
             {
@@ -863,7 +881,7 @@ Define $gok_prepare (warp=true)
                 }
                 Else
                 {
-                    Glob.Clock.StageMoves = $gok_prepare.ClockPart;
+                    Glob.Clock.StageMoves = ($gok_prepare.ClockPart + 0);
                 }
                 $gok_prepare.ClockPart = "";
                 $gok_prepare.ClockCharIdx = ($gok_prepare.ClockPlusIdx + 1);
@@ -878,7 +896,7 @@ Define $gok_prepare (warp=true)
                 }
                 Else
                 {
-                    Glob.Clock.StageTime = $gok_prepare.ClockPart;
+                    Glob.Clock.StageTime = ($gok_prepare.ClockPart + 0);
                 }
             }
             Else
@@ -892,7 +910,7 @@ Define $gok_prepare (warp=true)
                 }
                 If (Not (($gok_prepare.ClockPart == "")))
                 {
-                    Glob.Clock.TimeInc = $gok_prepare.ClockPart;
+                    Glob.Clock.TimeInc = ($gok_prepare.ClockPart + 0);
                 }
             }
         }
@@ -945,7 +963,7 @@ Define $gok_prepare (warp=true)
     }
     If (Not ((_dci clock remaining == "")))
     {
-        Glob.Clock.CurrentTime = _dci clock remaining;
+        Glob.Clock.CurrentTime = (_dci clock remaining + 0);
         Glob.Clock.MoveCount = 0;
     }
     List.DeleteAll(GameMoves);
@@ -1122,7 +1140,7 @@ Define AddMoveImpl(string SourceIdx)(string TargetIdx)(string Ply)(bool Quiescen
         {
             If (Not ((abs(Board[(SourceIdx + 0)]) == (GoK_BlackKing + 0))))
             {
-                If ((EnPassantTarget[Ply] + 0) == (Const.Null + 0))
+                If (EnPassantTarget[Ply] == Const.Null)
                 {
                     Stop(this script);
                 }
@@ -1440,31 +1458,31 @@ Define AdjustEvalScore(string Ply)(string RawEval) (warp=true)
         {
             List.ReplaceItem(StaticEval, Ply, (RawEval * PlySign[Ply]));
         }
-        If (1 == 0)
+        If (Const.CorrHist.IsEnabled == 1)
         {
             Call GetCorrHistIndices(Ply);
             AdjustEvalScore.CorrSum = 0;
             If (CorrHistKey[Ret.GetCorrHistIndices.CorrIdx] == (floor((Ret.GetCorrHistIndices.PawnKey / 100000)) % 1073741824))
             {
-                AdjustEvalScore.CorrSum += (53 * CorrHistVal[Ret.GetCorrHistIndices.CorrIdx]);
+                AdjustEvalScore.CorrSum += (Const.CorrHist.PawnWeight * CorrHistVal[Ret.GetCorrHistIndices.CorrIdx]);
             }
             If (CorrHistNonPawnBlackKey[Ret.GetCorrHistIndices.NonPawnBlackIdx] == (floor((Ret.GetCorrHistIndices.NonPawnBlackKey / 100000)) % 1073741824))
             {
-                AdjustEvalScore.CorrSum += (65 * CorrHistNonPawnBlack[Ret.GetCorrHistIndices.NonPawnBlackIdx]);
+                AdjustEvalScore.CorrSum += (Const.CorrHist.NonPawnWeight * CorrHistNonPawnBlack[Ret.GetCorrHistIndices.NonPawnBlackIdx]);
             }
             If (CorrHistNonPawnWhiteKey[Ret.GetCorrHistIndices.NonPawnWhiteIdx] == (floor((Ret.GetCorrHistIndices.NonPawnWhiteKey / 100000)) % 1073741824))
             {
-                AdjustEvalScore.CorrSum += (65 * CorrHistNonPawnWhite[Ret.GetCorrHistIndices.NonPawnWhiteIdx]);
+                AdjustEvalScore.CorrSum += (Const.CorrHist.NonPawnWeight * CorrHistNonPawnWhite[Ret.GetCorrHistIndices.NonPawnWhiteIdx]);
             }
             If (Not ((Ret.GetCorrHistIndices.ContIdx2 == Const.Null)))
             {
-                AdjustEvalScore.CorrSum += (76 * CorrHistCont[Ret.GetCorrHistIndices.ContIdx2]);
+                AdjustEvalScore.CorrSum += (Const.CorrHist.ContinuationWeight * CorrHistCont[Ret.GetCorrHistIndices.ContIdx2]);
             }
             If (Not ((Ret.GetCorrHistIndices.ContIdx4 == Const.Null)))
             {
-                AdjustEvalScore.CorrSum += (76 * CorrHistCont[Ret.GetCorrHistIndices.ContIdx4]);
+                AdjustEvalScore.CorrSum += (Const.CorrHist.ContinuationWeight * CorrHistCont[Ret.GetCorrHistIndices.ContIdx4]);
             }
-            List.ReplaceItem(StaticEval, Ply, (StaticEval[Ply] + Operator.Round((AdjustEvalScore.CorrSum / 512))));
+            List.ReplaceItem(StaticEval, Ply, (StaticEval[Ply] + (((AdjustEvalScore.CorrSum > 0) - (AdjustEvalScore.CorrSum < 0)) * floor(abs((AdjustEvalScore.CorrSum / 512))))));
         }
     }
 }
@@ -3812,7 +3830,8 @@ Define Evaluate(string Ply)(bool ForceFullEval) (warp=true)
                         Call EvalEG.Scale(Ply)(Evaluate.StrongSide);
                         If (Not ((Ret.EvalEG.Scale.Factor == Const.Null)))
                         {
-                            Ret.Evaluate.Score = Operator.Round(((Ret.Evaluate.Score * Ret.EvalEG.Scale.Factor) / 64));
+                            Evaluate.ScaleCut = ((Ret.Evaluate.Score * Ret.EvalEG.Scale.Factor) / 64);
+                            Ret.Evaluate.Score = (((Evaluate.ScaleCut > 0) - (Evaluate.ScaleCut < 0)) * floor(abs(Evaluate.ScaleCut)));
                         }
                     }
                 }
@@ -4254,11 +4273,11 @@ Define ExecuteEngineMoveImpl (warp=false)
     Call DrawBoardAndWait;
     If (Not ((floor((ExecuteEngineMoveImpl.Move / 100)) == 0)))
     {
-        If (Board[(ExecuteEngineMoveImpl.Move % 100)] == GoK_BlackKing)
+        If (Board[floor((ExecuteEngineMoveImpl.Move % 100))] == GoK_BlackKing)
         {
             Glob.Board.HasBlackKingMoved = 1;
         }
-        If (Board[(ExecuteEngineMoveImpl.Move % 100)] == GoK_BlackRook)
+        If (Board[floor((ExecuteEngineMoveImpl.Move % 100))] == GoK_BlackRook)
         {
             If (floor((ExecuteEngineMoveImpl.Move / 100)) == 1)
             {
@@ -5138,14 +5157,6 @@ Define GetImprovingImpl(string Ply) (warp=true)
         Ret.GetImprovingImpl.IsImproving = 0;
         Stop(this script);
     }
-    If (Ply > 1)
-    {
-        If (AppliedMove[(Ply - 1)] == 0)
-        {
-            Ret.GetImprovingImpl.IsImproving = 0;
-            Stop(this script);
-        }
-    }
     Ret.GetImprovingImpl.IsImproving = Const.Null;
     If (Not ((StaticEval[Ply] == Const.Null)))
     {
@@ -5959,7 +5970,7 @@ Define ImportBoardFEN(string ImpBoard) (warp=false)
         }
         Else
         {
-            If ((Not ((ImportBoardFEN.Char < 0))) And (Not ((ImportBoardFEN.Char > 9))))
+            If Operator.Contains(0123456789, ImportBoardFEN.Char)
             {
                 Repeat (ImportBoardFEN.Char)
                 {
@@ -6400,7 +6411,7 @@ Define InitBoard (warp=true)
     Const.ProfileTime.PickMoveBaseIdx = 512;
     Const.SnapshotPlyStride = 100;
     Const.CheckInfoPlyStride = 8;
-    Ret.Search.PV = "";
+    Glob.Search.PV = "";
     Call UI.FormatPV;
     Stg_FromSquareIdx = -1;
     Stg_ToSquareIdx = -1;
@@ -6455,6 +6466,21 @@ Define InitBoard (warp=true)
     GoK_BlackPawn = 114;
     Const.AbsMinCheckmateEval = (GoK_BlackKing - 10000);
     Const.AbsMaxCheckmateEval = 100000;
+    Const.History.BonusQuadratic = 8;
+    Const.History.BonusLinear = 240;
+    Const.History.BonusOffset = 276;
+    Const.History.BonusMax = 1907;
+    Const.History.BigFailHighMargin = 63;
+    Const.History.FailLowExtraMarginPerDepth = 35;
+    Const.History.ContinuationGravity = 29952;
+    Const.Aspiration.MinDepth = 4;
+    Const.Aspiration.StartDelta = 8;
+    Const.Aspiration.StartDeltaDivisor = 9589;
+    Const.Aspiration.GrowthDivisor = 4;
+    Const.Aspiration.GrowthConstant = 1;
+    Const.Aspiration.Infinity = 100000;
+    Const.Aspiration.AverageNewWeight = 2;
+    Const.Aspiration.AverageDivisor = 3;
     Const.DrawByRepetitionEval = 0;
     Const.Null = 999999999;
     Const.PawnAdvance.WhiteBack = 0;
@@ -6514,6 +6540,10 @@ Define InitBoard (warp=true)
     Const.MaxMovesPerGeneration = 300;
     Const.LmrStatScoreOffset = 4334;
     Const.LmrStatScoreDivisor = 15914;
+    Const.CorrHist.IsEnabled = 0;
+    Const.CorrHist.PawnWeight = 27;
+    Const.CorrHist.NonPawnWeight = 23;
+    Const.CorrHist.ContinuationWeight = 15;
     Const.PickGoodCaptureMinScore = 7000000;
     Const.QuietMoveBaseScore = 2100000;
     Const.QuietSortDepthFactor = 3000;
@@ -8094,7 +8124,7 @@ Define InitSearch(string Horizon) (warp=true)
     Glob.Search.IsTimeout = 0;
     If (Glob.Search.IsInitialDeepening == 1)
     {
-        Ret.Search.PV = "";
+        Glob.Search.PV = "";
         Call UI.FormatPV;
         List.DeleteAll(PVStable);
         List.DeleteAll(PVStablePrev);
@@ -9300,7 +9330,7 @@ Define IsLosingCapture(string Ply)(string Move)(string AttackerPiece)(string Vic
         Call SEE((Ply + 2))((1 == 0));
         IsLosingCapture.SeeGain = Ret.SEE.Gain;
         Call RevertLight((Ply + 2));
-        If (IsLosingCapture.SeeGain < ((0 - Const.SeeLosingCaptureMargin) - (abs(VictimPiece) / Const.SeeLosingCaptureVictimDivisor)))
+        If (IsLosingCapture.SeeGain < ((0 - Const.SeeLosingCaptureMargin) - floor((abs(VictimPiece) / Const.SeeLosingCaptureVictimDivisor))))
         {
             Ret.IsLosingCapture.IsLosing = 1;
         }
@@ -9430,6 +9460,10 @@ Define IsQuiescentCheckCond(string Ply) (warp=true)
 Define IsQuietMove(string Move) (warp=true)
 {
     Ret.IsQuietMove.IsQuiet = 0;
+    If (Move == Const.Null)
+    {
+        Stop(this script);
+    }
     IsQuietMove.FromIdx = floor((Move / 100));
     IsQuietMove.ToIdx = floor((Move % 100));
     If (IsQuietMove.FromIdx == 0)
@@ -9662,7 +9696,7 @@ Define LogSearchEnd(string Move) (warp=true)
     }
     Call GetMoveUci(Move)(LogSearchEnd.White);
     LogSearchEnd.Line = Operator.Join("bestmove ", Ret.GetMoveUci.Uci);
-    If (((Not ((Glob.Info.LastDepth == Const.Null))) And (Glob.Info.LastPv1 == Move)) And (Not ((Glob.Info.LastPonder == Const.Null))))
+    If (((Not ((Glob.Info.LastDepth == Const.Null))) And (Glob.Info.LastPv1 == Move)) And (Not ((Operator.Join(Glob.Info.LastPonder, "") == Operator.Join(Const.Null, "")))))
     {
         LogSearchEnd.Line = Operator.Join(LogSearchEnd.Line, Operator.Join(" ponder ", Glob.Info.LastPonder));
     }
@@ -9777,7 +9811,7 @@ Define MoveScore(string SourcePieceParam)(string TargetPieceParam)(string FromId
     If (Not ((Move == floor(Move))))
     {
         Call //("Promotions");
-        If (((Move * 10) % 10) == 1)
+        If (floor(((Move * 10) % 10)) == 1)
         {
             If (Board[floor((Move % 100))] == 0)
             {
@@ -10275,7 +10309,24 @@ Define NNUE_Evaluate(string Side)(string Ply) (warp=true)
         }
         NNUE_Evaluate.Idx += 1;
     }
-    Ret.NNUE_Evaluate.Score = ((((Ret.NNUE_Evaluate.Score / 181) + NNUE_OutputBias[1]) * 230) / 11584);
+    Ret.NNUE_Evaluate.Score = (Ret.NNUE_Evaluate.Score / 181);
+    If (Ret.NNUE_Evaluate.Score < 0)
+    {
+        Ret.NNUE_Evaluate.Score = ceiling(Ret.NNUE_Evaluate.Score);
+    }
+    Else
+    {
+        Ret.NNUE_Evaluate.Score = floor(Ret.NNUE_Evaluate.Score);
+    }
+    Ret.NNUE_Evaluate.Score = (((Ret.NNUE_Evaluate.Score + NNUE_OutputBias[1]) * 230) / 11584);
+    If (Ret.NNUE_Evaluate.Score < 0)
+    {
+        Ret.NNUE_Evaluate.Score = ceiling(Ret.NNUE_Evaluate.Score);
+    }
+    Else
+    {
+        Ret.NNUE_Evaluate.Score = floor(Ret.NNUE_Evaluate.Score);
+    }
 }
 
 Define NNUE_HexToDec(string Hex) (warp=true)
@@ -10647,7 +10698,19 @@ Define OnProgressChanged(string Progress) (warp=false)
 
 Define OnRestart (warp=true)
 {
-    Glob.Book.IsBuilt = 0;
+    Call //("Start values of global state, and of constants that are read before InitBoard sets up the rest");
+    Const.Null = 999999999;
+    Glob.Search.IsTimeout = 1;
+    Glob.Stats.TTStoreCount = 0;
+    Glob.Search.TTCheckNext = 0;
+    Glob.Stats.NodeCount = 0;
+    Glob.Stats.MoveCountQuiescence = 0;
+    Glob.Stats.BestMoveCount = 0;
+    Glob.Stats.BestMoveIdxSum = 0;
+    Glob.Stats.BestMoveCountQuiescence = 0;
+    Glob.Stats.BestMoveIdxSumQuiescence = 0;
+    Glob.Search.IsDone = 0;
+    Glob.Game.IsPlayerBlack = 1;
     Const.ProfilerMode.Off = 0;
     Const.ProfilerMode.Std = 1;
     Const.ProfilerMode.Full = 2;
@@ -10680,34 +10743,34 @@ Define OnRestart (warp=true)
     {
         Glob.UI.Depth = Operator.Join("D: ", Glob.Search.IterationIdx);
     }
-    Ret.SearchWrp.BestMoveEval = Const.Null;
-    If (Ret.SearchWrp.BestMoveEval == Const.Null)
+    Glob.Search.BestMoveEval = Const.Null;
+    If (Glob.Search.BestMoveEval == Const.Null)
     {
         Glob.UI.Eval = "EV: 0";
     }
     Else
     {
-        Glob.UI.Eval = Operator.Join("EV: ", Ret.SearchWrp.BestMoveEval);
+        Glob.UI.Eval = Operator.Join("EV: ", Glob.Search.BestMoveEval);
     }
-    Ret.Search.NPS = Const.Null;
-    If (Ret.Search.NPS == Const.Null)
+    Glob.Search.NPS = Const.Null;
+    If (Glob.Search.NPS == Const.Null)
     {
         Glob.UI.NPS = "kNPS: 0";
     }
     Else
     {
-        Glob.UI.NPS = Operator.Join("kNPS: ", Operator.Round((Ret.Search.NPS / 1000)));
+        Glob.UI.NPS = Operator.Join("kNPS: ", Operator.Round((Glob.Search.NPS / 1000)));
     }
-    Ret.Search.MPS = Const.Null;
-    If (Ret.Search.MPS == Const.Null)
+    Glob.Search.MPS = Const.Null;
+    If (Glob.Search.MPS == Const.Null)
     {
         Glob.UI.MPS = "kMPS: 0";
     }
     Else
     {
-        Glob.UI.MPS = Operator.Join("kMPS: ", Operator.Round((Ret.Search.MPS / 1000)));
+        Glob.UI.MPS = Operator.Join("kMPS: ", Operator.Round((Glob.Search.MPS / 1000)));
     }
-    Ret.Search.PV = "";
+    Glob.Search.PV = "";
     Call UI.FormatPV;
     Glob.Config.CustomThinkTime = 0;
     Glob.Config.CustomMaxDepth = 0;
@@ -11221,7 +11284,7 @@ Define PickMove.Iterate(string Ply)(string NextPhase)(bool UpdateNNUE) (warp=tru
                 If (((Quiescence[Ply] == 1) And (CheckedState[Ply] == 0)) And (floor((PickMove.Iterate.Move / 100)) > 0))
                 {
                     PickMove.Iterate.PreFrom = floor((PickMove.Iterate.Move / 100));
-                    PickMove.Iterate.PreTo = (PickMove.Iterate.Move - (PickMove.Iterate.PreFrom * 100));
+                    PickMove.Iterate.PreTo = (floor(PickMove.Iterate.Move) - (PickMove.Iterate.PreFrom * 100));
                     PickMove.Iterate.PreSrc = Board[PickMove.Iterate.PreFrom];
                     PickMove.Iterate.PreTgt = Board[floor(PickMove.Iterate.PreTo)];
                     If ((((Not ((PickMove.Iterate.PreTgt == 0))) And (abs(PickMove.Iterate.PreTgt) < abs(PickMove.Iterate.PreSrc))) And ((Not ((StaticEval[Ply] == Const.Null))) And (((StaticEval[Ply] - abs(PickMove.Iterate.PreTgt)) + 175) > Alphas[Ply]))) And (SearchEval[Ply] > (0 - Const.AbsMinCheckmateEval)))
@@ -11251,7 +11314,7 @@ Define PickMove.Iterate(string Ply)(string NextPhase)(bool UpdateNNUE) (warp=tru
                     If ((((Quiescence[Ply] == 0) And (Not ((PreLMPLimit[Ply] == Const.Null)))) And ((floor((PickMove.Iterate.Move / 100)) > 0) And (Not ((SearchEval[Ply] == Const.Null))))) And ((SearchEval[Ply] > (0 - Const.AbsMinCheckmateEval)) And ((PickedLegalMovesCountQuiet[Ply] + 1) > PreLMPLimit[Ply])))
                     {
                         PickMove.Iterate.LMPFrom = floor((PickMove.Iterate.Move / 100));
-                        PickMove.Iterate.LMPTo = (PickMove.Iterate.Move - (PickMove.Iterate.LMPFrom * 100));
+                        PickMove.Iterate.LMPTo = (floor(PickMove.Iterate.Move) - (PickMove.Iterate.LMPFrom * 100));
                         If (((Board[floor(PickMove.Iterate.LMPTo)] == 0) And (Not ((abs(Board[PickMove.Iterate.LMPFrom]) == GoK_BlackPawn)))) And (Not ((abs(Board[PickMove.Iterate.LMPFrom]) == GoK_BlackKing))))
                         {
                             PickMove.Iterate.GC = 0;
@@ -12298,23 +12361,23 @@ Define Search(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Initia
     Ret.Search.LegalMoveCount = PickedLegalMovesCount[Ply];
     Search.Timer = ((Sensing.DaysSince2000() * 86400) - Search.Timer);
     Call ExportBoardFEN(1);
-    Ret.Search.MPS = Operator.Round(((Glob.Stats.MoveCount + Glob.Stats.MoveCountQuiescence) / Search.Timer));
-    If (Ret.Search.MPS == Const.Null)
+    Glob.Search.MPS = Operator.Round(((Glob.Stats.MoveCount + Glob.Stats.MoveCountQuiescence) / Search.Timer));
+    If (Glob.Search.MPS == Const.Null)
     {
         Glob.UI.MPS = "kMPS: 0";
     }
     Else
     {
-        Glob.UI.MPS = Operator.Join("kMPS: ", Operator.Round((Ret.Search.MPS / 1000)));
+        Glob.UI.MPS = Operator.Join("kMPS: ", Operator.Round((Glob.Search.MPS / 1000)));
     }
-    Ret.Search.NPS = Operator.Round(((Glob.Stats.NodeCount + Glob.Stats.NodeCountQuiescence) / Search.Timer));
-    If (Ret.Search.NPS == Const.Null)
+    Glob.Search.NPS = Operator.Round(((Glob.Stats.NodeCount + Glob.Stats.NodeCountQuiescence) / Search.Timer));
+    If (Glob.Search.NPS == Const.Null)
     {
         Glob.UI.NPS = "kNPS: 0";
     }
     Else
     {
-        Glob.UI.NPS = Operator.Join("kNPS: ", Operator.Round((Ret.Search.NPS / 1000)));
+        Glob.UI.NPS = Operator.Join("kNPS: ", Operator.Round((Glob.Search.NPS / 1000)));
     }
     Glob.Info.Nodes += Glob.Stats.NodeCount;
     Glob.Info.NodesQ += Glob.Stats.NodeCountQuiescence;
@@ -12517,7 +12580,7 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
                                 Call GivesCheckFast(Ply);
                                 List.ReplaceItem(PutsInCheck, Ply, Ret.GivesCheckFast.GivesCheck);
                                 Call SEE(Ply)((1 == 0));
-                                If ((Not ((Ret.SEE.Gain < (ProbCutBeta[Ply] - StaticEval[Ply])))) And (Not ((AppliedMove[Ply] == ExcludedMove))))
+                                If (((Not ((Ret.SEE.Gain < (ProbCutBeta[Ply] - StaticEval[Ply])))) And (Not ((AppliedMove[Ply] == ExcludedMove)))) And ((Not ((TargetPieces[Ply] == 0))) Or (Not ((PromotionPieces[Ply] == 0)))))
                                 {
                                     Call SearchImpl((0 - ProbCutBeta[Ply]))((0 - (ProbCutBeta[Ply] - 1)))(0)((Ply + 1))((1 == 1))((1 == 1))(Const.Null);
                                     SearchImpl.ProbCutScore = SearchEval[(Ply + 1)];
@@ -12637,6 +12700,10 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
         {
             Call //("Put a checkmate baseline into node eval, which must be improved later by at east one move that gets us out of check");
             List.ReplaceItem(SearchEval, Ply, (-100000 + List.Length(BoardHistoryFiftyMoves)));
+            If (Not ((SearchEval[Ply] < Betas[Ply])))
+            {
+                Stop(this script);
+            }
         }
         Else
         {
@@ -12683,7 +12750,7 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
     {
         Call GetImproving(Ply);
         SearchImpl.LMPImp = (Not (((Not ((Ret.GetImproving.IsImproving == Const.Null))) And (Ret.GetImproving.IsImproving == 0))));
-        List.ReplaceItem(PreLMPLimit, Ply, (3 + ((Horizon * Horizon) / (2 - SearchImpl.LMPImp))));
+        List.ReplaceItem(PreLMPLimit, Ply, (3 + floor(((Horizon * Horizon) / (2 - SearchImpl.LMPImp)))));
     }
     Else
     {
@@ -12877,11 +12944,6 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
                                         If (SearchImpl.NodeEval > Glob.Search.Alpha)
                                         {
                                             Call Search_OnBestRootMoveFound(Ret.SearchImpl.Move)(Ret.SearchImpl.Eval);
-                                            If ((SearchImpl.NodeEval > (Const.AbsMaxCheckmateEval - (List.Length(BoardHistoryFiftyMoves) + Horizon))) And (SearchImpl.NodeEval < Glob.Search.Beta))
-                                            {
-                                                Glob.Search.IsTimeout = 1;
-                                                Stop(this script);
-                                            }
                                             If (Not ((Ret.SearchImpl.Eval < Glob.Search.Beta)))
                                             {
                                                 Call //("AW fail high => terminate immediately");
@@ -12906,7 +12968,7 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
                     {
                         If ((LMRState[Ply] == 2) Or (LMRState[Ply] == 3))
                         {
-                            Call StoreKiller(Ply)(Ret.GetCurrentMove.Move)(Horizon)((LMRState[Ply] == 3))((1 == 1))((IsCurrentMoveQuiet[Ply] == 1));
+                            Call StoreKiller(Ply)(Ret.GetCurrentMove.Move)(((Horizon + SearchExtension[Ply]) - 1))((LMRState[Ply] == 3))((1 == 1))((IsCurrentMoveQuiet[Ply] == 1));
                         }
                     }
                 }
@@ -12931,7 +12993,7 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
         {
             If (IsPvNode[Ply] == 1)
             {
-                If ((Not (Quiescence)) Or (SearchEval[Ply] > AlphasOld[Ply]))
+                If (Not (Quiescence))
                 {
                     SearchImpl.IsExactScore = 1;
                 }
@@ -12982,16 +13044,32 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
         }
         If ((Not (Quiescence)) And (Not ((BestMoves[Ply] == Const.Null))))
         {
-            Call StoreKiller(Ply)(BestMoves[Ply])(Horizon)((1 == 0))((1 == 0))((IsBestMoveQuiet[Ply] == 1));
+            SearchImpl.Bonus1Depth = (Horizon + 1);
+            SearchImpl.Bonus2Depth = (Horizon + 1);
+            If (Not ((SearchEval[Ply] > (Betas[Ply] + Const.History.BigFailHighMargin))))
+            {
+                SearchImpl.Bonus2Depth = Horizon;
+            }
+            SearchImpl.BestMoveBonusDepth = SearchImpl.Bonus1Depth;
+            If (IsBestMoveQuiet[Ply] == 1)
+            {
+                SearchImpl.BestMoveBonusDepth = SearchImpl.Bonus2Depth;
+            }
+            Call StoreKiller(Ply)(BestMoves[Ply])(SearchImpl.BestMoveBonusDepth)((1 == 0))((1 == 0))((IsBestMoveQuiet[Ply] == 1));
             SearchImpl.HistIdx = 1;
             Repeat (QuietsSearchedCount[Ply])
             {
                 SearchImpl.HistMove = QuietsSearched[(((Ply - 1) * 64) + SearchImpl.HistIdx)];
                 If (Not ((SearchImpl.HistMove == BestMoves[Ply])))
                 {
-                    Call StoreKiller(Ply)(SearchImpl.HistMove)(Horizon)((1 == 1))((1 == 0))((IsBestMoveQuiet[Ply] == 1));
+                    Call StoreKiller(Ply)(SearchImpl.HistMove)(SearchImpl.Bonus2Depth)((1 == 1))((1 == 0))((IsBestMoveQuiet[Ply] == 1));
                 }
                 SearchImpl.HistIdx += 1;
+            }
+            If ((((Ply > 1) And (Not ((AppliedMove[(Ply - 1)] == 0)))) And ((Not ((floor((AppliedMove[(Ply - 1)] / 100)) == 0))) And (TargetPieces[(Ply - 1)] == 0))) And ((PickedLegalMovesCount[(Ply - 1)] == (1 + (NodeTTHit[(Ply - 1)] == 1))) Or (AppliedMove[(Ply - 1)] == KillerMoves[(((Ply - 2) * 2) + 1)])))
+            {
+                Call StatBonus(SearchImpl.Bonus1Depth);
+                Call UpdateContinuationHistories((Ply - 1))(PieceIdxLookup[abs(Board[floor((AppliedMove[(Ply - 1)] % 100))])])(floor((AppliedMove[(Ply - 1)] % 100)))((0 - Ret.StatBonus.Value));
             }
             SearchImpl.HistIdx = 1;
             Repeat (CapturesSearchedCount[Ply])
@@ -12999,10 +13077,20 @@ Define SearchImpl(string Alpha)(string Beta)(string Horizon)(string Ply)(bool Cu
                 SearchImpl.HistMove = CapturesSearched[(((Ply - 1) * 64) + SearchImpl.HistIdx)];
                 If (Not ((SearchImpl.HistMove == BestMoves[Ply])))
                 {
-                    Call StoreKiller(Ply)(SearchImpl.HistMove)(Horizon)((1 == 1))((1 == 0))((1 == 0));
+                    Call StoreKiller(Ply)(SearchImpl.HistMove)(SearchImpl.Bonus1Depth)((1 == 1))((1 == 0))((1 == 0));
                 }
                 SearchImpl.HistIdx += 1;
             }
+        }
+        If ((((Not (Quiescence)) And (BestMoves[Ply] == Const.Null)) And (PickedLegalMovesCount[Ply] > 0)) And ((((Ply > 1) And (Not ((AppliedMove[(Ply - 1)] == 0)))) And ((Not ((floor((AppliedMove[(Ply - 1)] / 100)) == 0))) And (TargetPieces[(Ply - 1)] == 0))) And ((Not ((Horizon < 4))) Or (IsPvNode[Ply] == 1))))
+        {
+            SearchImpl.FailLowBonusFactor = 1;
+            If (((IsPvNode[Ply] == 1) Or Cutnode) Or (SearchEval[Ply] < (Alphas[Ply] - (Const.History.FailLowExtraMarginPerDepth * Horizon))))
+            {
+                SearchImpl.FailLowBonusFactor = 2;
+            }
+            Call StatBonus(Horizon);
+            Call UpdateContinuationHistories((Ply - 1))(PieceIdxLookup[abs(Board[floor((AppliedMove[(Ply - 1)] % 100))])])(floor((AppliedMove[(Ply - 1)] % 100)))((Ret.StatBonus.Value * SearchImpl.FailLowBonusFactor));
         }
         If (((Glob.Search.IsTimeout == 0) And (Ply > 1)) And (ExcludedMove == Const.Null))
         {
@@ -13159,12 +13247,12 @@ Define SearchNextPly(string Alpha)(string Beta)(string Horizon)(string Reduction
 Define SearchWrp (warp=false)
 {
     Call SearchWrp.Prep;
-    Repeat Until (Ret.SearchWrp.IsDone == 1)
+    Repeat Until (Glob.Search.IsDone == 1)
     {
         Call SearchWrp.Iter;
         If (Not ((Glob.Config.IsDCI == 1)))
         {
-            If (((Sensing.DaysSince2000() * 86400) > Glob.SearchWrp.NextUIUpdate) Or (Ret.SearchWrp.IsDone == 1))
+            If (((Sensing.DaysSince2000() * 86400) > Glob.SearchWrp.NextUIUpdate) Or (Glob.Search.IsDone == 1))
             {
                 If (Not ((Icons_SearchDepth == Glob.Search.IterationIdx)))
                 {
@@ -13173,7 +13261,7 @@ Define SearchWrp (warp=false)
                 }
                 If (Not ((Ret.SearchWrp.BestMove == Const.Null)))
                 {
-                    Call OnEvaluationChanged(Ret.SearchWrp.BestMoveEval);
+                    Call OnEvaluationChanged(Glob.Search.BestMoveEval);
                     If (Ret.SearchWrp.BestMove == GoK_BlackKingsideCastling)
                     {
                         Stg_BestMoveFromIdx = GoK_ScreenIdx[5];
@@ -13196,13 +13284,13 @@ Define SearchWrp (warp=false)
                 }
                 SearchWrp.Now = (Sensing.DaysSince2000() * 86400);
                 Call OnProgressChanged((((SearchWrp.Now - Glob.Search.ThinkTimeStart) / Glob.SearchWrp.ProgressLimit) * 100));
-                If (Ret.SearchWrp.IsDone == 0)
+                If (Glob.Search.IsDone == 0)
                 {
                     Call PublishTimers((SearchWrp.Now - Glob.Search.ThinkTimeStart));
                     Glob.SearchWrp.NextUIUpdate = (SearchWrp.Now + Glob.SearchWrp.UIUpdateStep);
                     Glob.SearchWrp.UIUpdateStep = ((Glob.SearchWrp.UIUpdateStep * 2) + ((1 - (Glob.SearchWrp.UIUpdateStep * 2)) * (Glob.SearchWrp.UIUpdateStep > 0.5)));
                 }
-                If (Ret.SearchWrp.IsDone == 1)
+                If (Glob.Search.IsDone == 1)
                 {
                     Call PublishTimers(0);
                 }
@@ -13215,7 +13303,7 @@ Define SearchWrp (warp=false)
 Define SearchWrp.DCI (warp=true)
 {
     Call SearchWrp.Prep;
-    Repeat Until (Ret.SearchWrp.IsDone == 1)
+    Repeat Until (Glob.Search.IsDone == 1)
     {
         Call SearchWrp.Iter;
     }
@@ -13226,13 +13314,18 @@ Define SearchWrp.DCI (warp=true)
 Define SearchWrp.DCISlice (warp=true)
 {
     Glob.UI.PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
-    Repeat Until ((Ret.SearchWrp.IsDone == 1) Or ((Sensing.DaysSince2000() * 86400) > (Glob.UI.PrevProgressUpdate + (_dci slice + (_dci slice == "")))))
+    SearchWrp.DCISlice.Slice = _dci slice;
+    If (_dci slice == "")
+    {
+        SearchWrp.DCISlice.Slice = 1;
+    }
+    Repeat Until ((Glob.Search.IsDone == 1) Or ((Sensing.DaysSince2000() * 86400) > (Glob.UI.PrevProgressUpdate + SearchWrp.DCISlice.Slice)))
     {
         Call SearchWrp.Iter;
     }
     Glob.UI.PrevProgressUpdate = (Sensing.DaysSince2000() * 86400);
     Ret.SearchWrp.DCI.Move = Glob.Search.IterationBestMove;
-    If (Ret.SearchWrp.IsDone == 1)
+    If (Glob.Search.IsDone == 1)
     {
         Call LogSearchEnd(Glob.Search.IterationBestMove);
     }
@@ -13241,11 +13334,19 @@ Define SearchWrp.DCISlice (warp=true)
 Define SearchWrp.Iter (warp=true)
 {
     Glob.Search.ThinkTimeLimit = Glob.SearchWrp.ThinkTimeLimit;
-    If (((Glob.Search.IterationIdx > 4) And (1 == 1)) And ((Not ((Ret.SearchWrp.BestMoveEval == Const.Null))) And (abs(Ret.SearchWrp.BestMoveEval) < Const.AbsMinCheckmateEval)))
+    If ((Not ((Glob.Search.IterationIdx < Const.Aspiration.MinDepth))) And (Not ((Glob.SearchWrp.RootAverageScore == Const.Null))))
     {
-        SearchWrp.Iter.AspirationDelta = Operator.Round((40 + ((abs(Ret.SearchWrp.BestMoveEval) * abs(Ret.SearchWrp.BestMoveEval)) / 2400)));
-        SearchWrp.Iter.AspirationAlpha = Operator.Round((Ret.SearchWrp.BestMoveEval - SearchWrp.Iter.AspirationDelta));
-        SearchWrp.Iter.AspirationBeta = Operator.Round((Ret.SearchWrp.BestMoveEval + SearchWrp.Iter.AspirationDelta));
+        SearchWrp.Iter.AspirationDelta = (Const.Aspiration.StartDelta + floor(((Glob.SearchWrp.RootAverageScore * Glob.SearchWrp.RootAverageScore) / Const.Aspiration.StartDeltaDivisor)));
+        SearchWrp.Iter.AspirationAlpha = floor((Glob.SearchWrp.RootAverageScore - SearchWrp.Iter.AspirationDelta));
+        SearchWrp.Iter.AspirationBeta = floor((Glob.SearchWrp.RootAverageScore + SearchWrp.Iter.AspirationDelta));
+        If (SearchWrp.Iter.AspirationAlpha < (0 - Const.Aspiration.Infinity))
+        {
+            SearchWrp.Iter.AspirationAlpha = (0 - Const.Aspiration.Infinity);
+        }
+        If (SearchWrp.Iter.AspirationBeta > Const.Aspiration.Infinity)
+        {
+            SearchWrp.Iter.AspirationBeta = Const.Aspiration.Infinity;
+        }
     }
     Else
     {
@@ -13266,20 +13367,32 @@ Define SearchWrp.Iter (warp=true)
         }
         Call Search(SearchWrp.Iter.AspirationAlpha)(SearchWrp.Iter.AspirationBeta)(SearchWrp.Iter.SearchDepth)(1)((Glob.Search.IterationIdx == 1));
         SearchWrp.Iter.SearchEval = Ret.Search.Eval;
+        If ((Glob.Search.IsTimeout == 0) And (Not ((SearchWrp.Iter.SearchEval == Const.Null))))
+        {
+            If (Glob.SearchWrp.RootAverageScore == Const.Null)
+            {
+                Glob.SearchWrp.RootAverageScore = SearchWrp.Iter.SearchEval;
+            }
+            Else
+            {
+                SearchWrp.Iter.AverageSum = ((Const.Aspiration.AverageNewWeight * SearchWrp.Iter.SearchEval) + Glob.SearchWrp.RootAverageScore);
+                Glob.SearchWrp.RootAverageScore = (((SearchWrp.Iter.AverageSum > 0) - (SearchWrp.Iter.AverageSum < 0)) * floor((abs(SearchWrp.Iter.AverageSum) / Const.Aspiration.AverageDivisor)));
+            }
+        }
         If ((Not ((Ret.Search.Move == Const.Null))) And (SearchWrp.Iter.SearchEval > SearchWrp.Iter.AspirationAlpha))
         {
             If ((Glob.Search.IterationBestMove == Const.Null) Or List.ContainsItem(SearchRootMovesDone, Glob.Search.IterationBestMove))
             {
                 Glob.Search.IterationBestMove = Ret.Search.Move;
                 Ret.SearchWrp.BestMove = Glob.Search.IterationBestMove;
-                Ret.SearchWrp.BestMoveEval = SearchWrp.Iter.SearchEval;
-                If (Ret.SearchWrp.BestMoveEval == Const.Null)
+                Glob.Search.BestMoveEval = SearchWrp.Iter.SearchEval;
+                If (Glob.Search.BestMoveEval == Const.Null)
                 {
                     Glob.UI.Eval = "EV: 0";
                 }
                 Else
                 {
-                    Glob.UI.Eval = Operator.Join("EV: ", Ret.SearchWrp.BestMoveEval);
+                    Glob.UI.Eval = Operator.Join("EV: ", Glob.Search.BestMoveEval);
                 }
                 If (Glob.Search.IsTimeout == 1)
                 {
@@ -13326,7 +13439,6 @@ Define SearchWrp.Iter (warp=true)
             {
                 Glob.SearchWrp.ThinkTimeLimit = Glob.SearchWrp.MaxThinkTime;
             }
-            SearchWrp.Iter.AspirationDelta = Operator.Round((SearchWrp.Iter.AspirationDelta * 1.5));
             If (Not ((SearchWrp.Iter.SearchEval > SearchWrp.Iter.AspirationAlpha)))
             {
                 SearchWrp.Iter.FailedHighCount = 0;
@@ -13335,26 +13447,27 @@ Define SearchWrp.Iter (warp=true)
             {
                 SearchWrp.Iter.FailedHighCount += 1;
             }
-            If ((SearchWrp.Iter.AspirationDelta < 300) And (abs(SearchWrp.Iter.SearchEval) < Const.AbsMinCheckmateEval))
+            If (Not ((SearchWrp.Iter.SearchEval > SearchWrp.Iter.AspirationAlpha)))
             {
-                If (Not ((SearchWrp.Iter.SearchEval > SearchWrp.Iter.AspirationAlpha)))
+                If (1 == 1)
                 {
-                    If (1 == 1)
-                    {
-                        SearchWrp.Iter.AspirationBeta = Operator.Round(((SearchWrp.Iter.AspirationAlpha + SearchWrp.Iter.AspirationBeta) / 2));
-                    }
-                    SearchWrp.Iter.AspirationAlpha = Operator.Round((SearchWrp.Iter.SearchEval - SearchWrp.Iter.AspirationDelta));
+                    SearchWrp.Iter.AspirationBeta = floor(((SearchWrp.Iter.AspirationAlpha + SearchWrp.Iter.AspirationBeta) / 2));
                 }
-                Else
+                SearchWrp.Iter.AspirationAlpha = floor((SearchWrp.Iter.SearchEval - SearchWrp.Iter.AspirationDelta));
+                If (SearchWrp.Iter.AspirationAlpha < (0 - Const.Aspiration.Infinity))
                 {
-                    SearchWrp.Iter.AspirationBeta = Operator.Round((SearchWrp.Iter.SearchEval + SearchWrp.Iter.AspirationDelta));
+                    SearchWrp.Iter.AspirationAlpha = (0 - Const.Aspiration.Infinity);
                 }
             }
             Else
             {
-                SearchWrp.Iter.AspirationAlpha = -100000;
-                SearchWrp.Iter.AspirationBeta = 100000;
+                SearchWrp.Iter.AspirationBeta = floor((SearchWrp.Iter.SearchEval + SearchWrp.Iter.AspirationDelta));
+                If (SearchWrp.Iter.AspirationBeta > Const.Aspiration.Infinity)
+                {
+                    SearchWrp.Iter.AspirationBeta = Const.Aspiration.Infinity;
+                }
             }
+            SearchWrp.Iter.AspirationDelta = ((SearchWrp.Iter.AspirationDelta + floor((SearchWrp.Iter.AspirationDelta / Const.Aspiration.GrowthDivisor))) + Const.Aspiration.GrowthConstant);
         }
         Else
         {
@@ -13366,7 +13479,7 @@ Define SearchWrp.Iter (warp=true)
         List.DeleteAll(RootLineMoves);
         List.DeleteAll(RootLineEvals);
         List.Add(RootLineMoves, Glob.Search.IterationBestMove);
-        List.Add(RootLineEvals, Ret.SearchWrp.BestMoveEval);
+        List.Add(RootLineEvals, Glob.Search.BestMoveEval);
         SearchWrp.Iter.LineDone = 0;
         List.DeleteAll(RootExcludedMoves);
         List.Add(RootExcludedMoves, Glob.Search.IterationBestMove);
@@ -13405,14 +13518,14 @@ Define SearchWrp.Iter (warp=true)
         }
         Glob.Search.IterationBestMove = RootLineMoves[1];
         Ret.SearchWrp.BestMove = Glob.Search.IterationBestMove;
-        Ret.SearchWrp.BestMoveEval = RootLineEvals[1];
-        If (Ret.SearchWrp.BestMoveEval == Const.Null)
+        Glob.Search.BestMoveEval = RootLineEvals[1];
+        If (Glob.Search.BestMoveEval == Const.Null)
         {
             Glob.UI.Eval = "EV: 0";
         }
         Else
         {
-            Glob.UI.Eval = Operator.Join("EV: ", Ret.SearchWrp.BestMoveEval);
+            Glob.UI.Eval = Operator.Join("EV: ", Glob.Search.BestMoveEval);
         }
         List.DeleteAll(RootLinePrevMoves);
         SearchWrp.Iter.SortIdx = 1;
@@ -13440,16 +13553,6 @@ Define SearchWrp.Iter (warp=true)
             {
                 SearchWrp.Iter.IsDeepeningDone = 1;
             }
-            Else
-            {
-                If (Not ((Ret.SearchWrp.BestMoveEval == Const.Null)))
-                {
-                    If (abs(Ret.SearchWrp.BestMoveEval) > (Const.AbsMaxCheckmateEval - (List.Length(BoardHistoryFiftyMoves) + Glob.Search.IterationIdx)))
-                    {
-                        SearchWrp.Iter.IsDeepeningDone = 1;
-                    }
-                }
-            }
         }
     }
     If ((Glob.Config.Level < 6) And (Not ((Glob.Search.IterationIdx < ((2 * Glob.Config.Level) - 2)))))
@@ -13462,7 +13565,7 @@ Define SearchWrp.Iter (warp=true)
     }
     If (SearchWrp.Iter.IsDeepeningDone == 1)
     {
-        Ret.SearchWrp.IsDone = 1;
+        Glob.Search.IsDone = 1;
     }
     Else
     {
@@ -13492,13 +13595,13 @@ Define SearchWrp.Iter (warp=true)
             }
             SearchWrp.Iter.BestMoveInstability = (1 + (1.88 * Glob.SearchWrp.BestMoveChanges));
             SearchWrp.Iter.SoftThinkTime = (SearchWrp.Iter.SoftThinkTime * SearchWrp.Iter.BestMoveInstability);
-            If ((Glob.SearchWrp.PrevMoveEval == Const.Null) Or ((Glob.SearchWrp.PrevIterEval == Const.Null) Or (Ret.SearchWrp.BestMoveEval == Const.Null)))
+            If ((Glob.SearchWrp.PrevMoveEval == Const.Null) Or ((Glob.SearchWrp.PrevIterEval == Const.Null) Or (Glob.Search.BestMoveEval == Const.Null)))
             {
                 SearchWrp.Iter.FallingEval = 1;
             }
             Else
             {
-                SearchWrp.Iter.FallingEval = ((69 + ((24 * (Glob.SearchWrp.PrevMoveEval - Ret.SearchWrp.BestMoveEval)) + (12 * (Glob.SearchWrp.PrevIterEval - Ret.SearchWrp.BestMoveEval)))) / 781.4);
+                SearchWrp.Iter.FallingEval = ((69 + ((24 * (Glob.SearchWrp.PrevMoveEval - Glob.Search.BestMoveEval)) + (12 * (Glob.SearchWrp.PrevIterEval - Glob.Search.BestMoveEval)))) / 781.4);
                 If (SearchWrp.Iter.FallingEval < 0.5)
                 {
                     SearchWrp.Iter.FallingEval = 0.5;
@@ -13531,11 +13634,11 @@ Define SearchWrp.Iter (warp=true)
             }
             If ((((((Sensing.DaysSince2000() * 86400) - Glob.Search.ThinkTimeStart) * SearchWrp.Iter.DepthTimeGrowth) > SearchWrp.Iter.SoftThinkTime) And (Not ((Glob.Search.IterationIdx < Glob.SearchWrp.MinThinkDepth)))) Or ((((Sensing.DaysSince2000() * 86400) - Glob.Search.ThinkTimeStart) * 1.9) > Glob.SearchWrp.ThinkTimeLimit))
             {
-                Ret.SearchWrp.IsDone = 1;
+                Glob.Search.IsDone = 1;
             }
-            Glob.SearchWrp.PrevIterEval = Ret.SearchWrp.BestMoveEval;
+            Glob.SearchWrp.PrevIterEval = Glob.Search.BestMoveEval;
         }
-        If (Ret.SearchWrp.IsDone == 0)
+        If (Glob.Search.IsDone == 0)
         {
             Glob.Search.IterationIdx += 1;
             If (Glob.Search.IterationIdx == Const.Null)
@@ -13548,9 +13651,9 @@ Define SearchWrp.Iter (warp=true)
             }
         }
     }
-    If ((Ret.SearchWrp.IsDone == 1) And (((Glob.Clock.TimeInc > 0) Or (Glob.Clock.InitialTime > 0)) And (Glob.Config.CustomMaxDepth == 0)))
+    If ((Glob.Search.IsDone == 1) And (((Glob.Clock.TimeInc > 0) Or (Glob.Clock.InitialTime > 0)) And (Glob.Config.CustomMaxDepth == 0)))
     {
-        Glob.SearchWrp.PrevMoveEval = Ret.SearchWrp.BestMoveEval;
+        Glob.SearchWrp.PrevMoveEval = Glob.Search.BestMoveEval;
         Glob.Clock.CurrentTime = (Glob.Clock.CurrentTime + (Glob.Clock.TimeInc - ((Sensing.DaysSince2000() * 86400) - Glob.Search.ThinkTimeStart)));
         Glob.Clock.MoveCount += 1;
         If ((Glob.Clock.StageMoves > 0) And (Glob.Clock.MoveCount == Glob.Clock.StageMoves))
@@ -13607,13 +13710,13 @@ Define SearchWrp.Prep (warp=true)
     SearchWrp.Prep.HistIdx = 1;
     Repeat (List.Length(HistoryMoveScores))
     {
-        List.ReplaceItem(HistoryMoveScores, SearchWrp.Prep.HistIdx, (HistoryMoveScores[SearchWrp.Prep.HistIdx] / 2));
+        List.ReplaceItem(HistoryMoveScores, SearchWrp.Prep.HistIdx, floor(((HistoryMoveScores[SearchWrp.Prep.HistIdx] + (HistoryMoveScores[SearchWrp.Prep.HistIdx] < 0)) / 2)));
         SearchWrp.Prep.HistIdx += 1;
     }
     SearchWrp.Prep.HistIdx = 1;
     Repeat (List.Length(HistoryCaptureScores))
     {
-        List.ReplaceItem(HistoryCaptureScores, SearchWrp.Prep.HistIdx, (HistoryCaptureScores[SearchWrp.Prep.HistIdx] / 2));
+        List.ReplaceItem(HistoryCaptureScores, SearchWrp.Prep.HistIdx, floor(((HistoryCaptureScores[SearchWrp.Prep.HistIdx] + (HistoryCaptureScores[SearchWrp.Prep.HistIdx] < 0)) / 2)));
         SearchWrp.Prep.HistIdx += 1;
     }
     If (Glob.Config.IsScratch3 == 0)
@@ -13621,8 +13724,8 @@ Define SearchWrp.Prep (warp=true)
         SearchWrp.Prep.HistIdx = 1;
         Repeat (List.Length(HistoryContinuation))
         {
-            List.ReplaceItem(HistoryContinuation, SearchWrp.Prep.HistIdx, (HistoryContinuation[SearchWrp.Prep.HistIdx] / 2));
-            List.ReplaceItem(HistoryContinuation2, SearchWrp.Prep.HistIdx, (HistoryContinuation2[SearchWrp.Prep.HistIdx] / 2));
+            List.ReplaceItem(HistoryContinuation, SearchWrp.Prep.HistIdx, floor(((HistoryContinuation[SearchWrp.Prep.HistIdx] + (HistoryContinuation[SearchWrp.Prep.HistIdx] < 0)) / 2)));
+            List.ReplaceItem(HistoryContinuation2, SearchWrp.Prep.HistIdx, floor(((HistoryContinuation2[SearchWrp.Prep.HistIdx] + (HistoryContinuation2[SearchWrp.Prep.HistIdx] < 0)) / 2)));
             SearchWrp.Prep.HistIdx += 1;
         }
     }
@@ -13822,8 +13925,9 @@ Define SearchWrp.Prep (warp=true)
         Glob.Config.IsTimeModelLogged = 1;
     }
     Glob.Search.IsTimeout = 0;
-    Ret.SearchWrp.IsDone = 0;
+    Glob.Search.IsDone = 0;
     Glob.Search.IterationIdx = 1;
+    Glob.SearchWrp.RootAverageScore = Const.Null;
     If (Glob.Search.IterationIdx == Const.Null)
     {
         Glob.UI.Depth = "D: 0";
@@ -13835,14 +13939,14 @@ Define SearchWrp.Prep (warp=true)
     List.DeleteAll(RootLinePrevMoves);
     Glob.Search.IterationBestMove = Const.Null;
     Ret.SearchWrp.BestMove = Glob.Search.IterationBestMove;
-    Ret.SearchWrp.BestMoveEval = Const.Null;
-    If (Ret.SearchWrp.BestMoveEval == Const.Null)
+    Glob.Search.BestMoveEval = Const.Null;
+    If (Glob.Search.BestMoveEval == Const.Null)
     {
         Glob.UI.Eval = "EV: 0";
     }
     Else
     {
-        Glob.UI.Eval = Operator.Join("EV: ", Ret.SearchWrp.BestMoveEval);
+        Glob.UI.Eval = Operator.Join("EV: ", Glob.Search.BestMoveEval);
     }
 }
 
@@ -14304,7 +14408,7 @@ Define Search_Futility(string Horizon)(string Ply)(bool Quiescence) (warp=true)
                     {
                         Search_Futility.IsImproving = 1;
                     }
-                    If (PickedLegalMovesCountQuiet[Ply] > (3 + ((Horizon * Horizon) / (2 - (Search_Futility.IsImproving == 1)))))
+                    If (PickedLegalMovesCountQuiet[Ply] > (3 + floor(((Horizon * Horizon) / (2 - (Search_Futility.IsImproving == 1))))))
                     {
                         Ret.Search_Futility.IsFutile = 1;
                         Stop(this script);
@@ -14580,7 +14684,7 @@ Define Search_NullMovePruning(string Horizon)(string Ply)(bool Cutnode)(bool Qui
                             {
                                 Search_NullMovePruning.Reduction = 0;
                             }
-                            If ((Search_NullMovePruning.Reduction > 0) And (Search_NullMovePruning.EvalSurplus > 0))
+                            If ((Search_NullMovePruning.Reduction > 0) And (Not ((Search_NullMovePruning.EvalSurplus < 0))))
                             {
                                 Call GetImproving(Ply);
                                 Search_NullMovePruning.IsImproving = Ret.GetImproving.IsImproving;
@@ -14622,6 +14726,13 @@ Define Search_NullMovePruning(string Horizon)(string Ply)(bool Cutnode)(bool Qui
                                                     {
                                                         Call Profile_CountByHorizon(Const.Prof.NMPHits)(Horizon)(Ply);
                                                     }
+                                                }
+                                            }
+                                            Else
+                                            {
+                                                If (Not ((Search_NullMovePruning.NodeEval < Betas[Ply])))
+                                                {
+                                                    List.ReplaceItem(SearchEval, Ply, Betas[Ply]);
                                                 }
                                             }
                                         }
@@ -14667,7 +14778,8 @@ Define Search_Razoring(string Horizon)(string Ply)(bool Quiescence)(string Exclu
                         {
                             Call Profile_CountByHorizon(Const.Prof.RazoringTries)(Horizon)(Ply);
                         }
-                        Call SearchImpl(Alphas[Ply])(Betas[Ply])(0)(Ply)((1 == 1))((1 == 1))(Const.Null);
+                        Call SearchImpl((Alphas[Ply] - 1))(Alphas[Ply])(0)(Ply)((1 == 1))((1 == 1))(Const.Null);
+                        List.ReplaceItem(AlphasOld, Ply, (AlphasOld[Ply] + 1));
                         If (Not ((SearchEval[Ply] == Const.Null)))
                         {
                             If (1 == 1)
@@ -14683,6 +14795,7 @@ Define Search_Razoring(string Horizon)(string Ply)(bool Quiescence)(string Exclu
                             }
                         }
                         List.ReplaceItem(Alphas, Ply, AlphasOld[Ply]);
+                        List.ReplaceItem(Betas, Ply, (AlphasOld[Ply] + 1));
                         List.ReplaceItem(SearchEval, Ply, Const.Null);
                         List.ReplaceItem(RazorState, Ply, 1);
                         Stop(this script);
@@ -14784,7 +14897,7 @@ Define Search_Reduction(string Horizon)(string Ply) (warp=true)
                     If (1 == 1)
                     {
                         Search_Reduction.StatScore = (((((2 * Ret.HistScore.MainScore) + Ret.HistScore.Cont1Score) + Ret.HistScore.Cont2Score) + Ret.HistScore.Cont4Score) - Const.LmrStatScoreOffset);
-                        Ret.Search_Reduction.Reduction += (0 - Operator.Round(((Search_Reduction.StatScore / Const.LmrStatScoreDivisor) * 128)));
+                        Ret.Search_Reduction.Reduction += (0 - (((Search_Reduction.StatScore > 0) - (Search_Reduction.StatScore < 0)) * floor(abs(((Search_Reduction.StatScore / Const.LmrStatScoreDivisor) * 128)))));
                     }
                 }
                 If (1 == 1)
@@ -14878,7 +14991,7 @@ Define Search_TTProbeEval(string Horizon)(string Ply)(bool Cutnode)(bool Quiesce
                     }
                     Else
                     {
-                        If ((Not ((Search_TTProbeEval.TTHorizon < Horizon))) And (Search_TTProbeEval.Rule50 < 90))
+                        If (Not ((Search_TTProbeEval.TTHorizon < Horizon)))
                         {
                             If ((Not ((Search_TTProbeEval.TTScore > Alphas[Ply]))) Or Cutnode)
                             {
@@ -14931,6 +15044,11 @@ Define Search_TTProbeEval(string Horizon)(string Ply)(bool Cutnode)(bool Quiesce
                                         }
                                     }
                                 }
+                                If ((Not (Quiescence)) And ((Not ((NodeTTMove[Ply] == Const.Null))) And ((Not ((Search_TTProbeEval.TTScore < Betas[Ply]))) And ((PickedLegalMovesCount[(Ply - 1)] < 3) And (((Ply > 1) And (Not ((AppliedMove[(Ply - 1)] == 0)))) And ((Not ((floor((AppliedMove[(Ply - 1)] / 100)) == 0))) And (TargetPieces[(Ply - 1)] == 0)))))))
+                                {
+                                    Call StatBonus((Horizon + 1));
+                                    Call UpdateContinuationHistories((Ply - 1))(PieceIdxLookup[abs(Board[floor((AppliedMove[(Ply - 1)] % 100))])])(floor((AppliedMove[(Ply - 1)] % 100)))((0 - Ret.StatBonus.Value));
+                                }
                                 If ((Not (Quiescence)) And (Not ((NodeTTMove[Ply] == Const.Null))))
                                 {
                                     If (Search_TTProbeEval.TTScore < Betas[Ply])
@@ -14942,10 +15060,13 @@ Define Search_TTProbeEval(string Horizon)(string Ply)(bool Cutnode)(bool Quiesce
                                         }
                                     }
                                 }
-                                List.ReplaceItem(SearchEval, Ply, Search_TTProbeEval.TTScore);
-                                If (Glob.Profile.Mode > Const.ProfilerMode.Off)
+                                If (Quiescence Or (Search_TTProbeEval.Rule50 < 90))
                                 {
-                                    Call Profile_CountByHorizon(Const.Prof.TTNodeHit)(Horizon)(Ply);
+                                    List.ReplaceItem(SearchEval, Ply, Search_TTProbeEval.TTScore);
+                                    If (Glob.Profile.Mode > Const.ProfilerMode.Off)
+                                    {
+                                        Call Profile_CountByHorizon(Const.Prof.TTNodeHit)(Horizon)(Ply);
+                                    }
                                 }
                             }
                         }
@@ -15297,6 +15418,12 @@ Define SortMoveList(string Ply) (warp=true)
     }
 }
 
+Define StatBonus(string Depth) (warp=true)
+{
+    StatBonus.Unclamped = ((((Const.History.BonusQuadratic * Depth) + Const.History.BonusLinear) * Depth) - Const.History.BonusOffset);
+    Ret.StatBonus.Value = (((StatBonus.Unclamped + Const.History.BonusMax) - abs((StatBonus.Unclamped - Const.History.BonusMax))) / 2);
+}
+
 Define StoreAttackInfo(string Ply) (warp=true)
 {
     If (PlyIsOwn[Ply] == 0)
@@ -15352,8 +15479,8 @@ Define StoreKiller(string Ply)(string Move)(string Horizon)(bool Malus)(bool Con
     Call //("history gravity: h += bonus - h*|bonus|/7183 (caps at +-7183); pawn history /8192, capture history /10692");
     StoreKiller.FromIdx = floor((Move / 100));
     StoreKiller.ToIdx = floor((Move % 100));
-    StoreKiller.UnclampedHistoryBonus = ((190 * Horizon) - 108);
-    StoreKiller.HistoryBonus = ((((StoreKiller.UnclampedHistoryBonus + 1596) - abs((StoreKiller.UnclampedHistoryBonus - 1596))) / 2) * (1 - (2 * Malus)));
+    Call StatBonus(Horizon);
+    StoreKiller.HistoryBonus = (Ret.StatBonus.Value * (1 - (2 * Malus)));
     If ((StoreKiller.FromIdx == 0) And QuietOk)
     {
         If ((((Move == GoK_BlackKingsideCastling) Or (Move == GoK_BlackQueensideCastling)) Or (Move == GoK_WhiteKingsideCastling)) Or (Move == GoK_WhiteQueensideCastling))
@@ -15423,7 +15550,7 @@ Define StoreKiller(string Ply)(string Move)(string Horizon)(bool Malus)(bool Con
                 StoreKiller.HistoryMoveScoreIdx = (PlyHistoryBaseIdx[Ply] + ((StoreKiller.FromIdx * 64) + StoreKiller.ToIdx));
                 List.ReplaceItem(HistoryMoveScores, StoreKiller.HistoryMoveScoreIdx, (HistoryMoveScores[StoreKiller.HistoryMoveScoreIdx] + (StoreKiller.HistoryBonus - floor((HistoryMoveScores[StoreKiller.HistoryMoveScoreIdx] * (abs(StoreKiller.HistoryBonus) / 7183))))));
                 Call ProbePawnHist(Board[StoreKiller.FromIdx])(StoreKiller.ToIdx)(Glob.Board.KPHash);
-                List.ReplaceItem(HistoryPawnHist, Ret.ProbePawnHist.Idx, (HistoryPawnHist[Ret.ProbePawnHist.Idx] + ((StoreKiller.HistoryBonus / 2) - floor((HistoryPawnHist[Ret.ProbePawnHist.Idx] * (abs((StoreKiller.HistoryBonus / 2)) / 8192))))));
+                List.ReplaceItem(HistoryPawnHist, Ret.ProbePawnHist.Idx, (HistoryPawnHist[Ret.ProbePawnHist.Idx] + (floor(((StoreKiller.HistoryBonus + (StoreKiller.HistoryBonus < 0)) / 2)) - floor((HistoryPawnHist[Ret.ProbePawnHist.Idx] * (abs(floor(((StoreKiller.HistoryBonus + (StoreKiller.HistoryBonus < 0)) / 2))) / 8192))))));
             }
             If (Not (Malus))
             {
@@ -15802,7 +15929,7 @@ Define TTProbeNodeAtPly(string Ply) (warp=true)
     List.ReplaceItem(NodeTTStaticEval, Ply, Const.Null);
     Call TTProbeNode(Glob.Board.CurrentHash)(Ply);
     List.ReplaceItem(NodeTTHit, Ply, Ret.TTProbeNode.Hit);
-    List.ReplaceItem(IsTTPv, Ply, IsPvNode[Ply]);
+    List.ReplaceItem(IsTTPv, Ply, (IsPvNode[Ply] * (1 - Quiescence[Ply])));
     If ((Ret.TTProbeNode.Hit == 1) And (Ret.TTProbeNode.IsPv == 1))
     {
         List.ReplaceItem(IsTTPv, Ply, 1);
@@ -15881,7 +16008,7 @@ Define TTStore(string NodeHash)(string Ply)(string Score)(string BestMove)(strin
                 }
                 Else
                 {
-                    If (Not ((((Horizon + 3) + (2 * TTStore.PV)) < TTStore.StoredHorizon)))
+                    If ((Not ((Horizon == Const.Null))) And (Not ((((Horizon + 3) + (2 * TTStore.PV)) < TTStore.StoredHorizon))))
                     {
                         TTStore.IsReplace = 1;
                     }
@@ -15914,7 +16041,7 @@ Define TTStore(string NodeHash)(string Ply)(string Score)(string BestMove)(strin
         }
         If (Not ((BestMove == Const.Null)))
         {
-            List.ReplaceItem(TTNodeEntry, (TTStore.HashBucket + Const.TTNodeCol.BestMoveIdx), Operator.Round((BestMove * 10)));
+            List.ReplaceItem(TTNodeEntry, (TTStore.HashBucket + Const.TTNodeCol.BestMoveIdx), floor((BestMove * 10)));
         }
     }
     Else
@@ -15925,7 +16052,7 @@ Define TTStore(string NodeHash)(string Ply)(string Score)(string BestMove)(strin
         }
         Else
         {
-            List.ReplaceItem(TTNodeEntry, (TTStore.HashBucket + Const.TTNodeCol.BestMoveIdx), Operator.Round((BestMove * 10)));
+            List.ReplaceItem(TTNodeEntry, (TTStore.HashBucket + Const.TTNodeCol.BestMoveIdx), floor((BestMove * 10)));
         }
         List.ReplaceItem(TTNodeEntry, (TTStore.HashBucket + Const.TTNodeCol.StaticEvalIdx), StaticEval);
         List.ReplaceItem(TTNodeEntry, (TTStore.HashBucket + Const.TTNodeCol.HashIdx), (floor((NodeHash / 65536)) % 1073741824));
@@ -15990,7 +16117,7 @@ Define TTStoreNode(string BoardHash)(string Ply)(string Score)(string BestMove)(
 
 Define UI.FormatPV (warp=true)
 {
-    UI.FormatPV.Len = Variable.Length(Ret.Search.PV);
+    UI.FormatPV.Len = Variable.Length(Glob.Search.PV);
     UI.FormatPV.Cut = UI.FormatPV.Len;
     If (UI.FormatPV.Len > 104)
     {
@@ -15998,7 +16125,7 @@ Define UI.FormatPV (warp=true)
         UI.FormatPV.Idx = 1;
         Repeat (105)
         {
-            If (Operator.LetterOf(Ret.Search.PV, UI.FormatPV.Idx) == " ")
+            If (Operator.LetterOf(Glob.Search.PV, UI.FormatPV.Idx) == " ")
             {
                 UI.FormatPV.Cut = (UI.FormatPV.Idx - 1);
             }
@@ -16009,7 +16136,7 @@ Define UI.FormatPV (warp=true)
     UI.FormatPV.Idx = 1;
     Repeat (UI.FormatPV.Cut)
     {
-        Glob.UI.PV = Operator.Join(Glob.UI.PV, Operator.LetterOf(Ret.Search.PV, UI.FormatPV.Idx));
+        Glob.UI.PV = Operator.Join(Glob.UI.PV, Operator.LetterOf(Glob.Search.PV, UI.FormatPV.Idx));
         UI.FormatPV.Idx += 1;
     }
 }
@@ -16059,6 +16186,34 @@ Define UndoPrevMove (warp=false)
     }
 }
 
+Define UpdateContinuationHistories(string Ply)(string PieceIdx)(string ToIdx)(string Bonus) (warp=true)
+{
+    UpdateContinuationHistories.CurrentSlot = (((PieceIdx - 1) * 64) + ToIdx);
+    If (Glob.Config.IsScratch3 == 0)
+    {
+        If ((Ply > 1) And (Not ((AppliedMove[(Ply - 1)] == 0))))
+        {
+            UpdateContinuationHistories.TableIdx = (PlyContinuationBaseIdx[Ply] + (((((PieceIdxLookup[abs(SourcePieces[(Ply - 1)])] - 1) * 64) + floor((AppliedMove[(Ply - 1)] % 100))) * 389) + UpdateContinuationHistories.CurrentSlot));
+            List.ReplaceItem(HistoryContinuation, UpdateContinuationHistories.TableIdx, (HistoryContinuation[UpdateContinuationHistories.TableIdx] + (Bonus - floor((HistoryContinuation[UpdateContinuationHistories.TableIdx] * (abs(Bonus) / Const.History.ContinuationGravity))))));
+        }
+        If ((Ply > 2) And (Not ((AppliedMove[(Ply - 2)] == 0))))
+        {
+            UpdateContinuationHistories.TableIdx = (PlyContinuationBaseIdx[Ply] + (((((PieceIdxLookup[abs(SourcePieces[(Ply - 2)])] - 1) * 64) + floor((AppliedMove[(Ply - 2)] % 100))) * 389) + UpdateContinuationHistories.CurrentSlot));
+            List.ReplaceItem(HistoryContinuation2, UpdateContinuationHistories.TableIdx, (HistoryContinuation2[UpdateContinuationHistories.TableIdx] + (Bonus - floor((HistoryContinuation2[UpdateContinuationHistories.TableIdx] * (abs(Bonus) / Const.History.ContinuationGravity))))));
+        }
+        If (((Ply > 4) And (CheckedState[Ply] == 0)) And (Not ((AppliedMove[(Ply - 4)] == 0))))
+        {
+            UpdateContinuationHistories.TableIdx = (PlyContinuationBaseIdx[Ply] + (((((PieceIdxLookup[abs(SourcePieces[(Ply - 4)])] - 1) * 64) + floor((AppliedMove[(Ply - 4)] % 100))) * 389) + UpdateContinuationHistories.CurrentSlot));
+            List.ReplaceItem(HistoryContinuation2, UpdateContinuationHistories.TableIdx, (HistoryContinuation2[UpdateContinuationHistories.TableIdx] + (Bonus - floor((HistoryContinuation2[UpdateContinuationHistories.TableIdx] * (abs(Bonus) / Const.History.ContinuationGravity))))));
+        }
+        If (((Ply > 6) And (CheckedState[Ply] == 0)) And (Not ((AppliedMove[(Ply - 6)] == 0))))
+        {
+            UpdateContinuationHistories.TableIdx = (PlyContinuationBaseIdx[Ply] + (((((PieceIdxLookup[abs(SourcePieces[(Ply - 6)])] - 1) * 64) + floor((AppliedMove[(Ply - 6)] % 100))) * 389) + UpdateContinuationHistories.CurrentSlot));
+            List.ReplaceItem(HistoryContinuation2, UpdateContinuationHistories.TableIdx, (HistoryContinuation2[UpdateContinuationHistories.TableIdx] + (Bonus - floor((HistoryContinuation2[UpdateContinuationHistories.TableIdx] * (abs(Bonus) / Const.History.ContinuationGravity))))));
+        }
+    }
+}
+
 Define UpdateMoveHashPosEval(string Piece)(string SourceIdx)(string TargetIdx)(bool PosScoreUpdate)(string Ply) (warp=true)
 {
     Call GetPiecePosHash(Piece)(SourceIdx);
@@ -16099,11 +16254,11 @@ Define UpdateMoveHashPosEval(string Piece)(string SourceIdx)(string TargetIdx)(b
 
 Define UpdateMoveNotationPV (warp=true)
 {
-    Ret.Search.PV = "";
+    Glob.Search.PV = "";
     UpdateMoveNotationPV.PVIdx = 2;
     Repeat (PV[1])
     {
-        Ret.Search.PV = Operator.Join(Operator.Join(Ret.Search.PV, PV[UpdateMoveNotationPV.PVIdx]), " ");
+        Glob.Search.PV = Operator.Join(Operator.Join(Glob.Search.PV, PV[UpdateMoveNotationPV.PVIdx]), " ");
         UpdateMoveNotationPV.PVIdx += 1;
     }
     If (PV[1] > 0)
